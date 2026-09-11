@@ -95,9 +95,7 @@
 
       if (invite) {
         // joining an existing leader's group directly — not the language's default group
-        user.language = invite.language;
-        user.groupNumber = invite.groupNumber;
-        localStorage.setItem("nm_user", JSON.stringify(user));
+        await NM.apiJoinGroup(invite.language, false, invite.groupNumber);
         location.href = "dashboard-member.html";
       } else if (selectedPath === "specialist") {
         location.href = "language-select.html";

@@ -43,6 +43,24 @@ ALTER TABLE users
   ADD CONSTRAINT fk_users_group FOREIGN KEY (group_id) REFERENCES groups(id);
 
 -- --------------------------------------------------------------------------
+-- LEADER REQUESTS — becoming a leader needs head_leader approval; picking a
+-- language as a regular member never does.
+-- --------------------------------------------------------------------------
+CREATE TYPE leader_request_status AS ENUM ('pending', 'approved', 'rejected');
+
+CREATE TABLE leader_requests (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(id),
+  language      TEXT NOT NULL,
+  status        leader_request_status NOT NULL DEFAULT 'pending',
+  decided_by    UUID REFERENCES users(id),   -- the head_leader who approved/rejected
+  decided_at    TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_leader_requests_status ON leader_requests(status);
+
+-- --------------------------------------------------------------------------
 -- SERVICES (the 6 fixed service types)
 -- --------------------------------------------------------------------------
 CREATE TABLE services (

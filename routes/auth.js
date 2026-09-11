@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../db/pool");
+const { requireAuth } = require("../config/auth");
 
 const router = express.Router();
 
@@ -45,6 +46,27 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+// GET /api/auth/me — the current user's full profile, including their
+// language/group if they've joined one. Dashboards call this on load so
+// they always reflect the real DB state instead of a stale localStorage copy.
+router.get("/me", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.first_name, u.email, u.role, u.language, u.reputation_score,
+              g.id AS group_id, g.group_number, g.leader_id
+       FROM users u
+       LEFT JOIN groups g ON g.id = u.group_id
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "User not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load profile" });
   }
 });
 

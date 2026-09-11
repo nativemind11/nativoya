@@ -144,15 +144,91 @@ const NM = (() => {
     return data.user;
   }
 
-  async function apiJoinGroup(language) {
-    return apiFetch("/api/groups/join", {
+  async function apiJoinGroup(language, asLeader, groupNumber) {
+    const data = await apiFetch("/api/groups/join", {
+      method: "POST",
+      body: JSON.stringify({ language, asLeader, groupNumber }),
+    });
+    // refresh the cached user so language/group/role are correct everywhere
+    await apiRefreshMe();
+    return data;
+  }
+
+  // pulls the current profile from the DB (role, language, group_number...)
+  // and updates the localStorage cache used by currentUser().
+  async function apiRefreshMe() {
+    const me = await apiFetch("/api/auth/me");
+    const cached = currentUser() || {};
+    const merged = {
+      ...cached,
+      id: me.id, firstName: me.first_name, email: me.email, role: me.role,
+      language: me.language, groupNumber: me.group_number, groupId: me.group_id,
+    };
+    localStorage.setItem("nm_user", JSON.stringify(merged));
+    return merged;
+  }
+
+  // ---- tasks ----
+  function apiGetOpenTasks() { return apiFetch("/api/tasks/open"); }
+  function apiCreateTask({ serviceSlug, title, instructions, totalQuantity }) {
+    return apiFetch("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({ serviceSlug, title, instructions, totalQuantity }),
+    });
+  }
+  function apiClaimTask(taskId, quantity) {
+    return apiFetch(`/api/tasks/${taskId}/claim`, {
+      method: "POST",
+      body: JSON.stringify({ quantity }),
+    });
+  }
+  function apiMyClaims() { return apiFetch("/api/tasks/claims/mine"); }
+  function apiClaimsForMyGroup() { return apiFetch("/api/tasks/claims/for-my-group"); }
+  function apiSubmitFile(claimId, fileUrl) {
+    return apiFetch(`/api/tasks/claims/${claimId}/submissions`, {
+      method: "POST",
+      body: JSON.stringify({ fileUrl }),
+    });
+  }
+  function apiReviewQueue() { return apiFetch("/api/tasks/review-queue"); }
+  function apiReviewSubmission(submissionId, approve) {
+    return apiFetch(`/api/tasks/submissions/${submissionId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ approve }),
+    });
+  }
+  function apiMySubmissions() { return apiFetch("/api/tasks/my-submissions"); }
+
+  // ---- leadership requests (becoming a leader needs head_leader approval) ----
+  function apiRequestLeadership(language) {
+    return apiFetch("/api/groups/leader-requests", {
       method: "POST",
       body: JSON.stringify({ language }),
     });
   }
+  function apiMyLeaderRequest() { return apiFetch("/api/groups/leader-requests/mine"); }
+  function apiPendingLeaderRequests() { return apiFetch("/api/groups/leader-requests/pending"); }
+  function apiApproveLeaderRequest(id) {
+    return apiFetch(`/api/groups/leader-requests/${id}/approve`, { method: "POST" });
+  }
+  function apiRejectLeaderRequest(id) {
+    return apiFetch(`/api/groups/leader-requests/${id}/reject`, { method: "POST" });
+  }
 
-  async function apiGetGroups() {
-    return apiFetch("/api/groups", { method: "GET" });
+  // ---- groups (admin) ----
+  function apiGetGroups() { return apiFetch("/api/groups"); }
+  function apiGetRoster() { return apiFetch("/api/groups/roster"); }
+
+  // ---- payments (head_leader only) ----
+  function apiGetPendingPayments() { return apiFetch("/api/payments/pending"); }
+  function apiCreatePayment({ recipientId, amount, currency, payoutMethod, payoutIdentifier }) {
+    return apiFetch("/api/payments", {
+      method: "POST",
+      body: JSON.stringify({ recipientId, amount, currency, payoutMethod, payoutIdentifier }),
+    });
+  }
+  function apiMarkTransferred(paymentId) {
+    return apiFetch(`/api/payments/${paymentId}/mark-transferred`, { method: "POST" });
   }
 
   function getLang() { return localStorage.getItem("nm_lang") || "ar"; }
@@ -381,7 +457,13 @@ const NM = (() => {
     currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup,
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
-    apiSignup, apiLogin, apiJoinGroup, apiGetGroups, authToken,
+    apiSignup, apiLogin, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
+    apiGetOpenTasks, apiCreateTask, apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
+    apiSubmitFile, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
+    apiGetGroups, apiGetRoster,
+    apiRequestLeadership, apiMyLeaderRequest, apiPendingLeaderRequests,
+    apiApproveLeaderRequest, apiRejectLeaderRequest,
+    apiGetPendingPayments, apiCreatePayment, apiMarkTransferred,
   };
 })();
 

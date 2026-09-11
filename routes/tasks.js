@@ -28,6 +28,83 @@ router.get("/open", requireAuth, async (req, res) => {
   res.json(result.rows);
 });
 
+// GET /api/tasks/claims/mine  (leader only) — everything MY group has claimed,
+// with how much capacity is still unfilled inside each claim
+router.get("/claims/mine", requireAuth, requireRole("leader"), async (req, res) => {
+  const me = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
+  const groupId = me.rows[0]?.group_id;
+  if (!groupId) return res.json([]);
+
+  const result = await pool.query(`
+    SELECT tc.id AS claim_id, tc.quantity, tc.claimed_at,
+           t.id AS task_id, t.title, t.instructions,
+           tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
+    FROM task_claims tc
+    JOIN tasks t ON t.id = tc.task_id
+    LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
+      ON sc.task_claim_id = tc.id
+    WHERE tc.group_id = $1
+    ORDER BY tc.claimed_at DESC
+  `, [groupId]);
+  res.json(result.rows);
+});
+
+// GET /api/tasks/claims/for-my-group — claims my LEADER made for my group that
+// still have room, i.e. what a member can actually submit work against
+router.get("/claims/for-my-group", requireAuth, async (req, res) => {
+  const me = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
+  const groupId = me.rows[0]?.group_id;
+  if (!groupId) return res.json([]);
+
+  const result = await pool.query(`
+    SELECT tc.id AS claim_id, tc.quantity,
+           t.id AS task_id, t.title, t.instructions,
+           tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
+    FROM task_claims tc
+    JOIN tasks t ON t.id = tc.task_id
+    LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
+      ON sc.task_claim_id = tc.id
+    WHERE tc.group_id = $1
+      AND (tc.quantity - COALESCE(sc.submitted_count, 0)) > 0
+    ORDER BY tc.claimed_at DESC
+  `, [groupId]);
+  res.json(result.rows);
+});
+
+// GET /api/tasks/review-queue  (leader only) — submissions from MY group's
+// members that are still waiting for a decision
+router.get("/review-queue", requireAuth, requireRole("leader"), async (req, res) => {
+  const me = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
+  const groupId = me.rows[0]?.group_id;
+  if (!groupId) return res.json([]);
+
+  const result = await pool.query(`
+    SELECT s.id AS submission_id, s.file_url, s.created_at,
+           t.title AS task_title, u.first_name AS member_name
+    FROM submissions s
+    JOIN task_claims tc ON tc.id = s.task_claim_id
+    JOIN tasks t ON t.id = tc.task_id
+    JOIN users u ON u.id = s.submitted_by
+    WHERE tc.group_id = $1 AND s.status = 'in_review'
+    ORDER BY s.created_at ASC
+  `, [groupId]);
+  res.json(result.rows);
+});
+
+// GET /api/tasks/my-submissions — everything the current member has sent in,
+// with its review status
+router.get("/my-submissions", requireAuth, async (req, res) => {
+  const result = await pool.query(`
+    SELECT s.id, s.file_url, s.status, s.created_at, t.title AS task_title
+    FROM submissions s
+    JOIN task_claims tc ON tc.id = s.task_claim_id
+    JOIN tasks t ON t.id = tc.task_id
+    WHERE s.submitted_by = $1
+    ORDER BY s.created_at DESC
+  `, [req.user.id]);
+  res.json(result.rows);
+});
+
 // POST /api/tasks/:id/claim  (leader only)
 router.post("/:id/claim", requireAuth, requireRole("leader"), async (req, res) => {
   const { quantity } = req.body;

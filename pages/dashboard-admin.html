@@ -25,39 +25,81 @@
       <p class="text-muted">رؤية كاملة على كل الجروبات، الليدرز، الأعضاء، والمدفوعات.</p>
 
       <div class="grid-3" style="margin:24px 0;">
-        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;">34</div><p class="mb-0 text-muted">جروب نشط</p></div>
-        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;">482</div><p class="mb-0 text-muted">عضو مسجل</p></div>
-        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-danger);font-weight:800;">7</div><p class="mb-0 text-muted">تحويلات معلّقة</p></div>
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;" id="stat-groups">—</div><p class="mb-0 text-muted">جروب نشط</p></div>
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;" id="stat-members">—</div><p class="mb-0 text-muted">عضو مسجل</p></div>
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-danger);font-weight:800;" id="stat-pending">—</div><p class="mb-0 text-muted">تحويلات معلّقة</p></div>
       </div>
 
       <div class="card" id="tasks">
         <h3>نشر مهمة جديدة</h3>
+        <p id="task-error" class="hint" style="color:#e0245e; display:none;"></p>
         <form id="task-form" class="grid-2" style="align-items:end;">
+          <div class="field"><label>الخدمة</label><select id="t-service" required></select></div>
           <div class="field"><label>اسم المهمة</label><input type="text" id="t-name" placeholder="مثال: ترجمة مقالات" required></div>
           <div class="field"><label>الكمية الإجمالية</label><input type="number" id="t-qty" placeholder="100" required></div>
           <div class="field" style="grid-column:1/-1;"><label>التعليمات</label><textarea id="t-instructions" placeholder="اشرح المطلوب بالتفصيل..."></textarea></div>
-          <div style="grid-column:1/-1;"><button class="btn btn-primary" type="submit">نشر المهمة لكل الليدرز</button></div>
+          <div style="grid-column:1/-1;"><button class="btn btn-primary" type="submit" id="task-submit">نشر المهمة لكل الليدرز</button></div>
         </form>
+      </div>
+
+      <div class="card" id="leader-requests" style="margin-top:20px;">
+        <h3>طلبات ليدرشيب معلّقة</h3>
+        <p class="text-muted">لما توافق، بيتعمل جروب جديد فورًا وحساب اللي طلب بيترقى لـ"ليدر" تلقائيًا.</p>
+        <p id="leader-requests-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الاسم</th><th>اللغة</th><th>الإيميل</th><th>واتساب</th><th></th></tr></thead>
+            <tbody id="leader-requests-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card" id="groups" style="margin-top:20px;">
         <h3>كل الجروبات</h3>
+        <p id="groups-error" class="hint" style="color:#e0245e; display:none;"></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>اللغة</th><th>رقم الجروب</th><th>الليدر</th><th>الأعضاء</th></tr></thead>
-            <tbody id="all-groups-body"></tbody>
+            <tbody id="all-groups-body"><tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Record a new payout owed to a leader -->
+      <div class="card" id="new-payment" style="margin-top:20px;">
+        <h3>تسجيل مستحق جديد لليدر</h3>
+        <form id="payment-form" class="grid-2" style="align-items:end;">
+          <div class="field"><label>الليدر</label><select id="p-leader" required></select></div>
+          <div class="field"><label>المبلغ</label><input type="number" step="0.01" id="p-amount" placeholder="1250" required></div>
+          <div class="field">
+            <label>العملة</label>
+            <select id="p-currency"><option value="EGP">EGP</option><option value="USD">USD</option></select>
+          </div>
+          <div class="field">
+            <label>طريقة الاستلام</label>
+            <select id="p-method">
+              <option value="instapay">InstaPay</option>
+              <option value="vodafone_cash">فودافون كاش</option>
+              <option value="etisalat_cash">اتصالات كاش</option>
+              <option value="syriatel_cash">سيرياتل كاش</option>
+              <option value="sham_cash">شام كاش</option>
+              <option value="paypal">PayPal</option>
+            </select>
+          </div>
+          <div class="field" style="grid-column:1/-1;"><label>رقم الحساب / الإيميل</label><input type="text" id="p-identifier" placeholder="01xxxxxxxxx أو name@paypal.com" required></div>
+          <div style="grid-column:1/-1;"><button class="btn btn-secondary" type="submit">تسجيل المستحق</button></div>
+        </form>
       </div>
 
       <!-- Manual payout confirmation — the core payments screen -->
       <div class="card" id="payments" style="margin-top:20px;">
         <h3>المدفوعات — تحويلات مستحقة للليدرز</h3>
         <p class="text-muted">حوّل الفلوس بنفسك من خلال الوسيلة الموضحة، وبعدين دوس "تم التحويل" لتحديث الحالة.</p>
+        <p id="payments-error" class="hint" style="color:#e0245e; display:none;"></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>الليدر</th><th>المبلغ</th><th>طريقة الاستلام</th><th>رقم الحساب</th><th>الحالة</th><th></th></tr></thead>
-            <tbody id="payments-body"></tbody>
+            <tbody id="payments-body"><tr><td colspan="6" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -71,44 +113,161 @@
   if (!user) { location.href = "login.html"; }
   document.getElementById("welcome-msg").textContent = `أهلاً بيك يا ${user.firstName || "هيد ليدر"} 👋`;
 
-  document.getElementById("task-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    alert("✅ اتنشرت المهمة! دلوقتي بقت متاحة لكل الليدرز يستلموها من لوحاتهم.");
-    e.target.reset();
+  const METHOD_LABELS = {
+    instapay: "InstaPay", vodafone_cash: "فودافون كاش", etisalat_cash: "اتصالات كاش",
+    syriatel_cash: "سيرياتل كاش", sham_cash: "شام كاش", paypal: "PayPal",
+  };
+
+  // service dropdown for the "publish a task" form
+  const serviceSelect = document.getElementById("t-service");
+  NM.SERVICES.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.slug; opt.textContent = `${s.icon} ${s.ar}`;
+    serviceSelect.appendChild(opt);
   });
 
-  document.getElementById("all-groups-body").innerHTML = [
-    ["العربية (مصرية)", 12, "محمود سعيد", 48],
-    ["الفرنسية", 7, "سارة عبد الله", 22],
-    ["الإسبانية", 3, "كريم فتحي", 15],
-    ["الإنجليزية", 19, "هبة الله عادل", 61],
-  ].map(([lang, num, leader, members]) => `
-    <tr><td>${lang}</td><td>#${num}</td><td>${leader}</td><td>${members}</td></tr>
-  `).join("");
+  let groupsCache = [];
 
-  const PAYOUTS = [
-    { leader: "محمود سعيد", amount: "1,250 ج.م", method: "InstaPay", account: "mahmoud.saeed@instapay", status: "معلّق" },
-    { leader: "سارة عبد الله", amount: "980 ج.م", method: "فودافون كاش", account: "010xxxxxxxx", status: "معلّق" },
-    { leader: "كريم فتحي", amount: "45 $", method: "PayPal", account: "karim.f@paypal.com", status: "معلّق" },
-    { leader: "هبة الله عادل", amount: "2,100 ج.م", method: "اتصالات كاش", account: "011xxxxxxxx", status: "اتحول" },
-  ];
+  async function loadGroups() {
+    try {
+      groupsCache = await NM.apiGetGroups();
+      document.getElementById("stat-groups").textContent = groupsCache.length;
+      document.getElementById("stat-members").textContent =
+        groupsCache.reduce((sum, g) => sum + Number(g.member_count || 0), 0);
 
-  function renderPayouts() {
-    document.getElementById("payments-body").innerHTML = PAYOUTS.map((p, i) => `
-      <tr>
-        <td>${p.leader}</td>
-        <td>${p.amount}</td>
-        <td>${p.method}</td>
-        <td dir="ltr" style="text-align:end;">${p.account}</td>
-        <td><span class="pill ${p.status === "اتحول" ? "badge-success" : "badge-pending"}">${p.status}</span></td>
-        <td>${p.status === "معلّق"
-          ? `<button class="btn btn-primary" style="padding:6px 14px;" onclick="markPaid(${i})">✅ تم التحويل</button>`
-          : `<span class="text-muted" style="font-size:0.8rem;">تم في ${new Date().toLocaleDateString("ar-EG")}</span>`}
-        </td>
-      </tr>`).join("");
+      document.getElementById("all-groups-body").innerHTML = groupsCache.length
+        ? groupsCache.map(g => `
+            <tr><td>${g.language}</td><td>#${g.group_number}</td><td>${g.leader_name || "—"}</td><td>${g.member_count}</td></tr>
+          `).join("")
+        : `<tr><td colspan="4" class="text-muted">مفيش جروبات لسه</td></tr>`;
+
+      // leader dropdown for the "record a payment" form
+      const leaderSelect = document.getElementById("p-leader");
+      const leaders = groupsCache.filter(g => g.leader_id);
+      leaderSelect.innerHTML = leaders.length
+        ? leaders.map(g => `<option value="${g.leader_id}">${g.leader_name} — ${g.language} #${g.group_number}</option>`).join("")
+        : `<option value="">مفيش ليدرز لسه</option>`;
+    } catch (err) {
+      document.getElementById("groups-error").textContent = err.message;
+      document.getElementById("groups-error").style.display = "block";
+    }
   }
-  function markPaid(i) { PAYOUTS[i].status = "اتحول"; renderPayouts(); }
-  renderPayouts();
+
+  async function loadPayments() {
+    try {
+      const payments = await NM.apiGetPendingPayments();
+      document.getElementById("stat-pending").textContent = payments.length;
+      document.getElementById("payments-body").innerHTML = payments.length
+        ? payments.map(p => `
+            <tr>
+              <td>${p.recipient_name}</td>
+              <td>${Number(p.amount).toLocaleString("ar-EG")} ${p.currency}</td>
+              <td>${METHOD_LABELS[p.payout_method] || p.payout_method}</td>
+              <td dir="ltr" style="text-align:end;">${p.payout_identifier}</td>
+              <td><span class="pill badge-pending">معلّق</span></td>
+              <td><button class="btn btn-primary" style="padding:6px 14px;" onclick="markPaid('${p.id}', this)">✅ تم التحويل</button></td>
+            </tr>`).join("")
+        : `<tr><td colspan="6" class="text-muted">مفيش تحويلات معلّقة 🎉</td></tr>`;
+    } catch (err) {
+      document.getElementById("payments-error").textContent = err.message;
+      document.getElementById("payments-error").style.display = "block";
+    }
+  }
+
+  async function markPaid(id, btn) {
+    btn.disabled = true;
+    btn.textContent = "جاري التحديث...";
+    try {
+      await NM.apiMarkTransferred(id);
+      await loadPayments();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      btn.textContent = "✅ تم التحويل";
+    }
+  }
+
+  document.getElementById("task-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("task-error");
+    const submitBtn = document.getElementById("task-submit");
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جاري النشر...";
+    try {
+      await NM.apiCreateTask({
+        serviceSlug: document.getElementById("t-service").value,
+        title: document.getElementById("t-name").value,
+        instructions: document.getElementById("t-instructions").value,
+        totalQuantity: Number(document.getElementById("t-qty").value),
+      });
+      alert("✅ اتنشرت المهمة! دلوقتي بقت متاحة لكل الليدرز يستلموها من لوحاتهم.");
+      e.target.reset();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "نشر المهمة لكل الليدرز";
+    }
+  });
+
+  document.getElementById("payment-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const leaderId = document.getElementById("p-leader").value;
+    if (!leaderId) { alert("مفيش ليدرز متاحين تسجّل لهم مستحق دلوقتي."); return; }
+    try {
+      await NM.apiCreatePayment({
+        recipientId: leaderId,
+        amount: Number(document.getElementById("p-amount").value),
+        currency: document.getElementById("p-currency").value,
+        payoutMethod: document.getElementById("p-method").value,
+        payoutIdentifier: document.getElementById("p-identifier").value,
+      });
+      e.target.reset();
+      await loadPayments();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  async function loadLeaderRequests() {
+    try {
+      const requests = await NM.apiPendingLeaderRequests();
+      document.getElementById("leader-requests-body").innerHTML = requests.length
+        ? requests.map(r => `
+            <tr>
+              <td>${r.first_name}</td>
+              <td>${r.language}</td>
+              <td dir="ltr" style="text-align:end;">${r.email}</td>
+              <td dir="ltr" style="text-align:end;">${r.whatsapp_number || "—"}</td>
+              <td>
+                <button class="btn btn-primary" style="padding:6px 12px;" onclick="decideLeaderRequest('${r.id}', true, this)">✅ موافقة</button>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="decideLeaderRequest('${r.id}', false, this)">✖ رفض</button>
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="5" class="text-muted">مفيش طلبات معلّقة</td></tr>`;
+    } catch (err) {
+      document.getElementById("leader-requests-error").textContent = err.message;
+      document.getElementById("leader-requests-error").style.display = "block";
+    }
+  }
+
+  async function decideLeaderRequest(id, approve, btn) {
+    btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = true);
+    try {
+      if (approve) await NM.apiApproveLeaderRequest(id);
+      else await NM.apiRejectLeaderRequest(id);
+      await Promise.all([loadLeaderRequests(), loadGroups()]);
+    } catch (err) {
+      alert(err.message);
+      btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = false);
+    }
+  }
+
+  loadGroups();
+  loadPayments();
+  loadLeaderRequests();
 </script>
 </body>
 </html>
