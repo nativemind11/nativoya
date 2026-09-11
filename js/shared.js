@@ -101,6 +101,59 @@ const NM = (() => {
     }
   };
 
+  // ---- real backend API ----
+  // ⚠️ Replace this with your actual Vercel backend URL (no trailing slash),
+  // e.g. "https://nativoya-backend.vercel.app". This is the ONLY line you
+  // need to change once you have your deployed backend URL.
+  const API_BASE_URL = "https://your-backend.vercel.app";
+
+  function authToken() { return localStorage.getItem("nm_token"); }
+
+  async function apiFetch(path, options = {}) {
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+    const token = authToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    let res;
+    try {
+      res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+    } catch (err) {
+      throw new Error("تعذر الوصول للسيرفر. تأكد إن رابط الباك إند صحيح وشغال.");
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* empty body */ }
+    if (!res.ok) {
+      throw new Error((data && data.error) || `فشل الطلب (${res.status})`);
+    }
+    return data;
+  }
+
+  async function apiSignup({ firstName, email, password, whatsappNumber, country, role }) {
+    const data = await apiFetch("/api/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, role }),
+    });
+    localStorage.setItem("nm_token", data.token);
+    localStorage.setItem("nm_user", JSON.stringify(data.user));
+    return data.user;
+  }
+
+  async function apiLogin(email, password) {
+    const data = await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    localStorage.setItem("nm_token", data.token);
+    localStorage.setItem("nm_user", JSON.stringify(data.user));
+    return data.user;
+  }
+
+  async function apiJoinGroup(language) {
+    return apiFetch("/api/groups/join", {
+      method: "POST",
+      body: JSON.stringify({ language }),
+    });
+  }
+
   function getLang() { return localStorage.getItem("nm_lang") || "ar"; }
 
   function setLang(lang) {
@@ -246,7 +299,10 @@ const NM = (() => {
     return user;
   }
 
-  function mockLogout() { localStorage.removeItem("nm_user"); }
+  function mockLogout() {
+    localStorage.removeItem("nm_user");
+    localStorage.removeItem("nm_token");
+  }
 
   // ---- language group assignment (members join the ORIGINAL group per
   // language; leaders always get a brand-new group for that language) ----
@@ -319,7 +375,13 @@ const NM = (() => {
     document.body.classList.add("nm-ready");
   }
 
-  return { init, setLang, getLang, toggleMobileNav, SERVICES, LANGUAGES, seedCounters, currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup, generateInviteCode, resolveInviteCode, inviteUrl };
+  return {
+    init, setLang, getLang, toggleMobileNav, SERVICES, LANGUAGES, seedCounters,
+    currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup,
+    generateInviteCode, resolveInviteCode, inviteUrl,
+    // real API
+    apiSignup, apiLogin, apiJoinGroup, authToken,
+  };
 })();
 
 document.addEventListener("DOMContentLoaded", () => NM.init());
