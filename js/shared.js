@@ -102,10 +102,7 @@ const NM = (() => {
   };
 
   // ---- real backend API ----
-  // ⚠️ Replace this with your actual Vercel backend URL (no trailing slash),
-  // e.g. "https://nativoya-backend.vercel.app". This is the ONLY line you
-  // need to change once you have your deployed backend URL.
-  const API_BASE_URL = "https://your-backend.vercel.app";
+  const API_BASE_URL = "https://nativoya.vercel.app";
 
   function authToken() { return localStorage.getItem("nm_token"); }
 
