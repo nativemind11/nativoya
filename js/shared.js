@@ -144,6 +144,7 @@ const NM = (() => {
     header.innerHTML = `
       <nav class="nav">
         <a href="${rel('index.html')}" class="logo" aria-label="Nativoya">
+          <img src="${rel('assets/logo-icon.svg')}" alt="" width="30" height="30" style="border-radius:8px;">
           <span class="part-1">Nativ</span><span class="part-2">oya</span>
         </a>
         <ul class="nav-links">
@@ -177,6 +178,7 @@ const NM = (() => {
         <div class="footer-grid">
           <div>
             <a href="${rel('index.html')}" class="logo" style="margin-bottom:10px;">
+              <img src="${rel('assets/logo-icon.svg')}" alt="" width="30" height="30" style="border-radius:8px;">
               <span class="part-1">Nativ</span><span class="part-2">oya</span>
             </a>
             <p data-i18n="footer_tagline" class="text-muted" style="max-width:280px;">منصة الأدلاء السياحيين وخدمات اللغة — مصر والعالم العربي.</p>
