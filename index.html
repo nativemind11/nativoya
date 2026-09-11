@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nativoya — منصة المرشدين السياحيين وخدمات اللغة</title>
-<meta name="description" content="Nativoya: دليل رسمي للمرشدين السياحيين ومترجمين في مصر، ومنصة خدمات لغة (ترجمة، تفريغ صوتي، دبلجة، توسيم بيانات).">
+<title>Nativoya — منصة الترجمة الاحترافية</title>
+<meta name="description" content="Nativoya: منصة ترجمة تربطك بمترجمين معتمدين لأي لغة، وتفتحلك أبواب عمل أونلاين في مجالات لغوية تانية (تفريغ صوتي، دبلجة، توسيم بيانات، ترجمة أفلام، إرشاد سياحي).">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -53,9 +53,23 @@
   <section class="section">
     <div class="container">
       <div class="section-head">
-        <h2 data-i18n="services_title">خدماتنا</h2>
-        <p data-i18n="services_subtitle">ست خدمات أساسية تحت مظلة Nativoya — كل واحدة ليها صفحة تفصيلية واستمارة تسجيل خاصة بيها.</p>
+        <h2 data-i18n="services_title">الترجمة... وأكتر</h2>
+        <p data-i18n="services_subtitle">الترجمة هي جوهر Nativoya — وبجانبها بتفتح المنصة أبواب عمل أونلاين في مجالات لغوية تانية.</p>
       </div>
+
+      <!-- Featured: Translation -->
+      <a href="pages/service.html?s=translation" style="text-decoration:none; display:block; margin-bottom:28px;">
+        <div class="card" style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+          <div class="icon-badge" style="font-size:2.2rem; width:64px; height:64px;">🌐</div>
+          <div style="flex:1; min-width:200px;">
+            <span class="pill" data-i18n="featured_service_badge" style="margin-bottom:8px;">الخدمة الأساسية</span>
+            <h3 id="featured-service-title" style="margin-top:8px;">ترجمة</h3>
+            <p class="mb-0 text-muted" data-i18n="services_cta">اعرف التفاصيل وسجّل دلوقتي</p>
+          </div>
+        </div>
+      </a>
+
+      <h3 data-i18n="other_fields_title" style="margin-bottom:16px;">مجالات عمل أونلاين تانية</h3>
       <div class="grid-3" id="services-grid"></div>
     </div>
   </section>
@@ -95,9 +109,11 @@
 
   function renderServicesGrid() {
     const lang = NM.getLang();
+    document.getElementById("featured-service-title").textContent =
+      lang === "ar" ? "ترجمة" : "Translation";
     const grid = document.getElementById("services-grid");
     grid.innerHTML = "";
-    NM.SERVICES.forEach(s => {
+    NM.SERVICES.filter(s => s.slug !== "translation").forEach(s => {
       const a = document.createElement("a");
       a.href = `pages/service.html?s=${s.slug}`;
       a.style.textDecoration = "none";
