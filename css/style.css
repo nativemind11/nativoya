@@ -116,6 +116,7 @@ img { max-width: 100%; display: block; }
   font-family: var(--font-arabic-heading);
   font-weight: 800; font-size: 1.5rem; letter-spacing: -0.02em;
   display: flex; align-items: center; gap: 2px;
+  direction: ltr; /* brand wordmark always reads "Nativoya", never flips in RTL */
 }
 .logo .part-1 { color: var(--color-text-dark); }
 .logo .part-2 { color: var(--color-primary-blue); }

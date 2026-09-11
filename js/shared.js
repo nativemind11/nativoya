@@ -20,20 +20,80 @@ const NM = (() => {
     ar: {
       home: "الرئيسية", services: "الخدمات", groups: "الجروبات",
       login: "تسجيل الدخول", signup: "إنشاء حساب", dashboard: "لوحتي",
-      footer_tagline: "منصة الأدلاء السياحيين وخدمات اللغة — مصر والعالم العربي.",
+      footer_tagline: "منصة عالمية لمرشدين سياحيين ومتخصصي لغة معتمدين — مصر والعالم العربي.",
       footer_platform: "المنصة", footer_services: "الخدمات", footer_account: "الحساب",
       footer_about: "من نحن", footer_contact: "تواصل معنا", footer_groups: "الجروبات",
       footer_login: "دخول", footer_signup: "تسجيل", footer_dashboard: "لوحة التحكم",
       rights: "جميع الحقوق محفوظة.",
+
+      hero_eyebrow: "منصة معتمدة لمرشدين سياحيين ومتخصصي لغة",
+      hero_title: "خبرة محلية أصيلة، بمعايير عالمية موثوقة",
+      hero_lead: "Nativoya تربط السائحين وشركات السياحة بمرشدين ومترجمين معتمدين داخل مصر، وفي نفس الوقت تفتح باب خدمات اللغة — ترجمة، تفريغ صوتي، دبلجة، توسيم بيانات — لكل ناطقي العربية حول العالم.",
+      hero_cta_specialist: "أنا مرشد / متخصص لغة",
+      hero_cta_tourist: "أنا سائح / شركة سياحة",
+      stat_guides: "مرشد ومتخصص لغة",
+      stat_languages: "لغة متاحة",
+      stat_countries: "دولة يوصلها المحتوى",
+
+      dual_cta_1_title: "للمرشدين ومتخصصي اللغة",
+      dual_cta_1_body: "سجّل لغتك الأم، انضم لجروب مخصص فيها، واستلم مهام حقيقية (ترجمة، دبلجة، تفريغ صوتي، توسيم بيانات) أو انضم كمرشد سياحي معتمد.",
+      dual_cta_1_btn: "ابدأ التسجيل",
+      dual_cta_2_title: "للسائحين وشركات السياحة",
+      dual_cta_2_body: "تصفح دليل معتمد للمرشدين السياحيين والمترجمين في مصر، واحجز اللي يناسب رحلتك وأنت موجود بالفعل في البلد.",
+      dual_cta_2_btn: "تصفح الدليل",
+
+      services_title: "خدماتنا",
+      services_subtitle: "ست خدمات أساسية تحت مظلة Nativoya — كل واحدة ليها صفحة تفصيلية واستمارة تسجيل خاصة بيها.",
+      services_cta: "اعرف التفاصيل وسجّل دلوقتي",
+
+      activity_title: "نشاط مباشر على المنصة",
+      activity_subtitle: "شوف بنفسك إن المنصة حية ونشطة كل لحظة.",
+      matching_title: "مطابقة ذكية بسيطة",
+      matching_body: "لما شركة سياحة أو عميل ينشر مهمة، النظام بيقترح أنسب مرشد أو متخصص لغة بناءً على اللغة، التخصص، ومعدل السمعة (Reputation Score) — أول نسخة MVP بمنطق بسيط قائم على قواعد، وهنطورها لنموذج ذكاء اصطناعي كامل في المرحلة التالية.",
+      match_pill_1: "لغة مطابقة", match_pill_2: "تخصص مطابق", match_pill_3: "أعلى سمعة",
+
+      activity_1: "٣ مترجمين جدد انضموا للجروب الفرنسي اليوم",
+      activity_2: "تم إنجاز ١٢ مهمة تفريغ صوتي خلال آخر ساعة",
+      activity_3: "مرشد سياحي جديد اتفعّل في جروب الإسبانية",
+      activity_4: "شركة سياحة نشرت مهمة جديدة: مرشد لجولة الأقصر",
     },
     en: {
       home: "Home", services: "Services", groups: "Groups",
       login: "Log in", signup: "Sign up", dashboard: "Dashboard",
-      footer_tagline: "The tourism-guide & language-services platform for Egypt and the Arab world.",
+      footer_tagline: "A global platform for certified tour guides and language specialists — Egypt and the Arab world.",
       footer_platform: "Platform", footer_services: "Services", footer_account: "Account",
       footer_about: "About", footer_contact: "Contact", footer_groups: "Groups",
       footer_login: "Log in", footer_signup: "Sign up", footer_dashboard: "Dashboard",
       rights: "All rights reserved.",
+
+      hero_eyebrow: "A certified platform for tour guides & language specialists",
+      hero_title: "Authentic local expertise. Trusted global standards.",
+      hero_lead: "Nativoya connects travelers and tour companies with certified guides and translators across Egypt, while opening language-service opportunities — translation, transcription, dubbing, data annotation — to Arabic speakers everywhere.",
+      hero_cta_specialist: "I'm a guide / language specialist",
+      hero_cta_tourist: "I'm a traveler / tour company",
+      stat_guides: "Guides & specialists", stat_languages: "Languages available", stat_countries: "Countries reached",
+
+      dual_cta_1_title: "For guides & language specialists",
+      dual_cta_1_body: "Register your native language, join a dedicated group, and take on real paid tasks — translation, dubbing, transcription, data annotation — or join as a certified tour guide.",
+      dual_cta_1_btn: "Start registration",
+      dual_cta_2_title: "For travelers & tour companies",
+      dual_cta_2_body: "Browse a certified directory of tour guides and translators in Egypt, and book the right match while you're already in the country.",
+      dual_cta_2_btn: "Browse the directory",
+
+      services_title: "Our Services",
+      services_subtitle: "Six core services under the Nativoya umbrella — each with its own detail page and dedicated registration form.",
+      services_cta: "See details and register now",
+
+      activity_title: "Live activity on the platform",
+      activity_subtitle: "See for yourself that the platform is active every moment.",
+      matching_title: "Simple smart matching",
+      matching_body: "When a tour company or client posts a task, the system suggests the best-fit guide or language specialist based on language, specialty, and reputation score — a simple rules-based MVP today, evolving into a full AI model in the next phase.",
+      match_pill_1: "Language match", match_pill_2: "Specialty match", match_pill_3: "Top reputation",
+
+      activity_1: "3 new translators joined the French group today",
+      activity_2: "12 transcription tasks completed in the last hour",
+      activity_3: "A new tour guide was activated in the Spanish group",
+      activity_4: "A tour company posted a new task: guide for a Luxor tour",
     }
   };
 
@@ -56,7 +116,10 @@ const NM = (() => {
     document.querySelectorAll(".lang-switch button").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.lang === lang);
     });
+    document.dispatchEvent(new CustomEvent("nm:langchange", { detail: { lang } }));
   }
+
+  function t(key) { return I18N[getLang()][key] || key; }
 
   function svgIcon(name) {
     const icons = {
@@ -176,7 +239,7 @@ const NM = (() => {
     document.body.classList.add("nm-ready");
   }
 
-  return { init, setLang, getLang, toggleMobileNav, SERVICES, seedCounters, currentUser, mockSignup, mockLogout, rel };
+  return { init, setLang, getLang, toggleMobileNav, SERVICES, seedCounters, currentUser, mockSignup, mockLogout, rel, t };
 })();
 
 document.addEventListener("DOMContentLoaded", () => NM.init());
