@@ -27,11 +27,13 @@
     </section>
   </div>
 
-  <p class="text-muted text-center" style="margin-top:16px; font-size:0.85rem;">
-    💬 ده عرض توضيحي (Demo) للواجهة — الشات الفعلي هيتوصل بـ Firebase Firestore للرسائل الحقيقية بين الأعضاء.
-  </p>
+
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
 <script src="../js/shared.js"></script>
 <script>
   // Access guard: this master group-monitoring view is head_leader-only.
@@ -49,93 +51,85 @@
     initGroupsPage();
   }
 
-  function initGroupsPage() {
-  const GROUPS = [
-    { id: 1, lang: "العربية (مصرية)", num: 12, members: 48 },
-    { id: 2, lang: "الفرنسية", num: 7, members: 22 },
-    { id: 3, lang: "الإسبانية", num: 3, members: 15 },
-    { id: 4, lang: "الإنجليزية", num: 19, members: 61 },
-    { id: 5, lang: "الألمانية", num: 4, members: 9 },
-  ];
+  let firestoreUnsub = null;
 
-  const MOCK_MESSAGES = {
-    1: [
-      { me: false, name: "سارة", text: "صباح الخير يا جماعة! فيه مهمة تفريغ صوتي جديدة النهاردة" },
-      { me: false, name: "كريم", text: "تمام، هبدأ فيها دلوقتي" },
-      { me: true, name: "أنا", text: "تمام يا فندم، وصلتني" },
-    ],
-    2: [
-      { me: false, name: "Marie", text: "Bonjour tout le monde 👋" },
-      { me: true, name: "أنا", text: "Salut! Une nouvelle tâche est disponible" },
-    ],
-    3: [{ me: false, name: "Carlos", text: "¿Alguien probó la nueva tarea de subtitulado?" }],
-    4: [{ me: false, name: "John", text: "New transcription batch just dropped, check the group tasks tab." }],
-    5: [{ me: false, name: "Klaus", text: "Willkommen in der Gruppe!" }],
-  };
+  async function initGroupsPage() {
+    await NM_FIREBASE.ready; // anonymous auth must succeed before touching Firestore
+    let groups = [];
+    try {
+      groups = await NM.apiGetGroups(); // real data from Postgres via the backend
+    } catch (err) {
+      document.getElementById("groups-list").innerHTML = `<p class="text-muted" style="padding:12px;">تعذر تحميل الجروبات: ${err.message}</p>`;
+      return;
+    }
 
-  const listEl = document.getElementById("groups-list");
-  GROUPS.forEach(g => {
-    const div = document.createElement("div");
-    div.className = "group-item";
-    div.dataset.id = g.id;
-    div.innerHTML = `
-      <div class="avatar">${g.lang[0]}</div>
-      <div>
-        <div style="font-weight:700; font-size:0.9rem;">${g.lang} — جروب #${g.num}</div>
-        <div class="text-muted" style="font-size:0.78rem;">${g.members} عضو</div>
-      </div>`;
-    div.addEventListener("click", () => openGroup(g));
-    listEl.appendChild(div);
-  });
+    const listEl = document.getElementById("groups-list");
+    if (groups.length === 0) {
+      listEl.innerHTML = `<p class="text-muted" style="padding:12px;">لسه مفيش جروبات اتعملت.</p>`;
+      return;
+    }
 
-  let activeGroup = null;
+    groups.forEach(g => {
+      const div = document.createElement("div");
+      div.className = "group-item";
+      div.dataset.id = g.id;
+      div.innerHTML = `
+        <div class="avatar">${g.language[0]}</div>
+        <div>
+          <div style="font-weight:700; font-size:0.9rem;">${g.language} — جروب #${g.group_number}</div>
+          <div class="text-muted" style="font-size:0.78rem;">${g.member_count} عضو${g.leader_name ? " · ليدر: " + g.leader_name : ""}</div>
+        </div>`;
+      div.addEventListener("click", () => openGroup(g));
+      listEl.appendChild(div);
+    });
+
+    openGroup(groups[0]);
+  }
+
   function openGroup(g) {
-    activeGroup = g;
     document.querySelectorAll(".group-item").forEach(el => el.classList.toggle("active", +el.dataset.id === g.id));
-    document.getElementById("chat-head").textContent = `${g.lang} — جروب #${g.num}`;
-    renderMessages();
+    document.getElementById("chat-head").textContent = `${g.language} — جروب #${g.group_number}`;
+
+    if (firestoreUnsub) firestoreUnsub(); // stop listening to the previous group's chat
+
+    const chatId = `${g.language}_${g.group_number}`.replace(/[^\w\u0600-\u06FF]/g, "_");
+    const messagesRef = NM_FIREBASE.db.collection("groupChats").doc(chatId).collection("messages");
+    firestoreUnsub = messagesRef.orderBy("createdAt", "asc").limit(200).onSnapshot(snapshot => {
+      const wrap = document.getElementById("chat-messages");
+      wrap.innerHTML = "";
+      snapshot.forEach(doc => {
+        const m = doc.data();
+        const mine = m.userId === currentUser.id;
+        const row = document.createElement("div");
+        row.className = "msg-row" + (mine ? " mine" : "");
+        row.innerHTML = `
+          <div class="msg-avatar">${(m.name || "?")[0]}</div>
+          <div><div class="msg-bubble">${m.text}</div></div>`;
+        wrap.appendChild(row);
+      });
+      wrap.scrollTop = wrap.scrollHeight;
+    }, (err) => console.error("Firestore chat error:", err));
+
+    document.getElementById("send-btn").onclick = () => sendMsg(messagesRef);
+    document.getElementById("chat-input").onkeydown = (e) => { if (e.key === "Enter") sendMsg(messagesRef); };
   }
 
-  function renderMessages() {
-    const wrap = document.getElementById("chat-messages");
-    wrap.innerHTML = "";
-    (MOCK_MESSAGES[activeGroup.id] || []).forEach(m => addBubble(m));
-    wrap.scrollTop = wrap.scrollHeight;
-  }
-
-  function addBubble(m) {
-    const wrap = document.getElementById("chat-messages");
-    const row = document.createElement("div");
-    row.className = "msg-row" + (m.me ? " mine" : "");
-    row.innerHTML = `
-      <div class="msg-avatar">${m.name[0]}</div>
-      <div>
-        <div class="msg-bubble">${m.text}</div>
-      </div>`;
-    wrap.appendChild(row);
-    wrap.scrollTop = wrap.scrollHeight;
-  }
-
-  document.getElementById("send-btn").addEventListener("click", sendMsg);
-  document.getElementById("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
-  function sendMsg() {
-    if (!activeGroup) { alert("اختر جروب الأول"); return; }
+  function sendMsg(messagesRef) {
     const input = document.getElementById("chat-input");
-    if (!input.value.trim()) return;
-    const msg = { me: true, name: "أنا", text: input.value.trim() };
-    MOCK_MESSAGES[activeGroup.id] = MOCK_MESSAGES[activeGroup.id] || [];
-    MOCK_MESSAGES[activeGroup.id].push(msg);
-    addBubble(msg);
+    const text = input.value.trim();
+    if (!text) return;
+    messagesRef.add({
+      text,
+      name: currentUser.firstName || "الهيد ليدر",
+      userId: currentUser.id,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
     input.value = "";
   }
 
   document.getElementById("attach-btn").addEventListener("click", () => {
-    alert("رفع الملفات والصور هيتفعّل بعد ربط Firebase Storage بالكامل.");
+    alert("رفع الملفات والصور هيتفعّل بعد ترقية Firebase Storage.");
   });
-
-  // open first group by default
-  openGroup(GROUPS[0]);
-  }
 </script>
 </body>
 </html>

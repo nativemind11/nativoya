@@ -26,11 +26,13 @@
     </section>
   </div>
 
-  <p class="text-muted text-center" style="margin-top:16px; font-size:0.85rem;">
-    💬 ده عرض توضيحي (Demo) — الشات الفعلي هيتوصل بـ Firebase Firestore.
-  </p>
+
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
 <script src="../js/shared.js"></script>
 <script>
   const user = NM.currentUser();
@@ -41,7 +43,7 @@
     initMyGroup();
   }
 
-  function initMyGroup() {
+  async function initMyGroup() {
     const isLeader = user.role === "leader";
     document.getElementById("group-heading").textContent = `${user.language} — جروب #${user.groupNumber}`;
     document.getElementById("group-subheading").textContent = isLeader
@@ -49,41 +51,46 @@
       : "الجروب الأصلي للغتك — كل رسايلك وتحديثاتك هنا";
     document.getElementById("chat-head").textContent = `${user.language} — جروب #${user.groupNumber}`;
 
-    const storageKey = `nm_chat_${user.language}_${user.groupNumber}`;
-    let messages = JSON.parse(localStorage.getItem(storageKey) || "null");
-    if (!messages) {
-      messages = isLeader
-        ? [{ me: false, name: "النظام", text: "أهلاً بيك كليدر لجروبك الجديد! دلوقتي تقدر تستلم مهام من لوحة التحكم وتشاركها هنا مع أعضائك." }]
-        : [{ me: false, name: "الليدر", text: `أهلاً بيك في جروب ${user.language}! هنبعتلك المهام والتحديثات هنا أول بأول.` }];
-    }
+    await NM_FIREBASE.ready; // anonymous auth must succeed before touching Firestore
+    const chatId = `${user.language}_${user.groupNumber}`.replace(/[^\w\u0600-\u06FF]/g, "_");
+    const messagesRef = NM_FIREBASE.db.collection("groupChats").doc(chatId).collection("messages");
 
-    function renderMessages() {
+    function renderMessages(snapshot) {
       const wrap = document.getElementById("chat-messages");
       wrap.innerHTML = "";
-      messages.forEach(m => {
+      snapshot.forEach(doc => {
+        const m = doc.data();
+        const mine = m.userId === user.id;
         const row = document.createElement("div");
-        row.className = "msg-row" + (m.me ? " mine" : "");
+        row.className = "msg-row" + (mine ? " mine" : "");
         row.innerHTML = `
-          <div class="msg-avatar">${m.name[0]}</div>
+          <div class="msg-avatar">${(m.name || "?")[0]}</div>
           <div><div class="msg-bubble">${m.text}</div></div>`;
         wrap.appendChild(row);
       });
       wrap.scrollTop = wrap.scrollHeight;
     }
-    renderMessages();
+
+    messagesRef.orderBy("createdAt", "asc").limit(200).onSnapshot(renderMessages, (err) => {
+      console.error("Firestore chat error:", err);
+    });
 
     function sendMsg() {
       const input = document.getElementById("chat-input");
-      if (!input.value.trim()) return;
-      messages.push({ me: true, name: user.firstName || "أنا", text: input.value.trim() });
-      localStorage.setItem(storageKey, JSON.stringify(messages));
-      renderMessages();
+      const text = input.value.trim();
+      if (!text) return;
+      messagesRef.add({
+        text,
+        name: user.firstName || "أنا",
+        userId: user.id,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
       input.value = "";
     }
     document.getElementById("send-btn").addEventListener("click", sendMsg);
     document.getElementById("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
     document.getElementById("attach-btn").addEventListener("click", () => {
-      alert("رفع الملفات والصور هيتفعّل بعد ربط Firebase Storage بالكامل.");
+      alert("رفع الملفات والصور هيتفعّل بعد ترقية Firebase Storage.");
     });
   }
 </script>

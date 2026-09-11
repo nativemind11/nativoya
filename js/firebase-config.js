@@ -1,7 +1,7 @@
-// Nativoya — Firebase config for the real-time group chat (Firestore + Storage).
+// Nativoya — Firebase config + init for the real-time group chat (Firestore).
 // These values are public identifiers, not secrets — Firebase is designed to
 // have this object embedded directly in client-side code. Access control is
-// enforced server-side by Firestore/Storage Security Rules, not by hiding this.
+// enforced server-side by Firestore Security Rules, not by hiding this.
 
 const firebaseConfig = {
   apiKey: "AIzaSyAs0Og20O_8LOpcsO4oHjLE8VLhoyqxcOo",
@@ -13,5 +13,18 @@ const firebaseConfig = {
   measurementId: "G-0HRYQ1DFHG"
 };
 
-// Exposed for chat.js to consume once Firestore/Storage are wired in.
-window.NM_FIREBASE_CONFIG = firebaseConfig;
+firebase.initializeApp(firebaseConfig);
+
+// NM_FIREBASE.ready resolves once anonymous auth succeeds — every chat page
+// awaits this before reading/writing Firestore, since our security rules
+// require request.auth != null (we don't use Firebase Auth for real login;
+// the app's real identity/roles come from the Postgres+JWT backend — this
+// anonymous sign-in only satisfies Firestore's auth requirement).
+const NM_FIREBASE = {
+  db: firebase.firestore(),
+  auth: firebase.auth(),
+  ready: firebase.auth().currentUser
+    ? Promise.resolve(firebase.auth().currentUser)
+    : firebase.auth().signInAnonymously().then(() => firebase.auth().currentUser),
+};
+window.NM_FIREBASE = NM_FIREBASE;
