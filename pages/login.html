@@ -52,6 +52,10 @@
     });
     user.role = role; // override mock default
     localStorage.setItem("nm_user", JSON.stringify(user));
+
+    if (role === "leader") NM.joinLanguageGroup("الفرنسية", true);
+    if (role === "member") NM.joinLanguageGroup("العربية (مصرية)", false);
+
     const target = role === "head_leader" ? "dashboard-admin.html" :
                    role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
     location.href = target;

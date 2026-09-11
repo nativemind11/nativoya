@@ -12,7 +12,11 @@
     <h1 class="text-center" style="font-size:1.6rem;">إنشاء حساب جديد</h1>
     <p class="text-center">ثواني وتبقى جزء من مجتمع Nativoya</p>
 
-    <div class="radio-card-group" style="margin-bottom:20px;">
+    <div id="invite-banner" class="hidden card card-compact" style="background:var(--color-pill-bg); border:none; margin-bottom:20px;">
+      <p class="mb-0" style="color:var(--color-pill-text); font-weight:700;" id="invite-banner-text"></p>
+    </div>
+
+    <div class="radio-card-group" style="margin-bottom:20px;" id="path-choice">
       <label class="radio-card">
         <input type="radio" name="path" value="specialist" checked>
         <div><strong>أنا مرشد / متخصص لغة</strong><div class="hint">هستلم مهام حقيقية وأنضم لجروب لغتي</div></div>
@@ -61,9 +65,17 @@
     document.querySelector(`input[name="path"][value="${path}"]`).checked = true;
   }
 
+  const invite = NM.resolveInviteCode(params.get("invite"));
+  if (invite) {
+    document.getElementById("path-choice").classList.add("hidden");
+    document.getElementById("invite-banner").classList.remove("hidden");
+    document.getElementById("invite-banner-text").textContent =
+      `🎉 هتنضم تلقائيًا لجروب ${invite.language} رقم #${invite.groupNumber}`;
+  }
+
   document.getElementById("signup-form").addEventListener("submit", (e) => {
     e.preventDefault();
-    const selectedPath = document.querySelector('input[name="path"]:checked').value;
+    const selectedPath = invite ? "specialist" : document.querySelector('input[name="path"]:checked').value;
     const user = NM.mockSignup({
       firstName: document.getElementById("s-name").value,
       email: document.getElementById("s-email").value,
@@ -71,7 +83,14 @@
       country: document.getElementById("s-country").value,
       path: selectedPath,
     });
-    if (selectedPath === "specialist") {
+
+    if (invite) {
+      // joining an existing leader's group directly — not the language's default group
+      user.language = invite.language;
+      user.groupNumber = invite.groupNumber;
+      localStorage.setItem("nm_user", JSON.stringify(user));
+      location.href = "dashboard-member.html";
+    } else if (selectedPath === "specialist") {
       location.href = "language-select.html";
     } else {
       location.href = "services.html";

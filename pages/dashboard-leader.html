@@ -12,7 +12,7 @@
     <aside class="dash-sidebar">
       <span class="role-tag">ليدر</span>
       <a href="dashboard-leader.html" class="active">🏠 الرئيسية</a>
-      <a href="groups.html">💬 جروبي</a>
+      <a href="my-group.html">💬 جروبي</a>
       <a href="#claim">📥 استلام مهام</a>
       <a href="#roster">👥 أعضاء الجروب</a>
       <a href="#review">✅ مراجعة التسليمات</a>
@@ -21,7 +21,7 @@
 
     <div>
       <h1 style="font-size:1.6rem;" id="welcome-msg">لوحة الليدر</h1>
-      <p class="text-muted">جروب الفرنسية — رقم #7 — 22 عضو</p>
+      <p class="text-muted" id="group-info-line">—</p>
 
       <div class="card" id="claim">
         <h3>مهام متاحة للاستلام (من الهيد ليدر)</h3>
@@ -35,6 +35,14 @@
 
       <div class="card" id="roster" style="margin-top:20px;">
         <h3>أعضاء جروبي</h3>
+        <div class="card card-compact" style="background:var(--color-pill-bg); border:none; margin-bottom:20px;">
+          <p class="mb-0" style="font-weight:700; color:var(--color-pill-text);">🔗 رابط دعوة لجروبك</p>
+          <p class="text-muted" style="font-size:0.85rem;">ابعت الرابط ده لأي حد عايز يشتغل معاك — هيسجل حساب وينضم مباشرة لجروبك انت (مش الجروب الأصلي للغة).</p>
+          <div class="flex gap-8">
+            <input type="text" id="invite-link-input" readonly style="flex:1;">
+            <button class="btn btn-primary" id="copy-invite-btn" style="white-space:nowrap;">نسخ الرابط</button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>الاسم</th><th>مهام مكتملة</th><th>السمعة</th><th>الحالة</th></tr></thead>
@@ -61,6 +69,9 @@
   const user = NM.currentUser();
   if (!user) { location.href = "login.html"; }
   document.getElementById("welcome-msg").textContent = `أهلاً بيك يا ${user.firstName || "ليدر"} 👋`;
+  document.getElementById("group-info-line").textContent = user.language
+    ? `جروب ${user.language} — رقم #${user.groupNumber || "-"}`
+    : "لسه محددتش لغتك — روح اختارها الأول";
 
   document.getElementById("claim-body").innerHTML = [
     ["ترجمة نصوص تسويقية", 60, 100],
@@ -80,13 +91,49 @@
     }
   }
 
-  document.getElementById("roster-body").innerHTML = [
-    ["مريم حسن", 14, 92, "نشط"],
-    ["يوسف كمال", 9, 88, "نشط"],
-    ["نور الدين", 3, 70, "جديد"],
-  ].map(([name, done, rep, status]) => `
-    <tr><td>${name}</td><td>${done}</td><td>${rep}%</td><td><span class="pill">${status}</span></td></tr>
-  `).join("");
+  const rosterKey = `nm_roster_${user.language || "default"}_${user.groupNumber || "0"}`;
+  let roster = JSON.parse(localStorage.getItem(rosterKey) || "null");
+  if (!roster) {
+    roster = [
+      { name: "مريم حسن", done: 14, rep: 92, status: "نشط" },
+      { name: "يوسف كمال", done: 9, rep: 88, status: "نشط" },
+      { name: "نور الدين", done: 3, rep: 70, status: "جديد" },
+    ];
+    localStorage.setItem(rosterKey, JSON.stringify(roster));
+  }
+
+  function renderRoster() {
+    document.getElementById("roster-body").innerHTML = roster.map(m => `
+      <tr><td>${m.name}</td><td>${m.done}</td><td>${m.rep}%</td><td><span class="pill">${m.status}</span></td></tr>
+    `).join("");
+  }
+  renderRoster();
+
+  document.getElementById("add-member-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = document.getElementById("new-member-name").value.trim();
+    if (!name) return;
+    roster.push({ name, done: 0, rep: 100, status: "جديد" });
+    localStorage.setItem(rosterKey, JSON.stringify(roster));
+    renderRoster();
+    e.target.reset();
+  });
+
+  // invite link for this leader's group
+  if (user.language && user.groupNumber) {
+    const link = NM.inviteUrl(user.language, user.groupNumber);
+    const inviteInput = document.getElementById("invite-link-input");
+    inviteInput.value = link;
+    document.getElementById("copy-invite-btn").addEventListener("click", () => {
+      inviteInput.select();
+      navigator.clipboard.writeText(link).then(() => {
+        const btn = document.getElementById("copy-invite-btn");
+        const original = btn.textContent;
+        btn.textContent = "✅ اتنسخ!";
+        setTimeout(() => { btn.textContent = original; }, 1500);
+      });
+    });
+  }
 
   document.getElementById("review-body").innerHTML = [
     ["مريم حسن", "تفريغ صوتي #12", "audio_transcript_12.docx"],

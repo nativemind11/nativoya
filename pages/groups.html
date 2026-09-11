@@ -7,13 +7,13 @@
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-<main class="container section">
+<main class="container section" id="groups-page-main">
   <div class="section-head">
-    <h1>الجروبات</h1>
-    <p>كل لغة ليها جروبات مرقّمة تلقائيًا (زي واتساب لكن جوه المنصة) — نصوص، صور، وملاحظات صوتية.</p>
+    <h1>كل الجروبات — إدارة الهيد ليدر</h1>
+    <p>عرض ومراقبة كل جروبات اللغات وشاتاتها. الصفحة دي متاحة لحسابات الهيد ليدر فقط.</p>
   </div>
 
-  <div class="chat-shell card" style="padding:0;">
+  <div class="chat-shell card" style="padding:0;" id="chat-shell">
     <aside class="chat-groups" id="groups-list"></aside>
     <section class="chat-main">
       <div class="chat-head" id="chat-head">اختر جروب</div>
@@ -33,6 +33,22 @@
 
 <script src="../js/shared.js"></script>
 <script>
+  // Access guard: this master group-monitoring view is head_leader-only.
+  const currentUser = NM.currentUser();
+  if (!currentUser || currentUser.role !== "head_leader") {
+    document.getElementById("groups-page-main").innerHTML = `
+      <div class="card text-center" style="max-width:480px; margin:40px auto;">
+        <div style="font-size:2rem;">🔒</div>
+        <h2 style="font-size:1.3rem;">الوصول مقصور على الهيد ليدر</h2>
+        <p class="text-muted">صفحة إدارة ومراقبة كل الجروبات متاحة فقط لحسابات الهيد ليدر.
+        لو انت عضو أو ليدر، جروبك الخاص موجود في <a href="my-group.html">صفحة جروبي</a>.</p>
+        <a href="login.html" class="btn btn-primary btn-block">تسجيل الدخول</a>
+      </div>`;
+  } else {
+    initGroupsPage();
+  }
+
+  function initGroupsPage() {
   const GROUPS = [
     { id: 1, lang: "العربية (مصرية)", num: 12, members: 48 },
     { id: 2, lang: "الفرنسية", num: 7, members: 22 },
@@ -118,6 +134,7 @@
 
   // open first group by default
   openGroup(GROUPS[0]);
+  }
 </script>
 </body>
 </html>

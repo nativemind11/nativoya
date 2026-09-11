@@ -21,16 +21,7 @@
 
 <script src="../js/shared.js"></script>
 <script>
-  const languages = [
-    { name: "العربية (مصرية)", code: "AR-EG" },
-    { name: "الإنجليزية", code: "EN" },
-    { name: "الفرنسية", code: "FR" },
-    { name: "الإسبانية", code: "ES" },
-    { name: "الألمانية", code: "DE" },
-    { name: "الإيطالية", code: "IT" },
-    { name: "الصينية", code: "ZH" },
-    { name: "الروسية", code: "RU" },
-  ];
+  const languages = NM.LANGUAGES;
   const grid = document.getElementById("lang-grid");
   languages.forEach(l => {
     const btn = document.createElement("button");
@@ -41,20 +32,16 @@
   });
 
   function selectLanguage(lang) {
-    // mock per-language group numbering, persisted in localStorage
-    const key = `nm_group_counter_${lang.code}`;
-    let n = parseInt(localStorage.getItem(key) || "0", 10) + 1;
-    localStorage.setItem(key, n);
-
     const user = NM.currentUser() || {};
-    user.language = lang.name;
-    user.groupNumber = n;
-    localStorage.setItem("nm_user", JSON.stringify(user));
+    const isLeader = user.role === "leader";
+    const result = NM.joinLanguageGroup(lang.name, isLeader);
 
     document.getElementById("group-result").classList.remove("hidden");
-    document.getElementById("group-result-text").textContent =
-      `تم انضمامك إلى جروب ${lang.name} — رقم الجروب #${n} 🎉`;
+    document.getElementById("group-result-text").textContent = result.isNewGroup
+      ? `اتعمل جروب جديد ليك كليدر في ${lang.name} — رقم #${result.groupNumber} 🎉`
+      : `تم انضمامك إلى جروب ${lang.name} — رقم الجروب #${result.groupNumber} 🎉`;
     document.getElementById("continue-btn").classList.remove("hidden");
+    document.getElementById("continue-btn").href = isLeader ? "dashboard-leader.html" : "dashboard-member.html";
     document.getElementById("lang-grid").classList.add("hidden");
   }
 </script>

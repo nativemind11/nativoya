@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>جروبي — Nativoya</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" id="page-main">
+  <div class="section-head">
+    <h1 id="group-heading">جروبي</h1>
+    <p id="group-subheading" class="text-muted">—</p>
+  </div>
+
+  <div class="chat-shell card" style="padding:0; grid-template-columns: 1fr;" id="chat-shell">
+    <section class="chat-main">
+      <div class="chat-head" id="chat-head">—</div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" placeholder="اكتب رسالتك...">
+        <button class="btn btn-secondary" id="attach-btn" title="إرفاق ملف">📎</button>
+        <button class="btn btn-primary" id="send-btn">إرسال</button>
+      </div>
+    </section>
+  </div>
+
+  <p class="text-muted text-center" style="margin-top:16px; font-size:0.85rem;">
+    💬 ده عرض توضيحي (Demo) — الشات الفعلي هيتوصل بـ Firebase Firestore.
+  </p>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const user = NM.currentUser();
+  if (!user) { location.href = "login.html"; }
+  else if (!user.language || !user.groupNumber) {
+    location.href = "language-select.html";
+  } else {
+    initMyGroup();
+  }
+
+  function initMyGroup() {
+    const isLeader = user.role === "leader";
+    document.getElementById("group-heading").textContent = `${user.language} — جروب #${user.groupNumber}`;
+    document.getElementById("group-subheading").textContent = isLeader
+      ? "انت ليدر الجروب ده — تقدر تستلم مهام وتراجع تسليمات أعضائك"
+      : "الجروب الأصلي للغتك — كل رسايلك وتحديثاتك هنا";
+    document.getElementById("chat-head").textContent = `${user.language} — جروب #${user.groupNumber}`;
+
+    const storageKey = `nm_chat_${user.language}_${user.groupNumber}`;
+    let messages = JSON.parse(localStorage.getItem(storageKey) || "null");
+    if (!messages) {
+      messages = isLeader
+        ? [{ me: false, name: "النظام", text: "أهلاً بيك كليدر لجروبك الجديد! دلوقتي تقدر تستلم مهام من لوحة التحكم وتشاركها هنا مع أعضائك." }]
+        : [{ me: false, name: "الليدر", text: `أهلاً بيك في جروب ${user.language}! هنبعتلك المهام والتحديثات هنا أول بأول.` }];
+    }
+
+    function renderMessages() {
+      const wrap = document.getElementById("chat-messages");
+      wrap.innerHTML = "";
+      messages.forEach(m => {
+        const row = document.createElement("div");
+        row.className = "msg-row" + (m.me ? " mine" : "");
+        row.innerHTML = `
+          <div class="msg-avatar">${m.name[0]}</div>
+          <div><div class="msg-bubble">${m.text}</div></div>`;
+        wrap.appendChild(row);
+      });
+      wrap.scrollTop = wrap.scrollHeight;
+    }
+    renderMessages();
+
+    function sendMsg() {
+      const input = document.getElementById("chat-input");
+      if (!input.value.trim()) return;
+      messages.push({ me: true, name: user.firstName || "أنا", text: input.value.trim() });
+      localStorage.setItem(storageKey, JSON.stringify(messages));
+      renderMessages();
+      input.value = "";
+    }
+    document.getElementById("send-btn").addEventListener("click", sendMsg);
+    document.getElementById("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
+    document.getElementById("attach-btn").addEventListener("click", () => {
+      alert("رفع الملفات والصور هيتفعّل بعد ربط Firebase Storage بالكامل.");
+    });
+  }
+</script>
+</body>
+</html>

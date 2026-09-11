@@ -18,7 +18,7 @@ const NM = (() => {
 
   const I18N = {
     ar: {
-      home: "الرئيسية", services: "الخدمات", groups: "الجروبات",
+      home: "الرئيسية", services: "الخدمات", groups: "الجروبات", my_group: "جروبي",
       login: "تسجيل الدخول", signup: "إنشاء حساب", dashboard: "لوحتي",
       footer_tagline: "منصة ترجمة احترافية، وأبواب عمل أونلاين في مجالات لغوية تانية — لكل ناطقي العربية.",
       footer_platform: "المنصة", footer_services: "الخدمات", footer_account: "الحساب",
@@ -60,7 +60,7 @@ const NM = (() => {
       activity_4: "شركة سياحة نشرت مهمة جديدة: مرشد لجولة الأقصر",
     },
     en: {
-      home: "Home", services: "Services", groups: "Groups",
+      home: "Home", services: "Services", groups: "Groups", my_group: "My Group",
       login: "Log in", signup: "Sign up", dashboard: "Dashboard",
       footer_tagline: "A professional translation platform, and a gateway to online-work opportunities in other language fields — for Arabic speakers everywhere.",
       footer_platform: "Platform", footer_services: "Services", footer_account: "Account",
@@ -133,6 +133,12 @@ const NM = (() => {
   }
 
   function renderHeader(activePath) {
+    const user = currentUser();
+    const groupsLink = user && user.role === "head_leader"
+      ? `<li><a href="${rel('pages/groups.html')}" data-i18n="groups">الجروبات</a></li>`
+      : user
+        ? `<li><a href="${rel('pages/my-group.html')}" data-i18n="my_group">جروبي</a></li>`
+        : "";
     const header = document.createElement("header");
     header.className = "site-header";
     header.innerHTML = `
@@ -143,7 +149,7 @@ const NM = (() => {
         <ul class="nav-links">
           <li><a href="${rel('index.html')}" data-i18n="home">الرئيسية</a></li>
           <li><a href="${rel('pages/services.html')}" data-i18n="services">الخدمات</a></li>
-          <li><a href="${rel('pages/groups.html')}" data-i18n="groups">الجروبات</a></li>
+          ${groupsLink}
         </ul>
         <div class="nav-actions">
           <div class="lang-switch" role="group" aria-label="Language">
@@ -160,6 +166,10 @@ const NM = (() => {
   }
 
   function renderFooter() {
+    const user = currentUser();
+    const footerGroupsLink = user && user.role === "head_leader"
+      ? `<li><a href="${rel('pages/groups.html')}" data-i18n="footer_groups">الجروبات</a></li>`
+      : `<li><a href="${rel('pages/my-group.html')}" data-i18n="my_group">جروبي</a></li>`;
     const footer = document.createElement("footer");
     footer.className = "site-footer";
     footer.innerHTML = `
@@ -174,7 +184,7 @@ const NM = (() => {
           <div>
             <h4 data-i18n="footer_platform">المنصة</h4>
             <ul>
-              <li><a href="${rel('pages/groups.html')}" data-i18n="footer_groups">الجروبات</a></li>
+              ${footerGroupsLink}
               <li><a href="${rel('pages/services.html')}" data-i18n="footer_services">الخدمات</a></li>
             </ul>
           </div>
@@ -236,6 +246,70 @@ const NM = (() => {
 
   function mockLogout() { localStorage.removeItem("nm_user"); }
 
+  // ---- language group assignment (members join the ORIGINAL group per
+  // language; leaders always get a brand-new group for that language) ----
+  function joinLanguageGroup(language, isLeader) {
+    const registryKey = `nm_groups_registry_${language}`;
+    let groups = JSON.parse(localStorage.getItem(registryKey) || "[]");
+    if (groups.length === 0) {
+      groups.push(1); // the "original" group for this language
+    }
+    let groupNumber;
+    let isNewGroup = false;
+    if (isLeader) {
+      groupNumber = Math.max(...groups) + 1;
+      groups.push(groupNumber);
+      isNewGroup = true;
+    } else {
+      groupNumber = groups[0]; // everyone else joins the original group
+    }
+    localStorage.setItem(registryKey, JSON.stringify(groups));
+
+    const user = currentUser() || {};
+    user.language = language;
+    user.groupNumber = groupNumber;
+    if (isLeader) user.role = "leader";
+    localStorage.setItem("nm_user", JSON.stringify(user));
+    return { language, groupNumber, isNewGroup };
+  }
+
+  const LANGUAGES = [
+    { name: "العربية (مصرية)", code: "AR-EG" },
+    { name: "الإنجليزية", code: "EN" },
+    { name: "الفرنسية", code: "FR" },
+    { name: "الإسبانية", code: "ES" },
+    { name: "الألمانية", code: "DE" },
+    { name: "الإيطالية", code: "IT" },
+    { name: "الصينية", code: "ZH" },
+    { name: "الروسية", code: "RU" },
+  ];
+
+  // ---- invite links: a leader's group is identified by "<langCode>-<groupNumber>" ----
+  function generateInviteCode(language, groupNumber) {
+    const lang = LANGUAGES.find(l => l.name === language);
+    const code = lang ? lang.code : language;
+    return `${code}-${groupNumber}`;
+  }
+
+  function resolveInviteCode(inviteCode) {
+    if (!inviteCode) return null;
+    const parts = inviteCode.split("-");
+    const groupNumber = parseInt(parts[parts.length - 1], 10);
+    const langCode = parts.slice(0, -1).join("-");
+    const lang = LANGUAGES.find(l => l.code === langCode);
+    if (!lang || !groupNumber) return null;
+    return { language: lang.name, groupNumber };
+  }
+
+  function inviteUrl(language, groupNumber) {
+    const code = generateInviteCode(language, groupNumber);
+    const inPages = location.pathname.includes("/pages/");
+    const base = inPages
+      ? location.href.substring(0, location.href.lastIndexOf("/pages/") + 1) + "pages/"
+      : location.href.substring(0, location.href.lastIndexOf("/") + 1) + "pages/";
+    return `${base}signup.html?invite=${code}`;
+  }
+
   function init(opts = {}) {
     renderHeader();
     renderFooter();
@@ -243,7 +317,7 @@ const NM = (() => {
     document.body.classList.add("nm-ready");
   }
 
-  return { init, setLang, getLang, toggleMobileNav, SERVICES, seedCounters, currentUser, mockSignup, mockLogout, rel, t };
+  return { init, setLang, getLang, toggleMobileNav, SERVICES, LANGUAGES, seedCounters, currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup, generateInviteCode, resolveInviteCode, inviteUrl };
 })();
 
 document.addEventListener("DOMContentLoaded", () => NM.init());
