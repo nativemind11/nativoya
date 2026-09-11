@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nativoya — منصة المرشدين السياحيين وخدمات اللغة</title>
+<meta name="description" content="Nativoya: دليل رسمي للمرشدين السياحيين ومترجمين في مصر، ومنصة خدمات لغة (ترجمة، تفريغ صوتي، دبلجة، توسيم بيانات).">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<a href="#main" class="skip-link">تخطي إلى المحتوى</a>
+
+<main id="main">
+  <!-- HERO -->
+  <section class="hero container">
+    <span class="pill eyebrow-pill">🇪🇬 منصة معتمدة للأدلاء السياحيين ومتخصصي اللغة</span>
+    <h1>مصر بعيون أهلها، ولغاتها بأصوات ناطقيها</h1>
+    <p class="lead">
+      Nativoya بتربط السائحين وشركات السياحة بمرشدين ومترجمين موثوقين داخل مصر،
+      وفي نفس الوقت بتفتح باب لخدمات اللغة (ترجمة، تفريغ صوتي، دبلجة، توسيم بيانات) لكل ناطقي العربية.
+    </p>
+    <div class="hero-actions">
+      <a href="pages/signup.html?path=specialist" class="btn btn-primary">أنا مرشد / متخصص لغة</a>
+      <a href="pages/signup.html?path=tourist" class="btn btn-secondary">أنا سائح / شركة سياحة</a>
+    </div>
+
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card"><div class="num" id="stat-guides">—</div><div class="label">مرشد ومتخصص لغة</div></div>
+      <div class="stat-card"><div class="num" id="stat-languages">—</div><div class="label">لغة متاحة</div></div>
+      <div class="stat-card"><div class="num" id="stat-countries">—</div><div class="label">دولة يوصلها المحتوى</div></div>
+    </div>
+  </section>
+
+  <!-- DUAL CTA -->
+  <section class="container">
+    <div class="dual-cta">
+      <div class="card cta-card">
+        <div class="icon-badge">🧭</div>
+        <h3>للمرشدين ومتخصصي اللغة</h3>
+        <p>سجّل لغتك الأم، انضم لجروب مخصص فيها، واستلم مهام حقيقية (ترجمة، دبلجة، تفريغ صوتي، توسيم بيانات) أو انضم كمرشد سياحي معتمد.</p>
+        <a href="pages/signup.html?path=specialist" class="btn btn-primary btn-block">ابدأ التسجيل</a>
+      </div>
+      <div class="card cta-card">
+        <div class="icon-badge">🧳</div>
+        <h3>للسائحين وشركات السياحة</h3>
+        <p>تصفح دليل معتمد للمرشدين السياحيين والمترجمين في مصر، واحجز اللي يناسب رحلتك وأنت موجود بالفعل في البلد.</p>
+        <a href="pages/services.html" class="btn btn-primary btn-block">تصفح الدليل</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- SERVICES PREVIEW -->
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <h2>خدماتنا</h2>
+        <p>ست خدمات أساسية تحت مظلة Nativoya — كل واحدة ليها صفحة تفصيلية واستمارة تسجيل خاصة بيها.</p>
+      </div>
+      <div class="grid-3" id="services-grid"></div>
+    </div>
+  </section>
+
+  <!-- LIVE ACTIVITY -->
+  <section class="section" style="padding-top:0;">
+    <div class="container grid-2" style="align-items:start;">
+      <div>
+        <h2>نشاط مباشر على المنصة</h2>
+        <p>شوف بنفسك إن المنصة حية ونشطة كل لحظة.</p>
+        <div class="activity-feed" id="activity-feed"></div>
+      </div>
+      <div class="card">
+        <h3>مطابقة ذكية بسيطة</h3>
+        <p class="text-muted">
+          لما شركة سياحة أو عميل ينشر مهمة، النظام بيقترح أنسب مرشد أو متخصص لغة
+          بناءً على اللغة، التخصص، ومعدل السمعة (Reputation Score) — أول نسخة MVP بمنطق بسيط قائم على قواعد،
+          وهنطورها لنموذج ذكاء اصطناعي كامل في المرحلة التالية.
+        </p>
+        <div class="flex gap-8" style="margin-top:14px;">
+          <span class="pill">لغة مطابقة</span>
+          <span class="pill">تخصص مطابق</span>
+          <span class="pill">أعلى سمعة</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="js/shared.js"></script>
+<script>
+  // live counters (mock, ticks upward slightly to feel alive)
+  const stats = NM.seedCounters();
+  document.getElementById("stat-guides").textContent = stats.guides.toLocaleString("ar-EG");
+  document.getElementById("stat-languages").textContent = stats.languages;
+  document.getElementById("stat-countries").textContent = stats.countries;
+
+  // services grid
+  const grid = document.getElementById("services-grid");
+  NM.SERVICES.forEach(s => {
+    const a = document.createElement("a");
+    a.href = `pages/service.html?s=${s.slug}`;
+    a.style.textDecoration = "none";
+    a.innerHTML = `
+      <div class="card">
+        <div class="icon-badge" style="font-size:1.6rem;">${s.icon}</div>
+        <h3 style="margin-top:10px;">${s.ar}</h3>
+        <p class="text-muted" style="margin-bottom:0;">اعرف التفاصيل وسجّل دلوقتي</p>
+      </div>`;
+    grid.appendChild(a);
+  });
+
+  // activity feed (mock)
+  const activities = [
+    "٣ مترجمين جدد انضموا للجروب الفرنسي اليوم",
+    "تم إنجاز ١٢ مهمة تفريغ صوتي خلال آخر ساعة",
+    "مرشد سياحي جديد اتفعّل في جروب الإسبانية",
+    "شركة سياحة نشرت مهمة جديدة: مرشد لجولة الأقصر",
+  ];
+  const feed = document.getElementById("activity-feed");
+  activities.forEach(a => {
+    const div = document.createElement("div");
+    div.className = "activity-item";
+    div.innerHTML = `<span class="dot"></span><span>${a}</span>`;
+    feed.appendChild(div);
+  });
+</script>
+</body>
+</html>
