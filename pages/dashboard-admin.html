@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة الأدمن — Nativoya</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section">
+  <div class="dash-layout">
+    <aside class="dash-sidebar">
+      <span class="role-tag">هيد ليدر</span>
+      <a href="dashboard-admin.html" class="active">🏠 نظرة عامة</a>
+      <a href="#groups">👥 كل الجروبات</a>
+      <a href="#tasks">📋 نشر مهمة</a>
+      <a href="#payments">💸 المدفوعات</a>
+      <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
+    </aside>
+
+    <div>
+      <h1 style="font-size:1.6rem;" id="welcome-msg">لوحة تحكم الهيد ليدر</h1>
+      <p class="text-muted">رؤية كاملة على كل الجروبات، الليدرز، الأعضاء، والمدفوعات.</p>
+
+      <div class="grid-3" style="margin:24px 0;">
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;">34</div><p class="mb-0 text-muted">جروب نشط</p></div>
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;">482</div><p class="mb-0 text-muted">عضو مسجل</p></div>
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-danger);font-weight:800;">7</div><p class="mb-0 text-muted">تحويلات معلّقة</p></div>
+      </div>
+
+      <div class="card" id="tasks">
+        <h3>نشر مهمة جديدة</h3>
+        <form id="task-form" class="grid-2" style="align-items:end;">
+          <div class="field"><label>اسم المهمة</label><input type="text" id="t-name" placeholder="مثال: ترجمة مقالات" required></div>
+          <div class="field"><label>الكمية الإجمالية</label><input type="number" id="t-qty" placeholder="100" required></div>
+          <div class="field" style="grid-column:1/-1;"><label>التعليمات</label><textarea id="t-instructions" placeholder="اشرح المطلوب بالتفصيل..."></textarea></div>
+          <div style="grid-column:1/-1;"><button class="btn btn-primary" type="submit">نشر المهمة لكل الليدرز</button></div>
+        </form>
+      </div>
+
+      <div class="card" id="groups" style="margin-top:20px;">
+        <h3>كل الجروبات</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>اللغة</th><th>رقم الجروب</th><th>الليدر</th><th>الأعضاء</th></tr></thead>
+            <tbody id="all-groups-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Manual payout confirmation — the core payments screen -->
+      <div class="card" id="payments" style="margin-top:20px;">
+        <h3>المدفوعات — تحويلات مستحقة للليدرز</h3>
+        <p class="text-muted">حوّل الفلوس بنفسك من خلال الوسيلة الموضحة، وبعدين دوس "تم التحويل" لتحديث الحالة.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الليدر</th><th>المبلغ</th><th>طريقة الاستلام</th><th>رقم الحساب</th><th>الحالة</th><th></th></tr></thead>
+            <tbody id="payments-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const user = NM.currentUser();
+  if (!user) { location.href = "login.html"; }
+  document.getElementById("welcome-msg").textContent = `أهلاً بيك يا ${user.firstName || "هيد ليدر"} 👋`;
+
+  document.getElementById("task-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    alert("✅ اتنشرت المهمة! دلوقتي بقت متاحة لكل الليدرز يستلموها من لوحاتهم.");
+    e.target.reset();
+  });
+
+  document.getElementById("all-groups-body").innerHTML = [
+    ["العربية (مصرية)", 12, "محمود سعيد", 48],
+    ["الفرنسية", 7, "سارة عبد الله", 22],
+    ["الإسبانية", 3, "كريم فتحي", 15],
+    ["الإنجليزية", 19, "هبة الله عادل", 61],
+  ].map(([lang, num, leader, members]) => `
+    <tr><td>${lang}</td><td>#${num}</td><td>${leader}</td><td>${members}</td></tr>
+  `).join("");
+
+  const PAYOUTS = [
+    { leader: "محمود سعيد", amount: "1,250 ج.م", method: "InstaPay", account: "mahmoud.saeed@instapay", status: "معلّق" },
+    { leader: "سارة عبد الله", amount: "980 ج.م", method: "فودافون كاش", account: "010xxxxxxxx", status: "معلّق" },
+    { leader: "كريم فتحي", amount: "45 $", method: "PayPal", account: "karim.f@paypal.com", status: "معلّق" },
+    { leader: "هبة الله عادل", amount: "2,100 ج.م", method: "اتصالات كاش", account: "011xxxxxxxx", status: "اتحول" },
+  ];
+
+  function renderPayouts() {
+    document.getElementById("payments-body").innerHTML = PAYOUTS.map((p, i) => `
+      <tr>
+        <td>${p.leader}</td>
+        <td>${p.amount}</td>
+        <td>${p.method}</td>
+        <td dir="ltr" style="text-align:end;">${p.account}</td>
+        <td><span class="pill ${p.status === "اتحول" ? "badge-success" : "badge-pending"}">${p.status}</span></td>
+        <td>${p.status === "معلّق"
+          ? `<button class="btn btn-primary" style="padding:6px 14px;" onclick="markPaid(${i})">✅ تم التحويل</button>`
+          : `<span class="text-muted" style="font-size:0.8rem;">تم في ${new Date().toLocaleDateString("ar-EG")}</span>`}
+        </td>
+      </tr>`).join("");
+  }
+  function markPaid(i) { PAYOUTS[i].status = "اتحول"; renderPayouts(); }
+  renderPayouts();
+</script>
+</body>
+</html>

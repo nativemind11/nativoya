@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الخدمات — Nativoya</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section">
+  <div class="section-head">
+    <h1>خدماتنا الست</h1>
+    <p>كل خدمة ليها صفحة تفصيلية، أمثلة، واستمارة تسجيل مخصصة.</p>
+  </div>
+  <div class="grid-3" id="services-grid"></div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const grid = document.getElementById("services-grid");
+  NM.SERVICES.forEach(s => {
+    const a = document.createElement("a");
+    a.href = `service.html?s=${s.slug}`;
+    a.style.textDecoration = "none";
+    a.innerHTML = `
+      <div class="card">
+        <div class="icon-badge" style="font-size:1.6rem;">${s.icon}</div>
+        <h3 style="margin-top:10px;">${s.ar}</h3>
+        <p class="text-muted" style="margin-bottom:0;">اعرف التفاصيل وسجّل دلوقتي</p>
+      </div>`;
+    grid.appendChild(a);
+  });
+</script>
+</body>
+</html>

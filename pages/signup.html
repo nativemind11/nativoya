@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إنشاء حساب — Nativoya</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" style="max-width:480px;">
+  <div class="card">
+    <h1 class="text-center" style="font-size:1.6rem;">إنشاء حساب جديد</h1>
+    <p class="text-center">ثواني وتبقى جزء من مجتمع Nativoya</p>
+
+    <div class="radio-card-group" style="margin-bottom:20px;">
+      <label class="radio-card">
+        <input type="radio" name="path" value="specialist" checked>
+        <div><strong>أنا مرشد / متخصص لغة</strong><div class="hint">هستلم مهام حقيقية وأنضم لجروب لغتي</div></div>
+      </label>
+      <label class="radio-card">
+        <input type="radio" name="path" value="tourist">
+        <div><strong>أنا سائح / شركة سياحة</strong><div class="hint">عايز أحجز مرشد أو مترجم</div></div>
+      </label>
+    </div>
+
+    <form id="signup-form">
+      <div class="field">
+        <label for="s-name">الاسم بالكامل</label>
+        <input type="text" id="s-name" required>
+      </div>
+      <div class="field">
+        <label for="s-email">البريد الإلكتروني</label>
+        <input type="email" id="s-email" required>
+      </div>
+      <div class="field">
+        <label for="s-password">كلمة المرور</label>
+        <input type="password" id="s-password" required minlength="6">
+        <div class="hint">6 أحرف على الأقل</div>
+      </div>
+      <div class="field">
+        <label for="s-whatsapp">رقم واتساب</label>
+        <input type="tel" id="s-whatsapp" required>
+      </div>
+      <div class="field">
+        <label for="s-country">الدولة</label>
+        <input type="text" id="s-country" placeholder="مصر" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">إنشاء الحساب</button>
+    </form>
+    <p class="text-center" style="margin-top:16px;">
+      عندك حساب بالفعل؟ <a href="login.html">سجّل دخول</a>
+    </p>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const path = params.get("path");
+  if (path) {
+    document.querySelector(`input[name="path"][value="${path}"]`).checked = true;
+  }
+
+  document.getElementById("signup-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const selectedPath = document.querySelector('input[name="path"]:checked').value;
+    const user = NM.mockSignup({
+      firstName: document.getElementById("s-name").value,
+      email: document.getElementById("s-email").value,
+      whatsappNumber: document.getElementById("s-whatsapp").value,
+      country: document.getElementById("s-country").value,
+      path: selectedPath,
+    });
+    if (selectedPath === "specialist") {
+      location.href = "language-select.html";
+    } else {
+      location.href = "services.html";
+    }
+  });
+</script>
+</body>
+</html>

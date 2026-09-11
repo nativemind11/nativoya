@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة العضو — Nativoya</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section">
+  <div class="dash-layout">
+    <aside class="dash-sidebar">
+      <span class="role-tag">عضو</span>
+      <a href="dashboard-member.html" class="active">🏠 الرئيسية</a>
+      <a href="groups.html">💬 جروبي</a>
+      <a href="#tasks">📋 المهام</a>
+      <a href="#certs">🏆 الشهادات</a>
+      <a href="#profile">👤 الملف الشخصي</a>
+      <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
+    </aside>
+
+    <div>
+      <h1 id="welcome-msg" style="font-size:1.6rem;">أهلاً بيك 👋</h1>
+      <p class="text-muted" id="group-info">—</p>
+
+      <div class="grid-3" style="margin:24px 0;">
+        <div class="card card-compact text-center"><div class="num heading-font" style="font-size:1.8rem;color:var(--color-primary-blue);">5</div><p class="mb-0 text-muted">مهام متاحة</p></div>
+        <div class="card card-compact text-center"><div class="num heading-font" style="font-size:1.8rem;color:var(--color-primary-blue);">12</div><p class="mb-0 text-muted">مهام مكتملة</p></div>
+        <div class="card card-compact text-center"><div class="num heading-font" style="font-size:1.8rem;color:var(--color-primary-blue);">3</div><p class="mb-0 text-muted">شهادات</p></div>
+      </div>
+
+      <div class="card" id="tasks">
+        <h3>مهام متاحة</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>المهمة</th><th>الكمية</th><th>الحالة</th><th></th></tr></thead>
+            <tbody id="tasks-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="certs" style="margin-top:20px;">
+        <h3>شهاداتي</h3>
+        <div class="grid-3" id="certs-grid"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const user = NM.currentUser();
+  if (!user) { location.href = "login.html"; }
+  document.getElementById("welcome-msg").textContent = `أهلاً بيك يا ${user.firstName || "عضو"} 👋`;
+  document.getElementById("group-info").textContent = user.language
+    ? `عضو في جروب ${user.language} — رقم #${user.groupNumber || "-"}`
+    : "لسه محددتش لغتك — روح اختارها الأول";
+
+  const TASKS = [
+    { name: "تفريغ صوتي — حلقة بودكاست", qty: 25, status: "متاحة" },
+    { name: "ترجمة نص تسويقي", qty: 10, status: "متاحة" },
+    { name: "توسيم صور منتجات", qty: 100, status: "مستلمة" },
+  ];
+  const body = document.getElementById("tasks-body");
+  TASKS.forEach(t => {
+    const badgeClass = t.status === "متاحة" ? "badge-success" : "badge-pending";
+    body.innerHTML += `
+      <tr>
+        <td>${t.name}</td>
+        <td>${t.qty}</td>
+        <td><span class="pill ${badgeClass}">${t.status}</span></td>
+        <td><button class="btn btn-secondary" style="padding:6px 14px;">${t.status === "متاحة" ? "استلام" : "متابعة"}</button></td>
+      </tr>`;
+  });
+
+  const certs = ["تفريغ صوتي", "ترجمة", "توسيم بيانات"];
+  const certsGrid = document.getElementById("certs-grid");
+  certs.forEach(c => {
+    certsGrid.innerHTML += `
+      <div class="card card-compact text-center">
+        <div style="font-size:1.6rem;">🏆</div>
+        <p class="mb-0" style="font-weight:700;">${c}</p>
+        <p class="text-muted" style="font-size:0.78rem;">شهادة إتمام</p>
+      </div>`;
+  });
+</script>
+</body>
+</html>

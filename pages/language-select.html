@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>اختيار اللغة — Nativoya</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" style="max-width:520px;">
+  <div class="card text-center">
+    <h1 style="font-size:1.5rem;">إيه هي لغتك الأم؟</h1>
+    <p>هننضمك تلقائيًا لجروب اللغة دي — هتشوف رقم الجروب على طول.</p>
+    <div id="lang-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin:20px 0;"></div>
+    <div id="group-result" class="hidden card card-compact" style="background:var(--color-pill-bg); border:none;">
+      <p class="mb-0" style="color:var(--color-pill-text); font-weight:700;" id="group-result-text"></p>
+    </div>
+    <a href="dashboard-member.html" class="btn btn-primary btn-block hidden" id="continue-btn" style="margin-top:16px;">الدخول للوحة التحكم</a>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const languages = [
+    { name: "العربية (مصرية)", code: "AR-EG" },
+    { name: "الإنجليزية", code: "EN" },
+    { name: "الفرنسية", code: "FR" },
+    { name: "الإسبانية", code: "ES" },
+    { name: "الألمانية", code: "DE" },
+    { name: "الإيطالية", code: "IT" },
+    { name: "الصينية", code: "ZH" },
+    { name: "الروسية", code: "RU" },
+  ];
+  const grid = document.getElementById("lang-grid");
+  languages.forEach(l => {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-secondary";
+    btn.innerHTML = `<span class="pill-code">${l.code}</span> ${l.name}`;
+    btn.onclick = () => selectLanguage(l);
+    grid.appendChild(btn);
+  });
+
+  function selectLanguage(lang) {
+    // mock per-language group numbering, persisted in localStorage
+    const key = `nm_group_counter_${lang.code}`;
+    let n = parseInt(localStorage.getItem(key) || "0", 10) + 1;
+    localStorage.setItem(key, n);
+
+    const user = NM.currentUser() || {};
+    user.language = lang.name;
+    user.groupNumber = n;
+    localStorage.setItem("nm_user", JSON.stringify(user));
+
+    document.getElementById("group-result").classList.remove("hidden");
+    document.getElementById("group-result-text").textContent =
+      `تم انضمامك إلى جروب ${lang.name} — رقم الجروب #${n} 🎉`;
+    document.getElementById("continue-btn").classList.remove("hidden");
+    document.getElementById("lang-grid").classList.add("hidden");
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة الليدر — Nativoya</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section">
+  <div class="dash-layout">
+    <aside class="dash-sidebar">
+      <span class="role-tag">ليدر</span>
+      <a href="dashboard-leader.html" class="active">🏠 الرئيسية</a>
+      <a href="groups.html">💬 جروبي</a>
+      <a href="#claim">📥 استلام مهام</a>
+      <a href="#roster">👥 أعضاء الجروب</a>
+      <a href="#review">✅ مراجعة التسليمات</a>
+      <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
+    </aside>
+
+    <div>
+      <h1 style="font-size:1.6rem;" id="welcome-msg">لوحة الليدر</h1>
+      <p class="text-muted">جروب الفرنسية — رقم #7 — 22 عضو</p>
+
+      <div class="card" id="claim">
+        <h3>مهام متاحة للاستلام (من الهيد ليدر)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>المهمة</th><th>المتبقي</th><th>الكمية المطلوبة</th><th></th></tr></thead>
+            <tbody id="claim-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="roster" style="margin-top:20px;">
+        <h3>أعضاء جروبي</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الاسم</th><th>مهام مكتملة</th><th>السمعة</th><th>الحالة</th></tr></thead>
+            <tbody id="roster-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="review" style="margin-top:20px;">
+        <h3>تسليمات بانتظار المراجعة</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>العضو</th><th>المهمة</th><th>الملف</th><th></th></tr></thead>
+            <tbody id="review-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const user = NM.currentUser();
+  if (!user) { location.href = "login.html"; }
+  document.getElementById("welcome-msg").textContent = `أهلاً بيك يا ${user.firstName || "ليدر"} 👋`;
+
+  document.getElementById("claim-body").innerHTML = [
+    ["ترجمة نصوص تسويقية", 60, 100],
+    ["تفريغ صوتي — محاضرات", 15, 50],
+  ].map(([name, remaining, total]) => `
+    <tr>
+      <td>${name}</td>
+      <td>${remaining}</td>
+      <td>${total}</td>
+      <td><button class="btn btn-primary" style="padding:6px 14px;" onclick="claimTask(this)">استلام</button></td>
+    </tr>`).join("");
+
+  function claimTask(btn) {
+    const qty = prompt("كام وحدة عايز تستلم لجروبك؟", "10");
+    if (qty) {
+      btn.outerHTML = `<span class="pill badge-success">استُلمت (${qty})</span>`;
+    }
+  }
+
+  document.getElementById("roster-body").innerHTML = [
+    ["مريم حسن", 14, 92, "نشط"],
+    ["يوسف كمال", 9, 88, "نشط"],
+    ["نور الدين", 3, 70, "جديد"],
+  ].map(([name, done, rep, status]) => `
+    <tr><td>${name}</td><td>${done}</td><td>${rep}%</td><td><span class="pill">${status}</span></td></tr>
+  `).join("");
+
+  document.getElementById("review-body").innerHTML = [
+    ["مريم حسن", "تفريغ صوتي #12", "audio_transcript_12.docx"],
+    ["يوسف كمال", "ترجمة #45", "translation_45.pdf"],
+  ].map(([name, task, file]) => `
+    <tr>
+      <td>${name}</td><td>${task}</td>
+      <td><a href="#">${file}</a></td>
+      <td>
+        <button class="btn btn-secondary" style="padding:6px 12px;" onclick="this.closest('tr').remove()">✅ موافقة</button>
+      </td>
+    </tr>`).join("");
+</script>
+</body>
+</html>
