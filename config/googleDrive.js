@@ -2,7 +2,10 @@ const { google } = require("googleapis");
 const { pool } = require("../db/pool");
 
 const ROOT_FOLDER_NAME = "Nativoya — Task Submissions";
-const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
+const SCOPES = [
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/userinfo.email",
+];
 
 function makeOAuthClient() {
   return new google.auth.OAuth2(
@@ -27,19 +30,25 @@ function getAuthUrl() {
 async function saveTokensFromCode(code) {
   const client = makeOAuthClient();
   const { tokens } = await client.getToken(code);
-
   client.setCredentials(tokens);
-  const oauth2 = google.oauth2({ version: "v2", auth: client });
-  const { data: profile } = await oauth2.userinfo.get();
+
+  let email = "غير معروف";
+  try {
+    const oauth2 = google.oauth2({ version: "v2", auth: client });
+    const { data: profile } = await oauth2.userinfo.get();
+    email = profile.email || email;
+  } catch (err) {
+    console.warn("Could not fetch connected account's email (non-fatal):", err.message);
+  }
 
   await pool.query("DELETE FROM google_auth");
   await pool.query(
     `INSERT INTO google_auth (account_email, access_token, refresh_token, expiry_date)
      VALUES ($1, $2, $3, $4)`,
-    [profile.email, tokens.access_token, tokens.refresh_token, tokens.expiry_date]
+    [email, tokens.access_token, tokens.refresh_token, tokens.expiry_date]
   );
 
-  return profile.email;
+  return email;
 }
 
 // Loads the saved tokens and returns a ready-to-use, auto-refreshing client.
