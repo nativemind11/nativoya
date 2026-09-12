@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const { pool } = require("../db/pool");
 const { requireAuth, requireRole } = require("../config/auth");
 const driveService = require("../config/googleDrive");
+const firebaseAdmin = require("../config/firebaseAdmin");
 
 const router = express.Router();
 
@@ -111,6 +112,29 @@ router.get("/google/callback", async (req, res) => {
 router.get("/google/status", requireAuth, requireRole("head_leader"), async (req, res) => {
   const email = await driveService.isConnected();
   res.json({ connected: Boolean(email), email: email || null });
+});
+
+// GET /api/auth/firebase-token — lets a logged-in user (via our own JWT)
+// also sign into Firebase Auth, so Firestore Security Rules can trust who
+// they are (role + which group they belong to) without a separate login.
+router.get("/firebase-token", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT role, group_id FROM users WHERE id = $1", [req.user.id]);
+    if (!result.rows.length) return res.status(404).json({ error: "User not found" });
+    const { role, group_id } = result.rows[0];
+
+    const token = await firebaseAdmin.mintCustomToken(req.user.id, {
+      role,
+      groupId: group_id || null,
+    });
+    res.json({ token, groupId: group_id || null });
+  } catch (err) {
+    console.error(err);
+    if (err.code === "FIREBASE_NOT_CONFIGURED") {
+      return res.status(503).json({ error: "الشات لسه مش متصل بالسيرفر — لازم تُضاف بيانات Firebase الأول." });
+    }
+    res.status(500).json({ error: "Could not start a chat session" });
+  }
 });
 
 function signToken(user) {

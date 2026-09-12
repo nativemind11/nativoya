@@ -27,17 +27,24 @@
   </div>
 
   <p class="text-muted text-center" style="margin-top:16px; font-size:0.85rem;">
-    💬 ده عرض توضيحي (Demo) — الشات الفعلي هيتوصل بـ Firebase Firestore.
+    💬 شات حقيقي متصل بـ Firebase — الرسايل بتوصل لحظيًا لكل أعضاء جروبك.
   </p>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
 <script src="../js/shared.js"></script>
+<script src="../js/chat.js"></script>
 <script>
-  const user = NM.currentUser();
+  let user = NM.currentUser();
   if (!user) { location.href = "login.html"; }
-  else if (!user.language || !user.groupNumber) {
-    location.href = "language-select.html";
-  } else {
+  else { init(); }
+
+  async function init() {
+    try { user = await NM.apiRefreshMe(); } catch (_) {}
+    if (!user.language || !user.groupNumber) { location.href = "language-select.html"; return; }
     initMyGroup();
   }
 
@@ -48,44 +55,53 @@
       ? "انت ليدر الجروب ده — تقدر تستلم مهام وتراجع تسليمات أعضائك"
       : "الجروب الأصلي للغتك — كل رسايلك وتحديثاتك هنا";
     document.getElementById("chat-head").textContent = `${user.language} — جروب #${user.groupNumber}`;
-
-    const storageKey = `nm_chat_${user.language}_${user.groupNumber}`;
-    let messages = JSON.parse(localStorage.getItem(storageKey) || "null");
-    if (!messages) {
-      messages = isLeader
-        ? [{ me: false, name: "النظام", text: "أهلاً بيك كليدر لجروبك الجديد! دلوقتي تقدر تستلم مهام من لوحة التحكم وتشاركها هنا مع أعضائك." }]
-        : [{ me: false, name: "الليدر", text: `أهلاً بيك في جروب ${user.language}! هنبعتلك المهام والتحديثات هنا أول بأول.` }];
-    }
-
-    function renderMessages() {
-      const wrap = document.getElementById("chat-messages");
-      wrap.innerHTML = "";
-      messages.forEach(m => {
-        const row = document.createElement("div");
-        row.className = "msg-row" + (m.me ? " mine" : "");
-        row.innerHTML = `
-          <div class="msg-avatar">${m.name[0]}</div>
-          <div><div class="msg-bubble">${m.text}</div></div>`;
-        wrap.appendChild(row);
-      });
-      wrap.scrollTop = wrap.scrollHeight;
-    }
-    renderMessages();
-
-    function sendMsg() {
-      const input = document.getElementById("chat-input");
-      if (!input.value.trim()) return;
-      messages.push({ me: true, name: user.firstName || "أنا", text: input.value.trim() });
-      localStorage.setItem(storageKey, JSON.stringify(messages));
-      renderMessages();
-      input.value = "";
-    }
-    document.getElementById("send-btn").addEventListener("click", sendMsg);
-    document.getElementById("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
-    document.getElementById("attach-btn").addEventListener("click", () => {
-      alert("رفع الملفات والصور هيتفعّل بعد ربط Firebase Storage بالكامل.");
-    });
+    connectChat();
   }
+
+  async function connectChat() {
+    const wrap = document.getElementById("chat-messages");
+    wrap.innerHTML = `<p class="text-muted" style="padding:16px;">جاري الاتصال بالشات...</p>`;
+    try {
+      await NMChat.ensureFirebaseAuth();
+      NMChat.listenToGroup(user.groupId, renderMessages, (err) => {
+        wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر تحميل الرسايل: ${err.message}</p>`;
+      });
+    } catch (err) {
+      wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر الاتصال بالشات: ${err.message}</p>`;
+    }
+  }
+
+  function renderMessages(messages) {
+    const wrap = document.getElementById("chat-messages");
+    const myUid = NMChat.currentUid();
+    wrap.innerHTML = messages.length
+      ? messages.map(m => `
+          <div class="msg-row${m.senderId === myUid ? " mine" : ""}">
+            <div class="msg-avatar">${(m.senderName || "?")[0]}</div>
+            <div><div class="msg-bubble">${escapeHtml(m.text)}</div></div>
+          </div>`).join("")
+      : `<p class="text-muted" style="padding:16px;">لسه مفيش رسايل — ابدأ المحادثة!</p>`;
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function sendMsg() {
+    const input = document.getElementById("chat-input");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    NMChat.sendMessage(user.groupId, text, user.firstName || "عضو").catch(err => alert(err.message));
+  }
+  document.getElementById("send-btn").addEventListener("click", sendMsg);
+  document.getElementById("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
+  document.getElementById("attach-btn").addEventListener("click", () => {
+    alert("رفع الملفات في الشات هيتفعّل قريب — لحد دلوقتي تقدر ترفع ملفات المهام من لوحة التحكم بتاعتك.");
+  });
 </script>
 </body>
 </html>

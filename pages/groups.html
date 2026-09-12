@@ -28,11 +28,16 @@
   </div>
 
   <p class="text-muted text-center" style="margin-top:16px; font-size:0.85rem;">
-    💬 ده عرض توضيحي (Demo) للواجهة — الشات الفعلي هيتوصل بـ Firebase Firestore للرسائل الحقيقية بين الأعضاء.
+    💬 شات حقيقي متصل بـ Firebase — بتقدر تراقب وتبعت في أي جروب مباشرة.
   </p>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
 <script src="../js/shared.js"></script>
+<script src="../js/chat.js"></script>
 <script>
   // Access guard: this master group-monitoring view is head_leader-only.
   const currentUser = NM.currentUser();
@@ -49,71 +54,73 @@
     initGroupsPage();
   }
 
-  function initGroupsPage() {
-  const GROUPS = [
-    { id: 1, lang: "العربية (مصرية)", num: 12, members: 48 },
-    { id: 2, lang: "الفرنسية", num: 7, members: 22 },
-    { id: 3, lang: "الإسبانية", num: 3, members: 15 },
-    { id: 4, lang: "الإنجليزية", num: 19, members: 61 },
-    { id: 5, lang: "الألمانية", num: 4, members: 9 },
-  ];
-
-  const MOCK_MESSAGES = {
-    1: [
-      { me: false, name: "سارة", text: "صباح الخير يا جماعة! فيه مهمة تفريغ صوتي جديدة النهاردة" },
-      { me: false, name: "كريم", text: "تمام، هبدأ فيها دلوقتي" },
-      { me: true, name: "أنا", text: "تمام يا فندم، وصلتني" },
-    ],
-    2: [
-      { me: false, name: "Marie", text: "Bonjour tout le monde 👋" },
-      { me: true, name: "أنا", text: "Salut! Une nouvelle tâche est disponible" },
-    ],
-    3: [{ me: false, name: "Carlos", text: "¿Alguien probó la nueva tarea de subtitulado?" }],
-    4: [{ me: false, name: "John", text: "New transcription batch just dropped, check the group tasks tab." }],
-    5: [{ me: false, name: "Klaus", text: "Willkommen in der Gruppe!" }],
-  };
-
-  const listEl = document.getElementById("groups-list");
-  GROUPS.forEach(g => {
-    const div = document.createElement("div");
-    div.className = "group-item";
-    div.dataset.id = g.id;
-    div.innerHTML = `
-      <div class="avatar">${g.lang[0]}</div>
-      <div>
-        <div style="font-weight:700; font-size:0.9rem;">${g.lang} — جروب #${g.num}</div>
-        <div class="text-muted" style="font-size:0.78rem;">${g.members} عضو</div>
-      </div>`;
-    div.addEventListener("click", () => openGroup(g));
-    listEl.appendChild(div);
-  });
-
   let activeGroup = null;
-  function openGroup(g) {
+  let unsubscribe = null;
+
+  async function initGroupsPage() {
+    const listEl = document.getElementById("groups-list");
+    try {
+      const groups = await NM.apiGetGroups();
+      if (!groups.length) {
+        listEl.innerHTML = `<p class="text-muted" style="padding:16px;">مفيش جروبات لسه</p>`;
+        return;
+      }
+      listEl.innerHTML = "";
+      groups.forEach(g => {
+        const div = document.createElement("div");
+        div.className = "group-item";
+        div.dataset.id = g.id;
+        div.innerHTML = `
+          <div class="avatar">${g.language[0]}</div>
+          <div>
+            <div style="font-weight:700; font-size:0.9rem;">${g.language} — جروب #${g.group_number}</div>
+            <div class="text-muted" style="font-size:0.78rem;">${g.leader_name || "بدون ليدر"} · ${g.member_count} عضو</div>
+          </div>`;
+        div.addEventListener("click", () => openGroup(g));
+        listEl.appendChild(div);
+      });
+      openGroup(groups[0]);
+    } catch (err) {
+      listEl.innerHTML = `<p class="text-muted" style="padding:16px; color:#e0245e;">${err.message}</p>`;
+    }
+  }
+
+  async function openGroup(g) {
     activeGroup = g;
-    document.querySelectorAll(".group-item").forEach(el => el.classList.toggle("active", +el.dataset.id === g.id));
-    document.getElementById("chat-head").textContent = `${g.lang} — جروب #${g.num}`;
-    renderMessages();
+    document.querySelectorAll(".group-item").forEach(el => el.classList.toggle("active", el.dataset.id === g.id));
+    document.getElementById("chat-head").textContent = `${g.language} — جروب #${g.group_number}`;
+
+    const wrap = document.getElementById("chat-messages");
+    wrap.innerHTML = `<p class="text-muted" style="padding:16px;">جاري تحميل الرسايل...</p>`;
+    if (unsubscribe) unsubscribe();
+
+    try {
+      await NMChat.ensureFirebaseAuth();
+      unsubscribe = NMChat.listenToGroup(g.id, renderMessages, (err) => {
+        wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر تحميل الرسايل: ${err.message}</p>`;
+      });
+    } catch (err) {
+      wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر الاتصال بالشات: ${err.message}</p>`;
+    }
   }
 
-  function renderMessages() {
+  function renderMessages(messages) {
     const wrap = document.getElementById("chat-messages");
-    wrap.innerHTML = "";
-    (MOCK_MESSAGES[activeGroup.id] || []).forEach(m => addBubble(m));
+    const myUid = NMChat.currentUid();
+    wrap.innerHTML = messages.length
+      ? messages.map(m => `
+          <div class="msg-row${m.senderId === myUid ? " mine" : ""}">
+            <div class="msg-avatar">${(m.senderName || "?")[0]}</div>
+            <div><div class="msg-bubble">${escapeHtml(m.text)}</div></div>
+          </div>`).join("")
+      : `<p class="text-muted" style="padding:16px;">لسه مفيش رسايل في الجروب ده</p>`;
     wrap.scrollTop = wrap.scrollHeight;
   }
 
-  function addBubble(m) {
-    const wrap = document.getElementById("chat-messages");
-    const row = document.createElement("div");
-    row.className = "msg-row" + (m.me ? " mine" : "");
-    row.innerHTML = `
-      <div class="msg-avatar">${m.name[0]}</div>
-      <div>
-        <div class="msg-bubble">${m.text}</div>
-      </div>`;
-    wrap.appendChild(row);
-    wrap.scrollTop = wrap.scrollHeight;
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
   }
 
   document.getElementById("send-btn").addEventListener("click", sendMsg);
@@ -121,21 +128,15 @@
   function sendMsg() {
     if (!activeGroup) { alert("اختر جروب الأول"); return; }
     const input = document.getElementById("chat-input");
-    if (!input.value.trim()) return;
-    const msg = { me: true, name: "أنا", text: input.value.trim() };
-    MOCK_MESSAGES[activeGroup.id] = MOCK_MESSAGES[activeGroup.id] || [];
-    MOCK_MESSAGES[activeGroup.id].push(msg);
-    addBubble(msg);
+    const text = input.value.trim();
+    if (!text) return;
     input.value = "";
+    NMChat.sendMessage(activeGroup.id, text, "الهيد ليدر").catch(err => alert(err.message));
   }
 
   document.getElementById("attach-btn").addEventListener("click", () => {
-    alert("رفع الملفات والصور هيتفعّل بعد ربط Firebase Storage بالكامل.");
+    alert("رفع الملفات في الشات هيتفعّل قريب.");
   });
-
-  // open first group by default
-  openGroup(GROUPS[0]);
-  }
 </script>
 </body>
 </html>
