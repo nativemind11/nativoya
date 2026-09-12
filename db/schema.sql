@@ -89,6 +89,7 @@ CREATE TABLE tasks (
   instructions    TEXT,
   total_quantity  INTEGER NOT NULL,
   created_by      UUID NOT NULL REFERENCES users(id), -- head_leader
+  drive_folder_id TEXT,                                -- this task's Google Drive folder
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -133,6 +134,20 @@ CREATE TABLE payments (
   released_by         UUID REFERENCES users(id),            -- head_leader who clicked "Transferred"
   released_at         TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- --------------------------------------------------------------------------
+-- GOOGLE DRIVE — one connected account (the head_leader's) owns the Drive
+-- that every task's submission folder lives in.
+-- --------------------------------------------------------------------------
+CREATE TABLE google_auth (
+  id              SERIAL PRIMARY KEY,
+  account_email   TEXT NOT NULL,
+  access_token    TEXT,
+  refresh_token   TEXT NOT NULL,
+  expiry_date     BIGINT,
+  root_folder_id  TEXT,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- --------------------------------------------------------------------------

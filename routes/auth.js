@@ -2,7 +2,8 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../db/pool");
-const { requireAuth } = require("../config/auth");
+const { requireAuth, requireRole } = require("../config/auth");
+const driveService = require("../config/googleDrive");
 
 const router = express.Router();
 
@@ -70,12 +71,46 @@ router.get("/me", requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/auth/google/callback
-// Placeholder for the real Google OAuth flow (Drive + Sheets access for the
-// head_leader account). Requires GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET /
-// GOOGLE_REDIRECT_URI to be set in .env before this is wired up.
-router.get("/google/callback", (req, res) => {
-  res.status(501).json({ error: "Google OAuth not yet configured. See .env.example." });
+// GET /api/auth/google/connect?token=...  (head_leader only)
+// This is opened as a plain link (not a fetch call), so the token can't ride
+// in an Authorization header — it comes as a query param instead.
+router.get("/google/connect", (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(401).send("Missing token");
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.role !== "head_leader") return res.status(403).send("Forbidden — head_leader only");
+  } catch (err) {
+    return res.status(401).send("Invalid or expired token");
+  }
+  res.redirect(driveService.getAuthUrl());
+});
+
+// GET /api/auth/google/callback — Google redirects here after consent
+router.get("/google/callback", async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.status(400).send(`Google returned an error: ${error}`);
+  if (!code) return res.status(400).send("Missing ?code from Google.");
+
+  try {
+    const email = await driveService.saveTokensFromCode(code);
+    res.send(`
+      <div style="font-family:sans-serif; padding:40px; text-align:center;">
+        <h2>✅ اتوصل جوجل درايف بنجاح</h2>
+        <p>الحساب المتصل: <b>${email}</b></p>
+        <p>تقدر تقفل الصفحة دي وترجع للوحة الأدمن.</p>
+      </div>
+    `);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Could not complete Google connection: " + err.message);
+  }
+});
+
+// GET /api/auth/google/status  (head_leader only) — is Drive connected?
+router.get("/google/status", requireAuth, requireRole("head_leader"), async (req, res) => {
+  const email = await driveService.isConnected();
+  res.json({ connected: Boolean(email), email: email || null });
 });
 
 function signToken(user) {

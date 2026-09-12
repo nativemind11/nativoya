@@ -104,7 +104,10 @@
             <tr>
               <td>${c.title}</td>
               <td>${c.remaining_in_claim}</td>
-              <td><button class="btn btn-secondary" style="padding:6px 14px;" onclick="submitWork('${c.claim_id}', this)">تسليم عمل</button></td>
+              <td>
+                <input type="file" id="file-${c.claim_id}" class="hidden" onchange="submitWork('${c.claim_id}', this)">
+                <button class="btn btn-secondary" style="padding:6px 14px;" onclick="document.getElementById('file-${c.claim_id}').click()">📎 تسليم عمل</button>
+              </td>
             </tr>`).join("")
         : `<tr><td colspan="3" class="text-muted">مفيش مهام متاحة لجروبك دلوقتي — استنى الليدر يستلم مهام جديدة</td></tr>`;
     } catch (err) {
@@ -126,19 +129,20 @@
     } catch (err) { /* non-critical */ }
   }
 
-  // Drive upload isn't wired up yet, so for now the member pastes a link to
-  // the file (Google Drive / WeTransfer / etc.) — this will be replaced by a
-  // real upload-to-Drive flow once that integration is built.
-  async function submitWork(claimId, btn) {
-    const fileUrl = prompt("حط رابط الملف (Google Drive أو أي رابط تاني):");
-    if (!fileUrl) return;
-    btn.disabled = true;
+  // Uploads straight to that task's Google Drive folder — no manual
+  // link-pasting. If a head_leader hasn't connected Drive yet, the backend
+  // returns a clear Arabic error explaining that.
+  async function submitWork(claimId, inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+    inputEl.disabled = true;
     try {
-      await NM.apiSubmitFile(claimId, fileUrl);
+      await NM.apiUploadSubmission(claimId, file);
       await Promise.all([loadAvailableTasks(), loadMySubmissions()]);
     } catch (err) {
       alert(err.message);
-      btn.disabled = false;
+      inputEl.disabled = false;
+      inputEl.value = "";
     }
   }
 

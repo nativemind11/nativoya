@@ -30,7 +30,14 @@
         <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-danger);font-weight:800;" id="stat-pending">—</div><p class="mb-0 text-muted">تحويلات معلّقة</p></div>
       </div>
 
-      <div class="card" id="tasks">
+      <div class="card" id="drive" style="margin-top:20px;">
+        <h3>جوجل درايف — رفع ملفات المهام</h3>
+        <p class="text-muted">لازم واحد من الهيد ليدرز يوصّل حساب Google Drive بتاعه مرة واحدة، وبعدها كل مهمة بتتنشر بياخد فولدر لوحده تلقائيًا يترفع فيه كل تسليمات الأعضاء.</p>
+        <p id="drive-status">جاري التحقق...</p>
+        <a id="drive-connect-btn" class="btn btn-primary hidden" target="_blank" rel="noopener">وصّل جوجل درايف</a>
+      </div>
+
+      <div class="card" id="tasks" style="margin-top:20px;">
         <h3>نشر مهمة جديدة</h3>
         <p id="task-error" class="hint" style="color:#e0245e; display:none;"></p>
         <form id="task-form" class="grid-2" style="align-items:end;">
@@ -265,9 +272,28 @@
     }
   }
 
+  async function loadDriveStatus() {
+    try {
+      const status = await NM.apiGetGoogleStatus();
+      const statusEl = document.getElementById("drive-status");
+      const btn = document.getElementById("drive-connect-btn");
+      if (status.connected) {
+        statusEl.innerHTML = `<span class="pill badge-success">✅ متصل بحساب: ${status.email}</span>`;
+        btn.classList.add("hidden");
+      } else {
+        statusEl.innerHTML = `<span class="pill badge-pending">⚠️ مش متصل لسه</span>`;
+        btn.href = NM.apiGoogleConnectUrl();
+        btn.classList.remove("hidden");
+      }
+    } catch (err) {
+      document.getElementById("drive-status").textContent = err.message;
+    }
+  }
+
   loadGroups();
   loadPayments();
   loadLeaderRequests();
+  loadDriveStatus();
 </script>
 </body>
 </html>

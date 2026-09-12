@@ -219,6 +219,33 @@ const NM = (() => {
   function apiGetGroups() { return apiFetch("/api/groups"); }
   function apiGetRoster() { return apiFetch("/api/groups/roster"); }
 
+  // FormData upload — can't reuse apiFetch since it always forces JSON headers
+  async function apiUploadSubmission(claimId, file) {
+    const token = authToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    let res;
+    try {
+      res = await fetch(`${API_BASE_URL}/api/tasks/claims/${claimId}/upload`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+    } catch (err) {
+      throw new Error("تعذر الوصول للسيرفر. تأكد إن رابط الباك إند صحيح وشغال.");
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) throw new Error((data && data.error) || `فشل رفع الملف (${res.status})`);
+    return data;
+  }
+
+  function apiGetGoogleStatus() { return apiFetch("/api/auth/google/status"); }
+  function apiGoogleConnectUrl() {
+    const token = authToken();
+    return `${API_BASE_URL}/api/auth/google/connect?token=${encodeURIComponent(token || "")}`;
+  }
+
   // ---- payments (head_leader only) ----
   function apiGetPendingPayments() { return apiFetch("/api/payments/pending"); }
   function apiCreatePayment({ recipientId, amount, currency, payoutMethod, payoutIdentifier }) {
@@ -459,10 +486,11 @@ const NM = (() => {
     // real API
     apiSignup, apiLogin, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
     apiGetOpenTasks, apiCreateTask, apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
-    apiSubmitFile, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
+    apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
     apiGetGroups, apiGetRoster,
     apiRequestLeadership, apiMyLeaderRequest, apiPendingLeaderRequests,
     apiApproveLeaderRequest, apiRejectLeaderRequest,
+    apiGetGoogleStatus, apiGoogleConnectUrl,
     apiGetPendingPayments, apiCreatePayment, apiMarkTransferred,
   };
 })();

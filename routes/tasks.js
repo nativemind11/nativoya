@@ -1,7 +1,10 @@
 const express = require("express");
+const multer = require("multer");
 const { pool } = require("../db/pool");
 const { requireAuth, requireRole } = require("../config/auth");
+const driveService = require("../config/googleDrive");
 
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 const router = express.Router();
 
 // POST /api/tasks  (head_leader only) — publish a new task to all leaders
@@ -12,7 +15,20 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
     [serviceSlug, title, instructions, totalQuantity, req.user.id]
   );
-  res.status(201).json(result.rows[0]);
+  const task = result.rows[0];
+
+  // Best-effort: give this task its own Drive folder. If Drive isn't
+  // connected yet, the task still works — members just can't upload real
+  // files until a head_leader connects it from the admin dashboard.
+  try {
+    const folderId = await driveService.createTaskFolder(task.title, task.id);
+    await pool.query("UPDATE tasks SET drive_folder_id = $1 WHERE id = $2", [folderId, task.id]);
+    task.drive_folder_id = folderId;
+  } catch (err) {
+    console.warn("Drive folder not created for task", task.id, "-", err.message);
+  }
+
+  res.status(201).json(task);
 });
 
 // GET /api/tasks/open — tasks with remaining unclaimed quantity
@@ -129,6 +145,50 @@ router.post("/claims/:claimId/submissions", requireAuth, requireRole("member"), 
     [req.params.claimId, req.user.id, fileUrl]
   );
   res.status(201).json(result.rows[0]);
+});
+
+// POST /api/tasks/claims/:claimId/upload  (member submits a file — REAL upload)
+// Sends the file straight to that task's Google Drive folder and records the
+// resulting link as the submission — no manual link-pasting needed.
+router.post("/claims/:claimId/upload", requireAuth, requireRole("member"), upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file was attached" });
+
+  try {
+    const claimResult = await pool.query(
+      `SELECT tc.id, tc.group_id, t.id AS task_id, t.drive_folder_id
+       FROM task_claims tc JOIN tasks t ON t.id = tc.task_id
+       WHERE tc.id = $1`,
+      [req.params.claimId]
+    );
+    if (!claimResult.rows.length) return res.status(404).json({ error: "Claim not found" });
+    const claim = claimResult.rows[0];
+
+    const me = await pool.query("SELECT group_id, first_name FROM users WHERE id = $1", [req.user.id]);
+    if (me.rows[0]?.group_id !== claim.group_id) {
+      return res.status(403).json({ error: "This claim doesn't belong to your group" });
+    }
+    if (!claim.drive_folder_id) {
+      return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
+    }
+
+    const filename = `${me.rows[0].first_name || "member"} - ${Date.now()}-${req.file.originalname}`;
+    const uploaded = await driveService.uploadSubmissionFile(
+      claim.drive_folder_id, filename, req.file.mimetype, req.file.buffer
+    );
+
+    const result = await pool.query(
+      `INSERT INTO submissions (task_claim_id, submitted_by, file_url)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [req.params.claimId, req.user.id, uploaded.webViewLink]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    if (err.code === "DRIVE_NOT_CONNECTED") {
+      return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
+    }
+    res.status(500).json({ error: "Upload failed" });
+  }
 });
 
 // POST /api/submissions/:id/review  (leader approves/rejects)
