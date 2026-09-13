@@ -296,6 +296,18 @@ const NM = (() => {
       : user
         ? `<li><a href="${rel('pages/my-group.html')}" data-i18n="my_group">جروبي</a></li>`
         : "";
+    const dashboardPath = user
+      ? user.role === "head_leader" ? "pages/dashboard-admin.html"
+        : user.role === "leader" ? "pages/dashboard-leader.html"
+        : "pages/dashboard-member.html"
+      : null;
+
+    const accountActions = user
+      ? `<a href="${rel(dashboardPath)}" class="btn btn-secondary" data-i18n="dashboard">لوحتي</a>
+         <a href="#" class="btn btn-primary" onclick="NM.mockLogout(); location.href='${rel('index.html')}'; return false;">خروج</a>`
+      : `<a href="${rel('pages/login.html')}" class="btn btn-secondary" data-i18n="login">تسجيل الدخول</a>
+         <a href="${rel('pages/signup.html')}" class="btn btn-primary" data-i18n="signup">إنشاء حساب</a>`;
+
     const header = document.createElement("header");
     header.className = "site-header";
     header.innerHTML = `
@@ -314,8 +326,7 @@ const NM = (() => {
             <button data-lang="ar" onclick="NM.setLang('ar')">AR</button>
             <button data-lang="en" onclick="NM.setLang('en')">EN</button>
           </div>
-          <a href="${rel('pages/login.html')}" class="btn btn-secondary" data-i18n="login">تسجيل الدخول</a>
-          <a href="${rel('pages/signup.html')}" class="btn btn-primary" data-i18n="signup">إنشاء حساب</a>
+          ${accountActions}
         </div>
         <button class="nav-toggle" aria-label="menu" onclick="NM.toggleMobileNav()">${svgIcon('menu')}</button>
       </nav>
