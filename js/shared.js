@@ -106,6 +106,43 @@ const NM = (() => {
 
   function authToken() { return localStorage.getItem("nm_token"); }
 
+  // Maps raw/technical backend error strings to plain, user-facing Arabic.
+  // Any backend message not listed here falls back to a generic sentence
+  // instead of leaking English/technical text to end users.
+  const ERROR_MESSAGES = {
+    "firstName, email and password are required": "من فضلك املأ كل الحقول المطلوبة.",
+    "Email already registered": "البريد الإلكتروني ده مسجّل بالفعل. جرّب تسجّل دخول أو استخدم بريد تاني.",
+    "Signup failed": "حصل خطأ أثناء إنشاء الحساب. حاول تاني بعد شوية.",
+    "Invalid credentials": "البريد الإلكتروني أو كلمة المرور غلط.",
+    "Login failed": "حصل خطأ أثناء تسجيل الدخول. حاول تاني بعد شوية.",
+    "User not found": "الحساب ده مش موجود.",
+    "Could not load profile": "تعذّر تحميل بيانات الحساب. حاول تاني.",
+    "Could not start a chat session": "تعذّر فتح الشات دلوقتي. حاول تاني بعد شوية.",
+    "language is required": "من فضلك اختار اللغة الأول.",
+    "Invite group not found": "رابط الدعوة ده مش صحيح أو الجروب مش موجود.",
+    "Could not join group": "تعذّر الانضمام للجروب. حاول تاني بعد شوية.",
+    "Already have a pending leader request": "عندك طلب ليدر قيد المراجعة بالفعل.",
+    "Could not submit leader request": "تعذّر إرسال طلب الترقية لليدر. حاول تاني بعد شوية.",
+    "Request not found or already decided": "الطلب ده مش موجود أو اتحسم فيه قبل كده.",
+    "Could not approve request": "تعذّر الموافقة على الطلب. حاول تاني بعد شوية.",
+    "Could not load roster": "تعذّر تحميل قائمة الأعضاء. حاول تاني.",
+    "Payment not found or already transferred": "الدفعة دي مش موجودة أو اتحوّلت بالفعل.",
+    "Leader has no group assigned": "الليدر ده لسه ملوش جروب متعيّن.",
+    "No file was attached": "من فضلك اختار ملف قبل الرفع.",
+    "Claim not found": "المهمة دي مش موجودة.",
+    "This claim doesn't belong to your group": "المهمة دي مش تابعة لجروبك.",
+    "Upload failed": "حصل خطأ أثناء رفع الملف. حاول تاني.",
+  };
+
+  function friendlyErrorMessage(rawMessage) {
+    if (rawMessage && ERROR_MESSAGES[rawMessage]) return ERROR_MESSAGES[rawMessage];
+    // Backend messages written in Arabic (like the Firebase-not-configured
+    // notice) are already user-facing, so pass them through as-is.
+    if (rawMessage && /[\u0600-\u06FF]/.test(rawMessage)) return rawMessage;
+    console.error("[Nativoya] Unmapped backend error:", rawMessage);
+    return "حصل خطأ غير متوقع. حاول تاني بعد شوية.";
+  }
+
   async function apiFetch(path, options = {}) {
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     const token = authToken();
@@ -114,12 +151,13 @@ const NM = (() => {
     try {
       res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
     } catch (err) {
-      throw new Error("تعذر الوصول للسيرفر. تأكد إن رابط الباك إند صحيح وشغال.");
+      console.error("[Nativoya] Network/CORS error calling", path, err);
+      throw new Error("مفيش اتصال بالسيرفر دلوقتي. تأكد من اتصالك بالإنترنت وحاول تاني.");
     }
     let data = null;
     try { data = await res.json(); } catch (_) { /* empty body */ }
     if (!res.ok) {
-      throw new Error((data && data.error) || `فشل الطلب (${res.status})`);
+      throw new Error(friendlyErrorMessage(data && data.error));
     }
     return data;
   }
@@ -232,11 +270,12 @@ const NM = (() => {
         body: formData,
       });
     } catch (err) {
-      throw new Error("تعذر الوصول للسيرفر. تأكد إن رابط الباك إند صحيح وشغال.");
+      console.error("[Nativoya] Network/CORS error uploading file", err);
+      throw new Error("تعذر رفع الملف. تأكد من اتصالك بالإنترنت وحاول تاني.");
     }
     let data = null;
     try { data = await res.json(); } catch (_) {}
-    if (!res.ok) throw new Error((data && data.error) || `فشل رفع الملف (${res.status})`);
+    if (!res.ok) throw new Error(friendlyErrorMessage(data && data.error) || "حصل خطأ أثناء رفع الملف، حاول تاني.");
     return data;
   }
 

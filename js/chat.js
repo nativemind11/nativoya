@@ -12,6 +12,26 @@
     }
   }
 
+  // Translates raw Firebase error codes into plain Arabic for end users.
+  // Anything unmapped falls back to a generic sentence — never shows the
+  // raw Firebase/technical message.
+  function friendlyChatError(err) {
+    const code = err && err.code;
+    const map = {
+      "permission-denied": "معندكش صلاحية توصل للشات ده.",
+      "unavailable": "الشات مش متاح دلوقتي. حاول تاني بعد شوية.",
+      "auth/network-request-failed": "مفيش اتصال بالإنترنت. تأكد من الاتصال وحاول تاني.",
+      "auth/invalid-custom-token": "تعذّر تسجيل الدخول للشات. حاول تسجّل خروج ودخول تاني.",
+      "auth/custom-token-mismatch": "تعذّر تسجيل الدخول للشات. حاول تسجّل خروج ودخول تاني.",
+    };
+    if (code && map[code]) return new Error(map[code]);
+    // Backend messages already in Arabic (e.g. Firebase-not-configured notice)
+    // are already user-facing — pass them through.
+    if (err && err.message && /[\u0600-\u06FF]/.test(err.message)) return err;
+    console.error("[Nativoya] Unmapped chat error:", err);
+    return new Error("حصل خطأ في الشات. حاول تاني بعد شوية.");
+  }
+
   // Exchanges our own JWT (via the backend) for a Firebase custom token, then
   // signs into Firebase Auth with it. After this, Firestore Security Rules
   // can see request.auth.uid / request.auth.token.role / .groupId.
@@ -33,20 +53,24 @@
       .limitToLast(100)
       .onSnapshot(
         (snap) => onMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-        (err) => { console.error("Chat listener error:", err); if (onError) onError(err); }
+        (err) => { console.error("Chat listener error:", err); if (onError) onError(friendlyChatError(err)); }
       );
   }
 
   async function sendMessage(groupId, text, senderName) {
-    ensureInitialized();
-    await ensureFirebaseAuth();
-    const uid = auth.currentUser.uid;
-    await db.collection("groups").doc(groupId).collection("messages").add({
-      text,
-      senderId: uid,
-      senderName,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
+    try {
+      ensureInitialized();
+      await ensureFirebaseAuth();
+      const uid = auth.currentUser.uid;
+      await db.collection("groups").doc(groupId).collection("messages").add({
+        text,
+        senderId: uid,
+        senderName,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (err) {
+      throw friendlyChatError(err);
+    }
   }
 
   function currentUid() {
