@@ -27,15 +27,6 @@
     <p class="text-center" style="margin-top:16px;">
       حساب جديد؟ <a href="signup.html">سجّل الآن</a>
     </p>
-    <hr style="border:none;border-top:1px solid var(--color-border);margin:18px 0;">
-    <p class="text-center text-muted" style="font-size:0.82rem;">
-      دخول تجريبي سريع لعرض لوحات التحكم:
-    </p>
-    <div class="flex gap-8" style="justify-content:center;">
-      <button class="btn btn-secondary" onclick="quickLogin('member')">عضو</button>
-      <button class="btn btn-secondary" onclick="quickLogin('leader')">ليدر</button>
-      <button class="btn btn-secondary" onclick="quickLogin('head_leader')">هيد ليدر</button>
-    </div>
   </div>
 </main>
 
@@ -65,25 +56,6 @@
       submitBtn.textContent = "دخول";
     }
   });
-
-  // demo-only preview buttons — fake accounts, purely local, no backend call.
-  // Useful for showing off the three dashboard layouts; not real auth.
-  function quickLogin(role) {
-    const user = NM.mockSignup({
-      firstName: role === "head_leader" ? "أحمد طه" : role === "leader" ? "سارة عبد الله" : "محمود إبراهيم",
-      email: document.getElementById("l-email").value || `${role}@demo.nativoya`,
-      role,
-    });
-    user.role = role; // override mock default
-    localStorage.setItem("nm_user", JSON.stringify(user));
-
-    if (role === "leader") NM.joinLanguageGroup("الفرنسية", true);
-    if (role === "member") NM.joinLanguageGroup("العربية (مصرية)", false);
-
-    const target = role === "head_leader" ? "dashboard-admin.html" :
-                   role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
-    location.href = target;
-  }
 </script>
 </body>
 </html>

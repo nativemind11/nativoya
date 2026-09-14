@@ -39,6 +39,15 @@
           <input type="tel" id="f-whatsapp" placeholder="+20 1xx xxx xxxx" required>
         </div>
         <div class="field">
+          <label for="f-password">كلمة المرور</label>
+          <input type="password" id="f-password" required minlength="6">
+          <div class="hint">6 أحرف على الأقل</div>
+        </div>
+        <div class="field">
+          <label for="f-country">الدولة</label>
+          <input type="text" id="f-country" placeholder="مصر" required>
+        </div>
+        <div class="field">
           <label for="f-lang">لغتك الأم</label>
           <select id="f-lang" required>
             <option value="">اختر اللغة</option>
@@ -53,10 +62,11 @@
           </select>
           <div class="hint">هتنضم تلقائيًا لجروب اللغة دي — الرقم بيتحدد تلقائيًا (مثال: جروب #7)</div>
         </div>
-        <button type="submit" class="btn btn-primary btn-block">إرسال التسجيل</button>
+        <p id="service-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <button type="submit" class="btn btn-primary btn-block" id="service-submit">إرسال التسجيل</button>
       </form>
       <div id="form-success" class="hidden" style="margin-top:16px; padding:14px; background:#E1F6EA; border-radius:10px; color:#1F7A4D; font-weight:700;">
-        ✅ تم التسجيل! هتتحول الآن لصفحة اختيار اللغة.
+        ✅ تم التسجيل وانضممت لجروبك! هتتحول الآن للوحة التحكم.
       </div>
     </div>
   </div>
@@ -116,16 +126,43 @@
       </div>`;
   });
 
-  document.getElementById("service-form").addEventListener("submit", (e) => {
+  document.getElementById("service-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = document.getElementById("f-name").value;
     const email = document.getElementById("f-email").value;
+    const password = document.getElementById("f-password").value;
+    const country = document.getElementById("f-country").value;
     const whatsapp = document.getElementById("f-whatsapp").value;
     const language = document.getElementById("f-lang").value;
-    NM.mockSignup({ firstName: name, email, whatsappNumber: whatsapp, language, service: svc.slug });
-    document.getElementById("service-form").classList.add("hidden");
-    document.getElementById("form-success").classList.remove("hidden");
-    setTimeout(() => { location.href = "language-select.html"; }, 1400);
+
+    const errorBox = document.getElementById("service-error");
+    const submitBtn = document.getElementById("service-submit");
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جاري الإرسال...";
+
+    try {
+      await NM.apiSignup({
+        firstName: name,
+        email,
+        password,
+        whatsappNumber: whatsapp,
+        country,
+      });
+      // the specialist already picked their language in this form, so join
+      // that language's group directly instead of sending them through
+      // language-select.html again.
+      await NM.apiJoinGroup(language, false);
+
+      document.getElementById("service-form").classList.add("hidden");
+      document.getElementById("form-success").classList.remove("hidden");
+      setTimeout(() => { location.href = "dashboard-member.html"; }, 1400);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "إرسال التسجيل";
+    }
   });
 </script>
 </body>
