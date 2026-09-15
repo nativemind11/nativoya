@@ -105,8 +105,8 @@ CREATE TABLE tasks (
   skill_slug      TEXT NOT NULL REFERENCES services(slug),
   title           TEXT NOT NULL,
   instructions    TEXT,
-  video_url       TEXT,                                 -- walkthrough video
-  audio_sample_url TEXT,                                 -- example audio sample
+  video_urls      TEXT[] NOT NULL DEFAULT '{}',        -- one or more walkthrough videos
+  audio_sample_urls TEXT[] NOT NULL DEFAULT '{}',       -- one or more example audio samples
   price           NUMERIC(10,2),
   currency        TEXT NOT NULL DEFAULT 'USD',
   total_quantity  INTEGER NOT NULL,

@@ -21,12 +21,12 @@
 
     <div class="card" style="margin-top:16px;" id="task-video-card">
       <h3>🎬 فيديو الشرح</h3>
-      <div id="task-video-wrap"></div>
+      <div id="task-video-wrap" style="display:grid; gap:14px;"></div>
     </div>
 
     <div class="card" style="margin-top:16px;" id="task-audio-card">
       <h3>🔊 سامبل صوتي</h3>
-      <audio controls style="width:100%;" id="task-audio"></audio>
+      <div id="task-audio-wrap" style="display:grid; gap:10px;"></div>
     </div>
 
     <div class="card" style="margin-top:16px;">
@@ -81,21 +81,25 @@
         ? `${Number(task.price).toLocaleString("ar-EG")} ${task.currency || "USD"}`
         : "غير محدد";
 
-      // video: embed if it looks like YouTube/Vimeo, otherwise a plain link
+      // video(s): embed if it looks like YouTube/Vimeo, otherwise a plain link
       const videoWrap = document.getElementById("task-video-wrap");
-      if (task.video_url) {
-        if (/youtube\.com|youtu\.be|vimeo\.com/.test(task.video_url)) {
-          const embedUrl = toEmbedUrl(task.video_url);
-          videoWrap.innerHTML = `<div style="position:relative; padding-top:56.25%;"><iframe src="${embedUrl}" style="position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:10px;" allowfullscreen></iframe></div>`;
-        } else {
-          videoWrap.innerHTML = `<video controls style="width:100%; border-radius:10px;" src="${task.video_url}"></video>`;
-        }
+      const videoUrls = task.video_urls || [];
+      if (videoUrls.length) {
+        videoWrap.innerHTML = videoUrls.map(url => {
+          if (/youtube\.com|youtu\.be|vimeo\.com/.test(url)) {
+            const embedUrl = toEmbedUrl(url);
+            return `<div style="position:relative; padding-top:56.25%;"><iframe src="${embedUrl}" style="position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:10px;" allowfullscreen></iframe></div>`;
+          }
+          return `<video controls style="width:100%; border-radius:10px;" src="${url}"></video>`;
+        }).join("");
       } else {
         document.getElementById("task-video-card").classList.add("hidden");
       }
 
-      if (task.audio_sample_url) {
-        document.getElementById("task-audio").src = task.audio_sample_url;
+      const audioWrap = document.getElementById("task-audio-wrap");
+      const audioUrls = task.audio_sample_urls || [];
+      if (audioUrls.length) {
+        audioWrap.innerHTML = audioUrls.map(url => `<audio controls style="width:100%;" src="${url}"></audio>`).join("");
       } else {
         document.getElementById("task-audio-card").classList.add("hidden");
       }

@@ -7,12 +7,17 @@ const driveService = require("../config/googleDrive");
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 const router = express.Router();
 
+function cleanUrlList(list) {
+  return Array.isArray(list) ? list.map((u) => String(u || "").trim()).filter(Boolean) : [];
+}
+
 // POST /api/tasks  (head_leader only) — publish a new task, either to every
-// group (targetAll: true) or to a specific list of groupIds.
+// group (targetAll: true) or to a specific list of groupIds. videoUrls and
+// audioSampleUrls each accept an ARRAY of links (a task can have several).
 router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   const {
     skillSlug, title, instructions, totalQuantity,
-    price, currency, videoUrl, audioSampleUrl,
+    price, currency, videoUrls, audioSampleUrls,
     targetAll, groupIds,
   } = req.body;
 
@@ -26,10 +31,10 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
     await client.query("BEGIN");
     const result = await client.query(
       `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, price, currency,
-                           video_url, audio_sample_url, target_all, created_by)
+                           video_urls, audio_sample_urls, target_all, created_by)
        VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'USD'), $7, $8, $9, $10) RETURNING *`,
       [skillSlug, title, instructions, totalQuantity, price || null, currency,
-       videoUrl || null, audioSampleUrl || null, isTargetAll, req.user.id]
+       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), isTargetAll, req.user.id]
     );
     const task = result.rows[0];
 
@@ -57,7 +62,7 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
     res.status(201).json(task);
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(err);
+    console.error("[tasks:create]", err);
     res.status(500).json({ error: "Could not publish task" });
   } finally {
     client.release();
@@ -92,12 +97,12 @@ router.get("/open", requireAuth, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("[tasks:open]", err);
     res.status(500).json({ error: "Could not load tasks" });
   }
 });
 
-// GET /api/tasks/:id — full task detail (video, audio sample, price,
+// GET /api/tasks/:id — full task detail (video(s), audio sample(s), price,
 // instructions) — only if the task is visible to this user.
 router.get("/:id", requireAuth, async (req, res) => {
   try {
@@ -121,7 +126,7 @@ router.get("/:id", requireAuth, async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("[tasks:detail]", err);
     res.status(500).json({ error: "Could not load task" });
   }
 });
@@ -129,102 +134,139 @@ router.get("/:id", requireAuth, async (req, res) => {
 // GET /api/tasks/claims/mine  (leader only) — everything the group I lead
 // has claimed, with how much capacity is still unfilled inside each claim
 router.get("/claims/mine", requireAuth, requireRole("leader"), async (req, res) => {
-  const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
-  const groupId = led.rows[0]?.id;
-  if (!groupId) return res.json([]);
+  try {
+    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
+    const groupId = led.rows[0]?.id;
+    if (!groupId) return res.json([]);
 
-  const result = await pool.query(`
-    SELECT tc.id AS claim_id, tc.quantity, tc.claimed_at,
-           t.id AS task_id, t.title, t.instructions,
-           tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
-    FROM task_claims tc
-    JOIN tasks t ON t.id = tc.task_id
-    LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
-      ON sc.task_claim_id = tc.id
-    WHERE tc.group_id = $1
-    ORDER BY tc.claimed_at DESC
-  `, [groupId]);
-  res.json(result.rows);
+    const result = await pool.query(`
+      SELECT tc.id AS claim_id, tc.quantity, tc.claimed_at,
+             t.id AS task_id, t.title, t.instructions,
+             tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
+      FROM task_claims tc
+      JOIN tasks t ON t.id = tc.task_id
+      LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
+        ON sc.task_claim_id = tc.id
+      WHERE tc.group_id = $1
+      ORDER BY tc.claimed_at DESC
+    `, [groupId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("[tasks:claims-mine]", err);
+    res.status(500).json({ error: "Could not load your claims" });
+  }
 });
 
 // GET /api/tasks/claims/for-my-group — claims made for ANY of the groups I
 // belong to that still have room, i.e. what I can actually submit work against
 router.get("/claims/for-my-group", requireAuth, async (req, res) => {
-  const result = await pool.query(`
-    SELECT tc.id AS claim_id, tc.quantity,
-           t.id AS task_id, t.title, t.instructions, t.video_url, t.audio_sample_url,
-           t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
-           tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
-    FROM task_claims tc
-    JOIN tasks t ON t.id = tc.task_id
-    JOIN services s ON s.slug = t.skill_slug
-    LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
-      ON sc.task_claim_id = tc.id
-    WHERE tc.group_id IN (SELECT group_id FROM user_groups WHERE user_id = $1)
-      AND (tc.quantity - COALESCE(sc.submitted_count, 0)) > 0
-    ORDER BY tc.claimed_at DESC
-  `, [req.user.id]);
-  res.json(result.rows);
+  try {
+    const result = await pool.query(`
+      SELECT tc.id AS claim_id, tc.quantity,
+             t.id AS task_id, t.title, t.instructions, t.video_urls, t.audio_sample_urls,
+             t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
+             tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
+      FROM task_claims tc
+      JOIN tasks t ON t.id = tc.task_id
+      JOIN services s ON s.slug = t.skill_slug
+      LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
+        ON sc.task_claim_id = tc.id
+      WHERE tc.group_id IN (SELECT group_id FROM user_groups WHERE user_id = $1)
+        AND (tc.quantity - COALESCE(sc.submitted_count, 0)) > 0
+      ORDER BY tc.claimed_at DESC
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("[tasks:claims-for-my-group]", err);
+    res.status(500).json({ error: "Could not load available claims" });
+  }
 });
 
 // GET /api/tasks/review-queue  (leader only) — submissions from the group I
 // lead that are still waiting for a decision
 router.get("/review-queue", requireAuth, requireRole("leader"), async (req, res) => {
-  const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
-  const groupId = led.rows[0]?.id;
-  if (!groupId) return res.json([]);
+  try {
+    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
+    const groupId = led.rows[0]?.id;
+    if (!groupId) return res.json([]);
 
-  const result = await pool.query(`
-    SELECT s.id AS submission_id, s.file_url, s.created_at,
-           t.title AS task_title, u.first_name AS member_name
-    FROM submissions s
-    JOIN task_claims tc ON tc.id = s.task_claim_id
-    JOIN tasks t ON t.id = tc.task_id
-    JOIN users u ON u.id = s.submitted_by
-    WHERE tc.group_id = $1 AND s.status = 'in_review'
-    ORDER BY s.created_at ASC
-  `, [groupId]);
-  res.json(result.rows);
+    const result = await pool.query(`
+      SELECT s.id AS submission_id, s.file_url, s.created_at,
+             t.title AS task_title, u.first_name AS member_name
+      FROM submissions s
+      JOIN task_claims tc ON tc.id = s.task_claim_id
+      JOIN tasks t ON t.id = tc.task_id
+      JOIN users u ON u.id = s.submitted_by
+      WHERE tc.group_id = $1 AND s.status = 'in_review'
+      ORDER BY s.created_at ASC
+    `, [groupId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("[tasks:review-queue]", err);
+    res.status(500).json({ error: "Could not load the review queue" });
+  }
 });
 
 // GET /api/tasks/my-submissions — everything the current member has sent in,
 // with its review status
 router.get("/my-submissions", requireAuth, async (req, res) => {
-  const result = await pool.query(`
-    SELECT s.id, s.file_url, s.status, s.created_at, t.title AS task_title
-    FROM submissions s
-    JOIN task_claims tc ON tc.id = s.task_claim_id
-    JOIN tasks t ON t.id = tc.task_id
-    WHERE s.submitted_by = $1
-    ORDER BY s.created_at DESC
-  `, [req.user.id]);
-  res.json(result.rows);
+  try {
+    const result = await pool.query(`
+      SELECT s.id, s.file_url, s.status, s.created_at, t.title AS task_title
+      FROM submissions s
+      JOIN task_claims tc ON tc.id = s.task_claim_id
+      JOIN tasks t ON t.id = tc.task_id
+      WHERE s.submitted_by = $1
+      ORDER BY s.created_at DESC
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("[tasks:my-submissions]", err);
+    res.status(500).json({ error: "Could not load your submissions" });
+  }
 });
 
 // POST /api/tasks/:id/claim  (leader only) — claim quantity for the group I lead
 router.post("/:id/claim", requireAuth, requireRole("leader"), async (req, res) => {
-  const { quantity } = req.body;
-  const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
-  const groupId = led.rows[0]?.id;
-  if (!groupId) return res.status(400).json({ error: "Leader has no group assigned" });
+  try {
+    const quantity = Number(req.body.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return res.status(400).json({ error: "Enter a valid quantity greater than zero" });
+    }
 
-  const result = await pool.query(
-    `INSERT INTO task_claims (task_id, group_id, claimed_by, quantity)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [req.params.id, groupId, req.user.id, quantity]
-  );
-  res.status(201).json(result.rows[0]);
+    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
+    const groupId = led.rows[0]?.id;
+    if (!groupId) return res.status(400).json({ error: "Leader has no group assigned" });
+
+    const taskCheck = await pool.query("SELECT id FROM tasks WHERE id = $1", [req.params.id]);
+    if (!taskCheck.rows.length) return res.status(404).json({ error: "Task not found" });
+
+    const result = await pool.query(
+      `INSERT INTO task_claims (task_id, group_id, claimed_by, quantity)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.id, groupId, req.user.id, quantity]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("[tasks:claim]", err);
+    res.status(500).json({ error: "Could not claim this task" });
+  }
 });
 
 // POST /api/tasks/claims/:claimId/submissions  (member submits a file)
 router.post("/claims/:claimId/submissions", requireAuth, requireRole("member"), async (req, res) => {
-  const { fileUrl } = req.body; // uploaded to Google Drive first, URL passed here
-  const result = await pool.query(
-    `INSERT INTO submissions (task_claim_id, submitted_by, file_url)
-     VALUES ($1, $2, $3) RETURNING *`,
-    [req.params.claimId, req.user.id, fileUrl]
-  );
-  res.status(201).json(result.rows[0]);
+  try {
+    const { fileUrl } = req.body; // uploaded to Google Drive first, URL passed here
+    const result = await pool.query(
+      `INSERT INTO submissions (task_claim_id, submitted_by, file_url)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [req.params.claimId, req.user.id, fileUrl]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("[tasks:submissions-link]", err);
+    res.status(500).json({ error: "Could not submit your work" });
+  }
 });
 
 // POST /api/tasks/claims/:claimId/upload  (member submits a file — REAL upload)
@@ -279,7 +321,7 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member"), uploa
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("[tasks:upload]", err);
     if (err.code === "DRIVE_NOT_CONNECTED") {
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
@@ -289,13 +331,19 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member"), uploa
 
 // POST /api/tasks/submissions/:id/review  (leader approves/rejects)
 router.post("/submissions/:id/review", requireAuth, requireRole("leader"), async (req, res) => {
-  const { approve } = req.body;
-  const result = await pool.query(
-    `UPDATE submissions SET status = $1, reviewed_by = $2, reviewed_at = now()
-     WHERE id = $3 RETURNING *`,
-    [approve ? "completed" : "in_review", req.user.id, req.params.id]
-  );
-  res.json(result.rows[0]);
+  try {
+    const { approve } = req.body;
+    const result = await pool.query(
+      `UPDATE submissions SET status = $1, reviewed_by = $2, reviewed_at = now()
+       WHERE id = $3 RETURNING *`,
+      [approve ? "completed" : "in_review", req.user.id, req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Submission not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("[tasks:review]", err);
+    res.status(500).json({ error: "Could not review this submission" });
+  }
 });
 
 module.exports = router;

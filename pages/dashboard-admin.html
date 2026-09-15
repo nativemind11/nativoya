@@ -54,8 +54,8 @@
               </select>
             </div>
           </div>
-          <div class="field"><label>رابط فيديو الشرح</label><input type="url" id="t-video" placeholder="https://youtube.com/..."></div>
-          <div class="field"><label>رابط السامبل الصوتي</label><input type="url" id="t-audio" placeholder="https://.../sample.mp3"></div>
+          <div class="field"><label>روابط فيديو الشرح</label><textarea id="t-video" rows="2" placeholder="رابط في كل سطر&#10;https://youtube.com/...&#10;https://youtube.com/..."></textarea></div>
+          <div class="field"><label>روابط السامبل الصوتي</label><textarea id="t-audio" rows="2" placeholder="رابط في كل سطر&#10;https://.../sample1.mp3&#10;https://.../sample2.mp3"></textarea></div>
           <div class="field" style="grid-column:1/-1;"><label>التعليمات</label><textarea id="t-instructions" placeholder="اشرح المطلوب بالتفصيل..."></textarea></div>
 
           <div class="field" style="grid-column:1/-1;">
@@ -268,8 +268,8 @@
         totalQuantity: Number(document.getElementById("t-qty").value),
         price: document.getElementById("t-price").value ? Number(document.getElementById("t-price").value) : null,
         currency: document.getElementById("t-currency").value,
-        videoUrl: document.getElementById("t-video").value,
-        audioSampleUrl: document.getElementById("t-audio").value,
+        videoUrls: document.getElementById("t-video").value.split("\n").map(s => s.trim()).filter(Boolean),
+        audioSampleUrls: document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean),
         targetAll,
         groupIds,
       });

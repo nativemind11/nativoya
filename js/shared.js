@@ -135,6 +135,20 @@ const NM = (() => {
     "Claim not found": "المهمة دي مش موجودة.",
     "This claim doesn't belong to your group": "المهمة دي مش تابعة لجروبك.",
     "Upload failed": "حصل خطأ أثناء رفع الملف. حاول تاني.",
+    "Could not publish task": "تعذّر نشر المهمة. حاول تاني بعد شوية.",
+    "Could not load tasks": "تعذّر تحميل المهام. حاول تاني.",
+    "Could not load task": "تعذّر تحميل تفاصيل المهمة. حاول تاني.",
+    "Task not found": "المهمة دي مش موجودة.",
+    "Could not load your claims": "تعذّر تحميل مهامك. حاول تاني.",
+    "Could not load available claims": "تعذّر تحميل المهام المتاحة. حاول تاني.",
+    "Could not load the review queue": "تعذّر تحميل قائمة المراجعة. حاول تاني.",
+    "Could not load your submissions": "تعذّر تحميل تسليماتك. حاول تاني.",
+    "Enter a valid quantity greater than zero": "من فضلك اكتب عدد صحيح أكبر من صفر.",
+    "Could not claim this task": "تعذّر استلام المهمة. حاول تاني بعد شوية.",
+    "Could not submit your work": "تعذّر إرسال شغلك. حاول تاني بعد شوية.",
+    "Submission not found": "التسليم ده مش موجود.",
+    "Could not review this submission": "تعذّر مراجعة التسليم ده. حاول تاني.",
+    "groupIds is required when targetAll is false": "اختار جروب واحد على الأقل، أو اختار \"كل الجروبات\".",
   };
 
   function friendlyErrorMessage(rawMessage) {
@@ -214,10 +228,10 @@ const NM = (() => {
   // ---- tasks ----
   function apiGetOpenTasks() { return apiFetch("/api/tasks/open"); }
   function apiGetTask(id) { return apiFetch(`/api/tasks/${id}`); }
-  function apiCreateTask({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrl, audioSampleUrl, targetAll, groupIds }) {
+  function apiCreateTask({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls, targetAll, groupIds }) {
     return apiFetch("/api/tasks", {
       method: "POST",
-      body: JSON.stringify({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrl, audioSampleUrl, targetAll, groupIds }),
+      body: JSON.stringify({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls, targetAll, groupIds }),
     });
   }
   function apiClaimTask(taskId, quantity) {
