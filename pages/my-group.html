@@ -22,6 +22,7 @@
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-input-row">
         <input type="text" id="chat-input" placeholder="اكتب رسالتك...">
+        <button class="btn btn-secondary" id="mic-btn" title="رسالة صوتية">🎤</button>
         <button class="btn btn-secondary" id="attach-btn" title="إرفاق ملف">📎</button>
         <button class="btn btn-primary" id="send-btn">إرسال</button>
       </div>
@@ -112,10 +113,17 @@
       ? messages.map(m => `
           <div class="msg-row${m.senderId === myUid ? " mine" : ""}">
             <div class="msg-avatar">${(m.senderName || "?")[0]}</div>
-            <div><div class="msg-bubble">${escapeHtml(m.text)}</div></div>
+            <div><div class="msg-bubble">${renderMessageBody(m)}</div></div>
           </div>`).join("")
       : `<p class="text-muted" style="padding:16px;">لسه مفيش رسايل — ابدأ المحادثة!</p>`;
     wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function renderMessageBody(m) {
+    if (m.type === "audio" && m.audioData) {
+      return `<audio controls style="max-width:220px;" src="data:${m.mimeType};base64,${m.audioData}"></audio>`;
+    }
+    return escapeHtml(m.text || "");
   }
 
   function escapeHtml(s) {
@@ -136,6 +144,29 @@
   document.getElementById("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
   document.getElementById("attach-btn").addEventListener("click", () => {
     alert("رفع الملفات في الشات هيتفعّل قريب — لحد دلوقتي تقدر ترفع ملفات المهام من لوحة التحكم بتاعتك.");
+  });
+
+  // --- voice messages ---
+  let activeRecording = null;
+  const micBtn = document.getElementById("mic-btn");
+  micBtn.addEventListener("click", async () => {
+    if (!activeGroup) return;
+    if (activeRecording) { activeRecording.stop(); return; }
+    try {
+      activeRecording = await NMChat.startVoiceRecording(60);
+      micBtn.textContent = "⏹";
+      micBtn.classList.add("btn-primary");
+      micBtn.classList.remove("btn-secondary");
+      const { base64, mimeType } = await activeRecording.result;
+      await NMChat.sendVoiceMessage(activeGroup.id, base64, mimeType, user.firstName || "عضو");
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      activeRecording = null;
+      micBtn.textContent = "🎤";
+      micBtn.classList.remove("btn-primary");
+      micBtn.classList.add("btn-secondary");
+    }
   });
 </script>
 </body>
