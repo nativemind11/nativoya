@@ -21,7 +21,7 @@
 
     <div class="card" style="margin-top:16px;" id="task-video-card">
       <h3>🎬 فيديو الشرح</h3>
-      <div id="task-video-wrap" style="display:grid; gap:14px;"></div>
+      <div id="task-video-wrap" style="display:grid; gap:10px;"></div>
     </div>
 
     <div class="card" style="margin-top:16px;" id="task-audio-card">
@@ -81,17 +81,15 @@
         ? `${Number(task.price).toLocaleString("ar-EG")} ${task.currency || "USD"}`
         : "غير محدد";
 
-      // video(s): embed if it looks like YouTube/Vimeo, otherwise a plain link
+      // video(s): just a clean "open video" link — embedding iframes has
+      // been unreliable across browsers/networks, so we link out instead
       const videoWrap = document.getElementById("task-video-wrap");
       const videoUrls = task.video_urls || [];
       if (videoUrls.length) {
-        videoWrap.innerHTML = videoUrls.map(url => {
-          if (/youtube\.com|youtu\.be|vimeo\.com/.test(url)) {
-            const embedUrl = toEmbedUrl(url);
-            return `<div style="position:relative; padding-top:56.25%;"><iframe src="${embedUrl}" style="position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:10px;" allowfullscreen></iframe></div>`;
-          }
-          return `<video controls style="width:100%; border-radius:10px;" src="${url}"></video>`;
-        }).join("");
+        videoWrap.innerHTML = videoUrls.map((url, i) => `
+          <a href="${url}" target="_blank" rel="noopener" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:8px; width:fit-content;">
+            ▶️ ${videoUrls.length > 1 ? `فيديو ${i + 1}` : "افتح الفيديو"}
+          </a>`).join("");
       } else {
         document.getElementById("task-video-card").classList.add("hidden");
       }
@@ -113,24 +111,6 @@
       document.getElementById("task-error").classList.remove("hidden");
       document.getElementById("task-error-text").textContent = err.message;
     }
-  }
-
-  function toEmbedUrl(url) {
-    try {
-      if (url.includes("youtu.be/")) {
-        const id = url.split("youtu.be/")[1].split(/[?&]/)[0];
-        return `https://www.youtube.com/embed/${id}`;
-      }
-      if (url.includes("watch?v=")) {
-        const id = new URL(url).searchParams.get("v");
-        return `https://www.youtube.com/embed/${id}`;
-      }
-      if (url.includes("vimeo.com/")) {
-        const id = url.split("vimeo.com/")[1].split(/[?&]/)[0];
-        return `https://player.vimeo.com/video/${id}`;
-      }
-    } catch (_) {}
-    return url;
   }
 
   // If my group already claimed some of this task, let me submit straight
