@@ -8,24 +8,13 @@
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-<main class="container section" style="max-width:480px;">
+<main class="container section" style="max-width:560px;">
   <div class="card">
     <h1 class="text-center" style="font-size:1.6rem;">إنشاء حساب جديد</h1>
     <p class="text-center">ثواني وتبقى جزء من مجتمع Nativoya</p>
 
     <div id="invite-banner" class="hidden card card-compact" style="background:var(--color-pill-bg); border:none; margin-bottom:20px;">
       <p class="mb-0" style="color:var(--color-pill-text); font-weight:700;" id="invite-banner-text"></p>
-    </div>
-
-    <div class="radio-card-group" style="margin-bottom:20px;" id="path-choice">
-      <label class="radio-card">
-        <input type="radio" name="path" value="specialist" checked>
-        <div><strong>أنا مرشد / متخصص لغة</strong><div class="hint">هستلم مهام حقيقية وأنضم لجروب لغتي</div></div>
-      </label>
-      <label class="radio-card">
-        <input type="radio" name="path" value="tourist">
-        <div><strong>أنا سائح / شركة سياحة</strong><div class="hint">عايز أحجز مرشد أو مترجم</div></div>
-      </label>
     </div>
 
     <form id="signup-form">
@@ -48,10 +37,29 @@
       </div>
       <div class="field">
         <label for="s-country">الدولة</label>
-        <input type="text" id="s-country" placeholder="مصر" required>
+        <select id="s-country" required>
+          <option value="">اختر الدولة</option>
+        </select>
       </div>
-      <p id="signup-error" class="hint" style="color:#e0245e; display:none;"></p>
-      <button type="submit" class="btn btn-primary btn-block" id="signup-submit">إنشاء الحساب</button>
+
+      <hr style="border:none; border-top:1px solid var(--color-border, #e5e7f5); margin:24px 0;">
+
+      <div class="field">
+        <label>اللغات واللهجات اللي بتتكلمها <span style="color:var(--color-primary-blue);">*</span></label>
+        <div class="hint" style="margin-bottom:10px;">هتنضم تلقائيًا لجروب كل لغة تختارها — تقدر تختار أكتر من واحدة.</div>
+        <div id="languages-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; max-height:260px; overflow-y:auto; padding-inline-end:4px;"></div>
+      </div>
+
+      <hr style="border:none; border-top:1px solid var(--color-border, #e5e7f5); margin:24px 0;">
+
+      <div class="field">
+        <label>المهارات اللي تقدر تقدمها <span style="color:var(--color-primary-blue);">*</span></label>
+        <div class="hint" style="margin-bottom:10px;">اختار كل اللي ينطبق عليك.</div>
+        <div id="skills-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+      </div>
+
+      <p id="signup-error" class="hint" style="color:#e0245e; display:none; margin-top:16px;"></p>
+      <button type="submit" class="btn btn-primary btn-block" id="signup-submit" style="margin-top:20px;">إنشاء الحساب</button>
     </form>
     <p class="text-center" style="margin-top:16px;">
       عندك حساب بالفعل؟ <a href="login.html">سجّل دخول</a>
@@ -61,15 +69,41 @@
 
 <script src="../js/shared.js"></script>
 <script>
-  const params = new URLSearchParams(location.search);
-  const path = params.get("path");
-  if (path) {
-    document.querySelector(`input[name="path"][value="${path}"]`).checked = true;
-  }
+  // country dropdown
+  const countrySelect = document.getElementById("s-country");
+  NM.COUNTRIES.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c; opt.textContent = c;
+    countrySelect.appendChild(opt);
+  });
 
+  // languages checkbox grid (radio-card style, reused with checkboxes)
+  const langGrid = document.getElementById("languages-grid");
+  NM.LANGUAGES.forEach((l, i) => {
+    const label = document.createElement("label");
+    label.className = "radio-card";
+    label.innerHTML = `
+      <input type="checkbox" name="lang" value="${l.name}" id="lang-${i}">
+      <div><strong>${l.name}</strong></div>`;
+    langGrid.appendChild(label);
+  });
+
+  // skills checkbox grid
+  const skillsGrid = document.getElementById("skills-grid");
+  NM.SKILLS.forEach((s, i) => {
+    const label = document.createElement("label");
+    label.className = "radio-card";
+    label.innerHTML = `
+      <input type="checkbox" name="skill" value="${s.slug}" id="skill-${i}">
+      <div><strong>${s.icon} ${s.ar}</strong></div>`;
+    skillsGrid.appendChild(label);
+  });
+
+  // invite link flow: pre-select the invited language and hide the picker
+  // (they'll join that specific leader's group right after account creation)
+  const params = new URLSearchParams(location.search);
   const invite = NM.resolveInviteCode(params.get("invite"));
   if (invite) {
-    document.getElementById("path-choice").classList.add("hidden");
     document.getElementById("invite-banner").classList.remove("hidden");
     document.getElementById("invite-banner-text").textContent =
       `🎉 هتنضم تلقائيًا لجروب ${invite.language} رقم #${invite.groupNumber}`;
@@ -77,31 +111,43 @@
 
   document.getElementById("signup-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const selectedPath = invite ? "specialist" : document.querySelector('input[name="path"]:checked').value;
     const errorBox = document.getElementById("signup-error");
     const submitBtn = document.getElementById("signup-submit");
     errorBox.style.display = "none";
+
+    const languages = Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(i => i.value);
+    const skills = Array.from(document.querySelectorAll('input[name="skill"]:checked')).map(i => i.value);
+
+    if (!invite && languages.length === 0) {
+      errorBox.textContent = "من فضلك اختار لغة واحدة على الأقل.";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (skills.length === 0) {
+      errorBox.textContent = "من فضلك اختار مهارة واحدة على الأقل.";
+      errorBox.style.display = "block";
+      return;
+    }
+
     submitBtn.disabled = true;
     submitBtn.textContent = "جاري الإنشاء...";
 
     try {
-      const user = await NM.apiSignup({
+      await NM.apiSignup({
         firstName: document.getElementById("s-name").value,
         email: document.getElementById("s-email").value,
         password: document.getElementById("s-password").value,
         whatsappNumber: document.getElementById("s-whatsapp").value,
         country: document.getElementById("s-country").value,
+        languages,
+        skills,
       });
 
       if (invite) {
         // joining an existing leader's group directly — not the language's default group
-        await NM.apiJoinGroup(invite.language, false, invite.groupNumber);
-        location.href = "dashboard-member.html";
-      } else if (selectedPath === "specialist") {
-        location.href = "language-select.html";
-      } else {
-        location.href = "services.html";
+        await NM.apiJoinGroup(invite.language, invite.groupNumber);
       }
+      location.href = "dashboard-member.html";
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.style.display = "block";

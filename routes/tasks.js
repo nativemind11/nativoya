@@ -7,48 +7,130 @@ const driveService = require("../config/googleDrive");
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 const router = express.Router();
 
-// POST /api/tasks  (head_leader only) — publish a new task to all leaders
+// POST /api/tasks  (head_leader only) — publish a new task, either to every
+// group (targetAll: true) or to a specific list of groupIds.
 router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
-  const { serviceSlug, title, instructions, totalQuantity } = req.body;
-  const result = await pool.query(
-    `INSERT INTO tasks (service_slug, title, instructions, total_quantity, created_by)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [serviceSlug, title, instructions, totalQuantity, req.user.id]
-  );
-  const task = result.rows[0];
+  const {
+    skillSlug, title, instructions, totalQuantity,
+    price, currency, videoUrl, audioSampleUrl,
+    targetAll, groupIds,
+  } = req.body;
 
-  // Best-effort: give this task its own Drive folder. If Drive isn't
-  // connected yet, the task still works — members just can't upload real
-  // files until a head_leader connects it from the admin dashboard.
-  try {
-    const folderId = await driveService.createTaskFolder(task.title, task.id);
-    await pool.query("UPDATE tasks SET drive_folder_id = $1 WHERE id = $2", [folderId, task.id]);
-    task.drive_folder_id = folderId;
-  } catch (err) {
-    console.warn("Drive folder not created for task", task.id, "-", err.message);
+  const isTargetAll = targetAll !== false; // default true
+  if (!isTargetAll && (!Array.isArray(groupIds) || !groupIds.length)) {
+    return res.status(400).json({ error: "groupIds is required when targetAll is false" });
   }
 
-  res.status(201).json(task);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, price, currency,
+                           video_url, audio_sample_url, target_all, created_by)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'USD'), $7, $8, $9, $10) RETURNING *`,
+      [skillSlug, title, instructions, totalQuantity, price || null, currency,
+       videoUrl || null, audioSampleUrl || null, isTargetAll, req.user.id]
+    );
+    const task = result.rows[0];
+
+    if (!isTargetAll) {
+      for (const groupId of groupIds) {
+        await client.query(
+          `INSERT INTO task_targets (task_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [task.id, groupId]
+        );
+      }
+    }
+    await client.query("COMMIT");
+
+    // Best-effort: give this task its own Drive folder. If Drive isn't
+    // connected yet, the task still works — members just can't upload real
+    // files until a head_leader connects it from the admin dashboard.
+    try {
+      const folderId = await driveService.createTaskFolder(task.title, task.id);
+      await pool.query("UPDATE tasks SET drive_folder_id = $1 WHERE id = $2", [folderId, task.id]);
+      task.drive_folder_id = folderId;
+    } catch (err) {
+      console.warn("Drive folder not created for task", task.id, "-", err.message);
+    }
+
+    res.status(201).json(task);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Could not publish task" });
+  } finally {
+    client.release();
+  }
 });
 
-// GET /api/tasks/open — tasks with remaining unclaimed quantity
+// GET /api/tasks/open — tasks visible to the current user with remaining
+// unclaimed quantity. head_leader sees everything; a leader/member only
+// sees tasks that are target_all=true or specifically targeted at one of
+// the groups they belong to.
 router.get("/open", requireAuth, async (req, res) => {
-  const result = await pool.query(`
-    SELECT t.*, t.total_quantity - COALESCE(SUM(c.quantity), 0) AS remaining
-    FROM tasks t
-    LEFT JOIN task_claims c ON c.task_id = t.id
-    GROUP BY t.id
-    HAVING t.total_quantity - COALESCE(SUM(c.quantity), 0) > 0
-    ORDER BY t.created_at DESC
-  `);
-  res.json(result.rows);
+  try {
+    const isHeadLeader = req.user.role === "head_leader";
+    const result = await pool.query(
+      `
+      SELECT t.id, t.title, t.skill_slug, s.name_ar AS skill_name_ar, s.name_en AS skill_name_en,
+             s.icon AS skill_icon, t.total_quantity, t.target_all, t.created_at,
+             t.total_quantity - COALESCE(SUM(c.quantity), 0) AS remaining
+      FROM tasks t
+      JOIN services s ON s.slug = t.skill_slug
+      LEFT JOIN task_claims c ON c.task_id = t.id
+      WHERE ($1 = true) OR t.target_all = true OR EXISTS (
+        SELECT 1 FROM task_targets tt
+        JOIN user_groups ug ON ug.group_id = tt.group_id
+        WHERE tt.task_id = t.id AND ug.user_id = $2
+      )
+      GROUP BY t.id, s.name_ar, s.name_en, s.icon
+      HAVING t.total_quantity - COALESCE(SUM(c.quantity), 0) > 0
+      ORDER BY t.created_at DESC
+      `,
+      [isHeadLeader, req.user.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load tasks" });
+  }
 });
 
-// GET /api/tasks/claims/mine  (leader only) — everything MY group has claimed,
-// with how much capacity is still unfilled inside each claim
+// GET /api/tasks/:id — full task detail (video, audio sample, price,
+// instructions) — only if the task is visible to this user.
+router.get("/:id", requireAuth, async (req, res) => {
+  try {
+    const isHeadLeader = req.user.role === "head_leader";
+    const result = await pool.query(
+      `
+      SELECT t.*, s.name_ar AS skill_name_ar, s.name_en AS skill_name_en, s.icon AS skill_icon,
+             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+      FROM tasks t
+      JOIN services s ON s.slug = t.skill_slug
+      WHERE t.id = $1 AND (
+        $2 = true OR t.target_all = true OR EXISTS (
+          SELECT 1 FROM task_targets tt
+          JOIN user_groups ug ON ug.group_id = tt.group_id
+          WHERE tt.task_id = t.id AND ug.user_id = $3
+        )
+      )
+      `,
+      [req.params.id, isHeadLeader, req.user.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load task" });
+  }
+});
+
+// GET /api/tasks/claims/mine  (leader only) — everything the group I lead
+// has claimed, with how much capacity is still unfilled inside each claim
 router.get("/claims/mine", requireAuth, requireRole("leader"), async (req, res) => {
-  const me = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
-  const groupId = me.rows[0]?.group_id;
+  const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
+  const groupId = led.rows[0]?.id;
   if (!groupId) return res.json([]);
 
   const result = await pool.query(`
@@ -65,33 +147,31 @@ router.get("/claims/mine", requireAuth, requireRole("leader"), async (req, res) 
   res.json(result.rows);
 });
 
-// GET /api/tasks/claims/for-my-group — claims my LEADER made for my group that
-// still have room, i.e. what a member can actually submit work against
+// GET /api/tasks/claims/for-my-group — claims made for ANY of the groups I
+// belong to that still have room, i.e. what I can actually submit work against
 router.get("/claims/for-my-group", requireAuth, async (req, res) => {
-  const me = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
-  const groupId = me.rows[0]?.group_id;
-  if (!groupId) return res.json([]);
-
   const result = await pool.query(`
     SELECT tc.id AS claim_id, tc.quantity,
-           t.id AS task_id, t.title, t.instructions,
+           t.id AS task_id, t.title, t.instructions, t.video_url, t.audio_sample_url,
+           t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
            tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
     FROM task_claims tc
     JOIN tasks t ON t.id = tc.task_id
+    JOIN services s ON s.slug = t.skill_slug
     LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
       ON sc.task_claim_id = tc.id
-    WHERE tc.group_id = $1
+    WHERE tc.group_id IN (SELECT group_id FROM user_groups WHERE user_id = $1)
       AND (tc.quantity - COALESCE(sc.submitted_count, 0)) > 0
     ORDER BY tc.claimed_at DESC
-  `, [groupId]);
+  `, [req.user.id]);
   res.json(result.rows);
 });
 
-// GET /api/tasks/review-queue  (leader only) — submissions from MY group's
-// members that are still waiting for a decision
+// GET /api/tasks/review-queue  (leader only) — submissions from the group I
+// lead that are still waiting for a decision
 router.get("/review-queue", requireAuth, requireRole("leader"), async (req, res) => {
-  const me = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
-  const groupId = me.rows[0]?.group_id;
+  const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
+  const groupId = led.rows[0]?.id;
   if (!groupId) return res.json([]);
 
   const result = await pool.query(`
@@ -121,11 +201,11 @@ router.get("/my-submissions", requireAuth, async (req, res) => {
   res.json(result.rows);
 });
 
-// POST /api/tasks/:id/claim  (leader only)
+// POST /api/tasks/:id/claim  (leader only) — claim quantity for the group I lead
 router.post("/:id/claim", requireAuth, requireRole("leader"), async (req, res) => {
   const { quantity } = req.body;
-  const leader = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
-  const groupId = leader.rows[0]?.group_id;
+  const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
+  const groupId = led.rows[0]?.id;
   if (!groupId) return res.status(400).json({ error: "Leader has no group assigned" });
 
   const result = await pool.query(
@@ -150,28 +230,44 @@ router.post("/claims/:claimId/submissions", requireAuth, requireRole("member"), 
 // POST /api/tasks/claims/:claimId/upload  (member submits a file — REAL upload)
 // Sends the file straight to that task's Google Drive folder and records the
 // resulting link as the submission — no manual link-pasting needed.
+//
+// Drive filename convention:
+//   • member is under a Leader's group  -> "<task title> - <leader first name>"
+//   • member is under the Head Leader's group (no leader) -> "<member first name> - <year>"
 router.post("/claims/:claimId/upload", requireAuth, requireRole("member"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file was attached" });
 
   try {
     const claimResult = await pool.query(
-      `SELECT tc.id, tc.group_id, t.id AS task_id, t.drive_folder_id
-       FROM task_claims tc JOIN tasks t ON t.id = tc.task_id
+      `SELECT tc.id, tc.group_id, t.id AS task_id, t.title, t.drive_folder_id,
+              g.leader_id, lu.first_name AS leader_first_name
+       FROM task_claims tc
+       JOIN tasks t ON t.id = tc.task_id
+       JOIN groups g ON g.id = tc.group_id
+       LEFT JOIN users lu ON lu.id = g.leader_id
        WHERE tc.id = $1`,
       [req.params.claimId]
     );
     if (!claimResult.rows.length) return res.status(404).json({ error: "Claim not found" });
     const claim = claimResult.rows[0];
 
-    const me = await pool.query("SELECT group_id, first_name FROM users WHERE id = $1", [req.user.id]);
-    if (me.rows[0]?.group_id !== claim.group_id) {
+    const membership = await pool.query(
+      "SELECT 1 FROM user_groups WHERE user_id = $1 AND group_id = $2",
+      [req.user.id, claim.group_id]
+    );
+    if (!membership.rows.length) {
       return res.status(403).json({ error: "This claim doesn't belong to your group" });
     }
     if (!claim.drive_folder_id) {
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
 
-    const filename = `${me.rows[0].first_name || "member"} - ${Date.now()}-${req.file.originalname}`;
+    const me = await pool.query("SELECT first_name FROM users WHERE id = $1", [req.user.id]);
+    const memberName = me.rows[0]?.first_name || "member";
+    const filename = claim.leader_id
+      ? `${claim.title} - ${claim.leader_first_name || "leader"} - ${Date.now()}-${req.file.originalname}`
+      : `${memberName} - ${new Date().getFullYear()} - ${Date.now()}-${req.file.originalname}`;
+
     const uploaded = await driveService.uploadSubmissionFile(
       claim.drive_folder_id, filename, req.file.mimetype, req.file.buffer
     );
@@ -191,7 +287,7 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member"), uploa
   }
 });
 
-// POST /api/submissions/:id/review  (leader approves/rejects)
+// POST /api/tasks/submissions/:id/review  (leader approves/rejects)
 router.post("/submissions/:id/review", requireAuth, requireRole("leader"), async (req, res) => {
   const { approve } = req.body;
   const result = await pool.query(

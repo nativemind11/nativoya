@@ -7,97 +7,100 @@
 
 const NM = (() => {
 
+  // the 8 AI-data-training skill categories a member can offer / a task can be
   const SERVICES = [
-    { slug: "translation",   icon: "🌐", ar: "ترجمة",           en: "Translation" },
-    { slug: "transcription", icon: "📝", ar: "تفريغ صوتي",      en: "Transcription" },
-    { slug: "dubbing",       icon: "🎙️", ar: "دبلجة",           en: "Dubbing" },
-    { slug: "subtitling",    icon: "🎬", ar: "ترجمة أفلام",     en: "Subtitling" },
-    { slug: "annotation",    icon: "🏷️", ar: "توسيم بيانات",    en: "Annotation" },
-    { slug: "tour-guides",   icon: "🧭", ar: "مرشدين سياحيين", en: "Tour Guides" },
+    { slug: "voice_recording",     icon: "🎙️", ar: "تسجيل صوتي",        en: "Voice Recording" },
+    { slug: "transcription",       icon: "📝", ar: "تفريغ نصي",         en: "Transcription" },
+    { slug: "data_annotation",     icon: "🏷️", ar: "توسيم بيانات",      en: "Data Annotation" },
+    { slug: "translation",         icon: "🌐", ar: "ترجمة",             en: "Translation" },
+    { slug: "subtitling",          icon: "🎬", ar: "ترجمة أفلام",       en: "Subtitling" },
+    { slug: "dubbing",             icon: "🔊", ar: "دبلجة",             en: "Dubbing" },
+    { slug: "conversational_data", icon: "💬", ar: "بيانات محادثة",     en: "Conversational Data" },
+    { slug: "copywriting_nlp",     icon: "✍️", ar: "كتابة محتوى / NLP", en: "Copywriting / NLP" },
   ];
 
   const I18N = {
     ar: {
       home: "الرئيسية", services: "الخدمات", groups: "الجروبات", my_group: "جروبي",
       login: "تسجيل الدخول", signup: "إنشاء حساب", dashboard: "لوحتي",
-      footer_tagline: "منصة ترجمة احترافية، وأبواب عمل أونلاين في مجالات لغوية تانية — لكل ناطقي العربية.",
+      footer_tagline: "منصة عمل أونلاين تربطك بمهام حقيقية في تدريب نماذج الذكاء الاصطناعي العالمية.",
       footer_platform: "المنصة", footer_services: "الخدمات", footer_account: "الحساب",
       footer_about: "من نحن", footer_contact: "تواصل معنا", footer_groups: "الجروبات",
       footer_login: "دخول", footer_signup: "تسجيل", footer_dashboard: "لوحة التحكم",
       rights: "جميع الحقوق محفوظة.",
 
-      hero_eyebrow: "منصة الترجمة الاحترافية لمتحدثي العربية",
-      hero_title: "ترجمة دقيقة، من مترجمين تقدر تثق فيهم",
-      hero_lead: "Nativoya منصة ترجمة تربطك بمترجمين محترفين لأي لغة أو مجال. وبمجرد ما تنضم، بتتفتحلك أبواب عمل أونلاين إضافية — تفريغ صوتي، دبلجة، توسيم بيانات، ترجمة أفلام، وحتى الإرشاد السياحي — كل ده تحت منصة واحدة.",
-      hero_cta_specialist: "انضم كمترجم",
-      hero_cta_tourist: "اطلب خدمة ترجمة",
-      stat_guides: "مترجم ومتخصص لغة",
-      stat_languages: "لغة متاحة",
-      stat_countries: "دولة يوصلها المحتوى",
+      hero_eyebrow: "منصة عمل أونلاين لتدريب نماذج الذكاء الاصطناعي",
+      hero_title: "اشتغل في تدريب نماذج زي Gemini وChatGPT من مكانك",
+      hero_lead: "Nativoya منصة بتوصّلك بمهام حقيقية ومدفوعة في تدريب نماذج الذكاء الاصطناعي العالمية — تسجيل صوتي، تفريغ نصي، توسيم بيانات، ترجمة، دبلجة، ترجمة أفلام، بيانات محادثة، وكتابة محتوى. سجّل، حدد لغاتك ومهاراتك، وابدأ تستلم مهام من جروبك.",
+      hero_cta_specialist: "سجّل وابدأ الشغل",
+      hero_cta_tourist: "عندي حساب بالفعل",
+      stat_guides: "متخصص مسجل",
+      stat_languages: "لغة ولهجة متاحة",
+      stat_countries: "دولة نشط فيها أعضاؤنا",
 
-      dual_cta_1_title: "للمترجمين ومتخصصي اللغة",
-      dual_cta_1_body: "سجّل كمترجم، انضم لجروب لغتك، وابدأ تستلم مهام ترجمة حقيقية — وبعدين اكتشف مجالات عمل أونلاين تانية زي التفريغ الصوتي، الدبلجة، وتوسيم البيانات.",
-      dual_cta_1_btn: "سجّل كمترجم",
-      dual_cta_2_title: "عايز تترجم مستند أو محتوى؟",
-      dual_cta_2_body: "اطلب ترجمة من مترجمين معتمدين لأي لغة، وتابع تقدم طلبك أول بأول.",
-      dual_cta_2_btn: "اطلب ترجمة الآن",
+      dual_cta_1_title: "للمتخصصين اللي عايزين يشتغلوا أونلاين",
+      dual_cta_1_body: "سجّل، حدد اللغات واللهجات اللي بتتكلمها والمهارات اللي تقدمها، وهتنضم تلقائيًا لجروبات لغاتك وتبدأ تشوف المهام المتاحة ليك أول بأول.",
+      dual_cta_1_btn: "سجّل دلوقتي",
+      dual_cta_2_title: "عندك حساب بالفعل؟",
+      dual_cta_2_body: "ادخل على لوحة التحكم وشوف المهام المتاحة لجروبك، وكل مهمة فيها فيديو شرح وسامبل صوتي والسعر قبل ما تبدأ.",
+      dual_cta_2_btn: "دخول للوحة التحكم",
 
-      services_title: "الترجمة... وأكتر",
-      services_subtitle: "الترجمة هي جوهر Nativoya — وبجانبها بتفتح المنصة أبواب عمل أونلاين في مجالات لغوية تانية.",
+      services_title: "أنواع المهام على المنصة",
+      services_subtitle: "كل نوع مهمة ليه تفاصيله الخاصة — وبتشوف الفيديو، السامبل الصوتي، والسعر قبل ما تبدأ أي تاسك.",
       services_cta: "اعرف التفاصيل وسجّل دلوقتي",
-      featured_service_badge: "الخدمة الأساسية",
-      other_fields_title: "مجالات عمل أونلاين تانية",
+      featured_service_badge: "الأكتر طلبًا",
+      other_fields_title: "مجالات عمل تانية على المنصة",
 
       activity_title: "نشاط مباشر على المنصة",
       activity_subtitle: "شوف بنفسك إن المنصة حية ونشطة كل لحظة.",
-      matching_title: "مطابقة ذكية بسيطة",
-      matching_body: "لما شركة سياحة أو عميل ينشر مهمة، النظام بيقترح أنسب مرشد أو متخصص لغة بناءً على اللغة، التخصص، ومعدل السمعة (Reputation Score) — أول نسخة MVP بمنطق بسيط قائم على قواعد، وهنطورها لنموذج ذكاء اصطناعي كامل في المرحلة التالية.",
-      match_pill_1: "لغة مطابقة", match_pill_2: "تخصص مطابق", match_pill_3: "أعلى سمعة",
+      matching_title: "توزيع مهام بسيط وواضح",
+      matching_body: "الهيد ليدر بينشر التاسك — إما لكل الجروبات، أو لجروبات لغات محددة بس. كل تاسك بيوصلك بفيديو شرح، سامبل صوتي، والسعر، عشان تقرر قبل ما تبدأ.",
+      match_pill_1: "لغة مطابقة", match_pill_2: "مهارة مطابقة", match_pill_3: "أعلى سمعة",
 
-      activity_1: "٣ مترجمين جدد انضموا للجروب الفرنسي اليوم",
-      activity_2: "تم إنجاز ١٢ مهمة تفريغ صوتي خلال آخر ساعة",
-      activity_3: "مرشد سياحي جديد اتفعّل في جروب الإسبانية",
-      activity_4: "شركة سياحة نشرت مهمة جديدة: مرشد لجولة الأقصر",
+      activity_1: "٣ أعضاء جدد انضموا لجروب الفرنسية اليوم",
+      activity_2: "تم إنجاز ١٢ مهمة توسيم بيانات خلال آخر ساعة",
+      activity_3: "تاسك جديد اتنشر لكل الجروبات: بيانات محادثة",
+      activity_4: "عضو جديد اتفعّل في جروب العربية الخليجية",
     },
     en: {
       home: "Home", services: "Services", groups: "Groups", my_group: "My Group",
       login: "Log in", signup: "Sign up", dashboard: "Dashboard",
-      footer_tagline: "A professional translation platform, and a gateway to online-work opportunities in other language fields — for Arabic speakers everywhere.",
+      footer_tagline: "An online-work platform connecting you with real tasks that help train the world's AI models.",
       footer_platform: "Platform", footer_services: "Services", footer_account: "Account",
       footer_about: "About", footer_contact: "Contact", footer_groups: "Groups",
       footer_login: "Log in", footer_signup: "Sign up", footer_dashboard: "Dashboard",
       rights: "All rights reserved.",
 
-      hero_eyebrow: "A professional translation platform for Arabic speakers",
-      hero_title: "Accurate translation, from translators you can trust",
-      hero_lead: "Nativoya is a translation platform connecting you with professional translators for any language or field. Once you join, more online-work opportunities open up — transcription, dubbing, data annotation, subtitling, even tour guiding — all under one platform.",
-      hero_cta_specialist: "Join as a translator",
-      hero_cta_tourist: "Request a translation",
-      stat_guides: "Translators & specialists", stat_languages: "Languages available", stat_countries: "Countries reached",
+      hero_eyebrow: "Online work training the world's AI models",
+      hero_title: "Help train models like Gemini and ChatGPT, from anywhere",
+      hero_lead: "Nativoya connects you with real, paid tasks that help train AI models — voice recording, transcription, data annotation, translation, dubbing, subtitling, conversational data, and copywriting. Sign up, pick your languages and skills, and start receiving tasks through your group.",
+      hero_cta_specialist: "Sign up & start working",
+      hero_cta_tourist: "I already have an account",
+      stat_guides: "Registered specialists", stat_languages: "Languages & dialects available", stat_countries: "Countries our members work from",
 
-      dual_cta_1_title: "For translators & language specialists",
-      dual_cta_1_body: "Register as a translator, join your language group, and start taking on real translation tasks — then discover more online-work fields like transcription, dubbing, and data annotation.",
-      dual_cta_1_btn: "Join as a translator",
-      dual_cta_2_title: "Need something translated?",
-      dual_cta_2_body: "Request a translation from certified translators in any language, and track your request every step of the way.",
-      dual_cta_2_btn: "Request a translation",
+      dual_cta_1_title: "For anyone who wants to work online",
+      dual_cta_1_body: "Sign up, pick the languages/dialects you speak and the skills you can offer, and you'll be joined into your language groups automatically — then start seeing tasks made for you.",
+      dual_cta_1_btn: "Sign up now",
+      dual_cta_2_title: "Already have an account?",
+      dual_cta_2_body: "Open your dashboard to see tasks available to your group — every task comes with a walkthrough video, an audio sample, and its price before you start.",
+      dual_cta_2_btn: "Go to dashboard",
 
-      services_title: "Translation... and more",
-      services_subtitle: "Translation is the heart of Nativoya — and alongside it, the platform opens doors to other online-work language fields.",
+      services_title: "Task types on the platform",
+      services_subtitle: "Each task type has its own details — you'll see the video, audio sample, and price before starting any task.",
       services_cta: "See details and register now",
-      featured_service_badge: "Core service",
-      other_fields_title: "More online-work fields",
+      featured_service_badge: "Most requested",
+      other_fields_title: "More work fields on the platform",
 
       activity_title: "Live activity on the platform",
       activity_subtitle: "See for yourself that the platform is active every moment.",
-      matching_title: "Simple smart matching",
-      matching_body: "When a tour company or client posts a task, the system suggests the best-fit guide or language specialist based on language, specialty, and reputation score — a simple rules-based MVP today, evolving into a full AI model in the next phase.",
-      match_pill_1: "Language match", match_pill_2: "Specialty match", match_pill_3: "Top reputation",
+      matching_title: "Simple, clear task distribution",
+      matching_body: "The Head Leader publishes each task — either to every group, or to specific language groups only. Every task comes with a walkthrough video, an audio sample, and its price, so you can decide before you start.",
+      match_pill_1: "Language match", match_pill_2: "Skill match", match_pill_3: "Top reputation",
 
-      activity_1: "3 new translators joined the French group today",
-      activity_2: "12 transcription tasks completed in the last hour",
-      activity_3: "A new tour guide was activated in the Spanish group",
-      activity_4: "A tour company posted a new task: guide for a Luxor tour",
+      activity_1: "3 new members joined the French group today",
+      activity_2: "12 data annotation tasks completed in the last hour",
+      activity_3: "A new task was published to all groups: conversational data",
+      activity_4: "A new member was activated in the Gulf Arabic group",
     }
   };
 
@@ -162,10 +165,10 @@ const NM = (() => {
     return data;
   }
 
-  async function apiSignup({ firstName, email, password, whatsappNumber, country, role }) {
+  async function apiSignup({ firstName, email, password, whatsappNumber, country, languages, skills }) {
     const data = await apiFetch("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, role }),
+      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, languages, skills }),
     });
     localStorage.setItem("nm_token", data.token);
     localStorage.setItem("nm_user", JSON.stringify(data.user));
@@ -182,10 +185,10 @@ const NM = (() => {
     return data.user;
   }
 
-  async function apiJoinGroup(language, asLeader, groupNumber) {
+  async function apiJoinGroup(language, groupNumber) {
     const data = await apiFetch("/api/groups/join", {
       method: "POST",
-      body: JSON.stringify({ language, asLeader, groupNumber }),
+      body: JSON.stringify({ language, groupNumber }),
     });
     // refresh the cached user so language/group/role are correct everywhere
     await apiRefreshMe();
@@ -201,6 +204,8 @@ const NM = (() => {
       ...cached,
       id: me.id, firstName: me.first_name, email: me.email, role: me.role,
       language: me.language, groupNumber: me.group_number, groupId: me.group_id,
+      languages: me.languages || [], skills: me.skills || [], groups: me.groups || [],
+      ledGroup: me.led_group || null,
     };
     localStorage.setItem("nm_user", JSON.stringify(merged));
     return merged;
@@ -208,10 +213,11 @@ const NM = (() => {
 
   // ---- tasks ----
   function apiGetOpenTasks() { return apiFetch("/api/tasks/open"); }
-  function apiCreateTask({ serviceSlug, title, instructions, totalQuantity }) {
+  function apiGetTask(id) { return apiFetch(`/api/tasks/${id}`); }
+  function apiCreateTask({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrl, audioSampleUrl, targetAll, groupIds }) {
     return apiFetch("/api/tasks", {
       method: "POST",
-      body: JSON.stringify({ serviceSlug, title, instructions, totalQuantity }),
+      body: JSON.stringify({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrl, audioSampleUrl, targetAll, groupIds }),
     });
   }
   function apiClaimTask(taskId, quantity) {
@@ -388,7 +394,7 @@ const NM = (() => {
               <img src="${rel('assets/logo-icon.svg')}" alt="" width="30" height="30" style="border-radius:8px;">
               <span class="part-1">Nativ</span><span class="part-2">oya</span>
             </a>
-            <p data-i18n="footer_tagline" class="text-muted" style="max-width:280px;">منصة الأدلاء السياحيين وخدمات اللغة — مصر والعالم العربي.</p>
+            <p data-i18n="footer_tagline" class="text-muted" style="max-width:280px;">منصة عمل أونلاين تربطك بمهام حقيقية في تدريب نماذج الذكاء الاصطناعي العالمية.</p>
           </div>
           <div>
             <h4 data-i18n="footer_platform">المنصة</h4>
@@ -485,15 +491,46 @@ const NM = (() => {
     return { language, groupNumber, isNewGroup };
   }
 
+  // dialects/languages a member can pick at signup — each becomes its own group
   const LANGUAGES = [
     { name: "العربية (مصرية)", code: "AR-EG" },
-    { name: "الإنجليزية", code: "EN" },
+    { name: "العربية (خليجية)", code: "AR-GULF" },
+    { name: "العربية (شامية)", code: "AR-LEV" },
+    { name: "العربية (مغاربية)", code: "AR-MAG" },
+    { name: "العربية (تونسية)", code: "AR-TN" },
+    { name: "العربية (جزائرية)", code: "AR-DZ" },
+    { name: "العربية (ليبية)", code: "AR-LY" },
+    { name: "العربية (سودانية)", code: "AR-SD" },
+    { name: "العربية (يمنية)", code: "AR-YE" },
+    { name: "العربية الفصحى (MSA)", code: "AR-MSA" },
+    { name: "الإنجليزية (بريطانية)", code: "EN-GB" },
+    { name: "الإنجليزية (أمريكية)", code: "EN-US" },
     { name: "الفرنسية", code: "FR" },
     { name: "الإسبانية", code: "ES" },
     { name: "الألمانية", code: "DE" },
     { name: "الإيطالية", code: "IT" },
-    { name: "الصينية", code: "ZH" },
+    { name: "البرتغالية", code: "PT" },
     { name: "الروسية", code: "RU" },
+    { name: "التركية", code: "TR" },
+    { name: "الصينية", code: "ZH" },
+    { name: "اليابانية", code: "JA" },
+    { name: "الكورية", code: "KO" },
+    { name: "الهندية", code: "HI" },
+    { name: "الأردية", code: "UR" },
+    { name: "الفارسية", code: "FA" },
+  ];
+
+  // the 8 AI-training skills a member can offer at signup (alias of SERVICES,
+  // kept as its own name so signup forms read cleanly)
+  const SKILLS = SERVICES;
+
+  // countries dropdown for signup
+  const COUNTRIES = [
+    "مصر", "السعودية", "الإمارات", "الكويت", "قطر", "البحرين", "عمان",
+    "الأردن", "لبنان", "سوريا", "العراق", "فلسطين", "اليمن",
+    "المغرب", "الجزائر", "تونس", "ليبيا", "السودان", "موريتانيا",
+    "الولايات المتحدة", "المملكة المتحدة", "كندا", "فرنسا", "ألمانيا",
+    "إسبانيا", "إيطاليا", "تركيا", "الهند", "باكستان", "أخرى",
   ];
 
   // ---- invite links: a leader's group is identified by "<langCode>-<groupNumber>" ----
@@ -530,12 +567,12 @@ const NM = (() => {
   }
 
   return {
-    init, setLang, getLang, toggleMobileNav, SERVICES, LANGUAGES, seedCounters,
+    init, setLang, getLang, toggleMobileNav, SERVICES, SKILLS, LANGUAGES, COUNTRIES, seedCounters,
     currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup,
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
     apiSignup, apiLogin, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
-    apiGetOpenTasks, apiCreateTask, apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
+    apiGetOpenTasks, apiGetTask, apiCreateTask, apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
     apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
     apiGetGroups, apiGetRoster,
     apiRequestLeadership, apiMyLeaderRequest, apiPendingLeaderRequests,

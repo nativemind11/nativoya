@@ -1,8 +1,7 @@
 -- ==========================================================================
 -- Nativoya — Database Schema (PostgreSQL)
--- Adapted from NativeMind_Full_Spec.md section 4, with the payments table
--- redesigned for MANUAL payouts (InstaPay/Vodafone Cash/etc.) instead of
--- an automated Paymob integration.
+-- AI-data-training marketplace: Head Leader / Leader / Member, tasks with
+-- video walkthrough + audio sample + price, manual payouts (no gateway).
 -- ==========================================================================
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- for gen_random_uuid()
@@ -10,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- for gen_random_uuid()
 -- --------------------------------------------------------------------------
 -- USERS
 -- --------------------------------------------------------------------------
-CREATE TYPE user_role AS ENUM ('member', 'leader', 'head_leader', 'tourist');
+CREATE TYPE user_role AS ENUM ('member', 'leader', 'head_leader');
 
 CREATE TABLE users (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -18,16 +17,14 @@ CREATE TABLE users (
   email             TEXT UNIQUE NOT NULL,
   password_hash     TEXT NOT NULL,
   whatsapp_number   TEXT,
-  country           TEXT,
+  country           TEXT,                 -- selected from a fixed dropdown list
   role              user_role NOT NULL DEFAULT 'member',
-  language          TEXT,                 -- native language, e.g. "French"
-  group_id          UUID,                 -- FK added below, after groups table exists
   reputation_score  INTEGER NOT NULL DEFAULT 100,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- --------------------------------------------------------------------------
--- LANGUAGE GROUPS (auto-numbered per language, e.g. French Group #7)
+-- LANGUAGE GROUPS (auto-numbered per language/dialect, e.g. French Group #7)
 -- --------------------------------------------------------------------------
 CREATE TABLE groups (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -39,8 +36,17 @@ CREATE TABLE groups (
   UNIQUE (language, group_number)
 );
 
-ALTER TABLE users
-  ADD CONSTRAINT fk_users_group FOREIGN KEY (group_id) REFERENCES groups(id);
+-- --------------------------------------------------------------------------
+-- USER <-> GROUP membership (many-to-many): a user picks every language/
+-- dialect they speak at signup and is auto-joined into a group for each one.
+-- A leader also has one row here for the group they lead.
+-- --------------------------------------------------------------------------
+CREATE TABLE user_groups (
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_id    UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  joined_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, group_id)
+);
 
 -- --------------------------------------------------------------------------
 -- LEADER REQUESTS — becoming a leader needs head_leader approval; picking a
@@ -61,36 +67,60 @@ CREATE TABLE leader_requests (
 CREATE INDEX idx_leader_requests_status ON leader_requests(status);
 
 -- --------------------------------------------------------------------------
--- SERVICES (the 6 fixed service types)
+-- SKILLS (the task/skill categories a member can offer and be assigned)
 -- --------------------------------------------------------------------------
 CREATE TABLE services (
-  slug  TEXT PRIMARY KEY,   -- tour-guides | translation | transcription | dubbing | annotation | subtitling
+  slug  TEXT PRIMARY KEY,   -- voice_recording | transcription | data_annotation | translation | subtitling | dubbing | conversational_data | copywriting_nlp
   name_ar TEXT NOT NULL,
-  name_en TEXT NOT NULL
+  name_en TEXT NOT NULL,
+  icon  TEXT NOT NULL DEFAULT '🧩'
 );
 
-INSERT INTO services (slug, name_ar, name_en) VALUES
-  ('tour-guides',   'مرشدين سياحيين', 'Tour Guides'),
-  ('translation',   'ترجمة',          'Translation'),
-  ('transcription', 'تفريغ صوتي',     'Transcription'),
-  ('dubbing',       'دبلجة',          'Dubbing'),
-  ('annotation',    'توسيم بيانات',   'Annotation'),
-  ('subtitling',    'ترجمة أفلام',    'Subtitling');
+INSERT INTO services (slug, name_ar, name_en, icon) VALUES
+  ('voice_recording',     'تسجيل صوتي',        'Voice Recording',      '🎙️'),
+  ('transcription',       'تفريغ نصي',         'Transcription',        '📝'),
+  ('data_annotation',     'توسيم بيانات',      'Data Annotation',      '🏷️'),
+  ('translation',         'ترجمة',             'Translation',          '🌐'),
+  ('subtitling',          'ترجمة أفلام',       'Subtitling',           '🎬'),
+  ('dubbing',             'دبلجة',             'Dubbing',              '🔊'),
+  ('conversational_data', 'بيانات محادثة',     'Conversational Data',  '💬'),
+  ('copywriting_nlp',     'كتابة محتوى / NLP', 'Copywriting / NLP',    '✍️');
+
+-- which skills each user offers (selected at signup, editable later)
+CREATE TABLE user_skills (
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  skill_slug  TEXT NOT NULL REFERENCES services(slug),
+  PRIMARY KEY (user_id, skill_slug)
+);
 
 -- --------------------------------------------------------------------------
--- TASKS (published by head_leader, claimed by leaders for their group)
+-- TASKS (published by head_leader; either to ALL groups, or to specific
+-- groups only) — each task carries a walkthrough video, an audio sample,
+-- and a price so a member can decide before taking it.
 -- --------------------------------------------------------------------------
 CREATE TYPE task_status AS ENUM ('open', 'claimed', 'in_review', 'completed');
 
 CREATE TABLE tasks (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  service_slug    TEXT NOT NULL REFERENCES services(slug),
+  skill_slug      TEXT NOT NULL REFERENCES services(slug),
   title           TEXT NOT NULL,
   instructions    TEXT,
+  video_url       TEXT,                                 -- walkthrough video
+  audio_sample_url TEXT,                                 -- example audio sample
+  price           NUMERIC(10,2),
+  currency        TEXT NOT NULL DEFAULT 'USD',
   total_quantity  INTEGER NOT NULL,
-  created_by      UUID NOT NULL REFERENCES users(id), -- head_leader
-  drive_folder_id TEXT,                                -- this task's Google Drive folder
+  target_all      BOOLEAN NOT NULL DEFAULT true,          -- true = every group sees it
+  created_by      UUID NOT NULL REFERENCES users(id),     -- head_leader
+  drive_folder_id TEXT,                                   -- this task's Google Drive folder
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- when target_all = false, only these groups can see/claim the task
+CREATE TABLE task_targets (
+  task_id     UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  group_id    UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, group_id)
 );
 
 -- how much of a task each group/leader has claimed
@@ -116,7 +146,7 @@ CREATE TABLE submissions (
 );
 
 -- --------------------------------------------------------------------------
--- PAYMENTS — redesigned for MANUAL payout (no Paymob)
+-- PAYMENTS — MANUAL payout (InstaPay / Vodafone Cash / etc.), no gateway
 -- --------------------------------------------------------------------------
 CREATE TYPE payout_method AS ENUM (
   'instapay', 'vodafone_cash', 'etisalat_cash', 'syriatel_cash', 'sham_cash', 'paypal'
@@ -138,7 +168,10 @@ CREATE TABLE payments (
 
 -- --------------------------------------------------------------------------
 -- GOOGLE DRIVE — one connected account (the head_leader's) owns the Drive
--- that every task's submission folder lives in.
+-- that every task's submission folder lives in. Folder naming convention:
+--   • member under a Leader's group  -> "<task title> - <leader first name>"
+--   • member under Head Leader group -> "<member first name> - <year>"
+-- (applied by the app when creating/uploading into the task's folder)
 -- --------------------------------------------------------------------------
 CREATE TABLE google_auth (
   id              SERIAL PRIMARY KEY,
@@ -161,22 +194,12 @@ CREATE TABLE certificates (
 );
 
 -- --------------------------------------------------------------------------
--- TOUR GUIDE LISTINGS (for the tourist-facing directory)
--- --------------------------------------------------------------------------
-CREATE TABLE guide_listings (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID NOT NULL REFERENCES users(id),
-  bio           TEXT,
-  cities        TEXT[],           -- e.g. {"Cairo","Luxor"}
-  languages     TEXT[],
-  rating        NUMERIC(2,1) DEFAULT 5.0,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- --------------------------------------------------------------------------
 -- Indexes
 -- --------------------------------------------------------------------------
-CREATE INDEX idx_users_group ON users(group_id);
-CREATE INDEX idx_tasks_service ON tasks(service_slug);
+CREATE INDEX idx_user_groups_user ON user_groups(user_id);
+CREATE INDEX idx_user_groups_group ON user_groups(group_id);
+CREATE INDEX idx_user_skills_user ON user_skills(user_id);
+CREATE INDEX idx_tasks_skill ON tasks(skill_slug);
+CREATE INDEX idx_task_targets_group ON task_targets(group_id);
 CREATE INDEX idx_payments_status ON payments(status);
 CREATE INDEX idx_task_claims_group ON task_claims(group_id);

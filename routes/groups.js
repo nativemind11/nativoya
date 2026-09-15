@@ -4,74 +4,48 @@ const { requireAuth, requireRole } = require("../config/auth");
 
 const router = express.Router();
 
-// POST /api/groups/join  { language, asLeader?, groupNumber? }
-// Three ways to join, matching the product rules:
-//   1. asLeader: true        -> always creates a BRAND NEW group for that
-//                                language and promotes the user to 'leader'.
-//   2. groupNumber provided  -> joins that EXACT existing group (invite-link
-//                                flow: a specialist joining a specific leader's
-//                                group rather than the language's default one).
-//   3. neither                -> joins the language's ORIGINAL group (#1),
-//                                creating it if this is the first person ever
-//                                to pick that language.
+// POST /api/groups/join  { language, groupNumber? }
+// Adds ANOTHER language group to the current user (on top of whatever they
+// already joined at signup) — used for "join another language" later, or
+// for the invite-link flow (joining a SPECIFIC leader's group by number).
+//   • groupNumber provided  -> joins that EXACT existing group (invite link)
+//   • not provided          -> joins the language's ORIGINAL group (#1),
+//                               creating it if nobody has picked it yet
 router.post("/join", requireAuth, async (req, res) => {
-  const { language, asLeader, groupNumber } = req.body;
+  const { language, groupNumber } = req.body;
   if (!language) return res.status(400).json({ error: "language is required" });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    let group;
-    let isNewGroup = false;
+    const targetNumber = groupNumber || 1;
+    const existing = await client.query(
+      "SELECT * FROM groups WHERE language = $1 AND group_number = $2",
+      [language, targetNumber]
+    );
 
-    if (asLeader) {
-      const countResult = await client.query(
-        "SELECT COALESCE(MAX(group_number), 0) + 1 AS next_number FROM groups WHERE language = $1",
+    let group;
+    if (existing.rows.length) {
+      group = existing.rows[0];
+    } else if (!groupNumber) {
+      const created = await client.query(
+        `INSERT INTO groups (language, group_number) VALUES ($1, 1) RETURNING *`,
         [language]
       );
-      const nextNumber = countResult.rows[0].next_number;
-      const groupResult = await client.query(
-        `INSERT INTO groups (language, group_number, leader_id) VALUES ($1, $2, $3) RETURNING *`,
-        [language, nextNumber, req.user.id]
-      );
-      group = groupResult.rows[0];
-      isNewGroup = true;
-
-      await client.query(
-        "UPDATE users SET role = 'leader', language = $1, group_id = $2 WHERE id = $3",
-        [language, group.id, req.user.id]
-      );
+      group = created.rows[0];
     } else {
-      const targetNumber = groupNumber || 1;
-      const existing = await client.query(
-        "SELECT * FROM groups WHERE language = $1 AND group_number = $2",
-        [language, targetNumber]
-      );
-
-      if (existing.rows.length) {
-        group = existing.rows[0];
-      } else if (!groupNumber) {
-        // nobody has picked this language yet — create its original group (#1)
-        const groupResult = await client.query(
-          `INSERT INTO groups (language, group_number) VALUES ($1, 1) RETURNING *`,
-          [language]
-        );
-        group = groupResult.rows[0];
-        isNewGroup = true;
-      } else {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Invite group not found" });
-      }
-
-      await client.query(
-        "UPDATE users SET language = $1, group_id = $2 WHERE id = $3",
-        [language, group.id, req.user.id]
-      );
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Invite group not found" });
     }
 
+    await client.query(
+      `INSERT INTO user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [req.user.id, group.id]
+    );
+
     await client.query("COMMIT");
-    res.status(201).json({ group, isNewGroup });
+    res.status(201).json({ group });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
@@ -82,7 +56,7 @@ router.post("/join", requireAuth, async (req, res) => {
 });
 
 // POST /api/groups/leader-requests  { language }
-// A specialist asks to become a leader for a language. This does NOT create
+// A member asks to become a leader for a language. This does NOT create
 // a group yet — it just queues a request for the head_leader to approve.
 router.post("/leader-requests", requireAuth, async (req, res) => {
   const { language } = req.body;
@@ -96,8 +70,6 @@ router.post("/leader-requests", requireAuth, async (req, res) => {
     if (existing.rows.length) {
       return res.status(409).json({ error: "Already have a pending leader request", request: existing.rows[0] });
     }
-
-    await pool.query("UPDATE users SET language = $1 WHERE id = $2", [language, req.user.id]);
 
     const result = await pool.query(
       `INSERT INTO leader_requests (user_id, language) VALUES ($1, $2) RETURNING *`,
@@ -132,7 +104,8 @@ router.get("/leader-requests/pending", requireAuth, requireRole("head_leader"), 
 });
 
 // POST /api/groups/leader-requests/:id/approve  (head_leader only)
-// Approving is what actually creates the brand-new group and promotes the user.
+// Approving is what actually creates the brand-new group, promotes the
+// user to "leader", and adds them as a member of the group they now lead.
 router.post("/leader-requests/:id/approve", requireAuth, requireRole("head_leader"), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -160,9 +133,10 @@ router.post("/leader-requests/:id/approve", requireAuth, requireRole("head_leade
     );
     const group = groupResult.rows[0];
 
+    await client.query("UPDATE users SET role = 'leader' WHERE id = $1", [request.user_id]);
     await client.query(
-      "UPDATE users SET role = 'leader', language = $1, group_id = $2 WHERE id = $3",
-      [request.language, group.id, request.user_id]
+      `INSERT INTO user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [request.user_id, group.id]
     );
     await client.query(
       "UPDATE leader_requests SET status = 'approved', decided_by = $1, decided_at = now() WHERE id = $2",
@@ -191,19 +165,20 @@ router.post("/leader-requests/:id/reject", requireAuth, requireRole("head_leader
   res.json(result.rows[0]);
 });
 
-// GET /api/groups/roster  (leader only) — the members of MY group
+// GET /api/groups/roster  (leader only) — the members of the group I lead
 router.get("/roster", requireAuth, requireRole("leader"), async (req, res) => {
   try {
-    const me = await pool.query("SELECT group_id FROM users WHERE id = $1", [req.user.id]);
-    const groupId = me.rows[0]?.group_id;
+    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
+    const groupId = led.rows[0]?.id;
     if (!groupId) return res.json([]);
 
     const result = await pool.query(
       `SELECT u.id, u.first_name, u.reputation_score,
               (SELECT COUNT(*) FROM submissions s
                  WHERE s.submitted_by = u.id AND s.status = 'completed') AS completed_count
-       FROM users u
-       WHERE u.group_id = $1 AND u.id != $2
+       FROM user_groups ug
+       JOIN users u ON u.id = ug.user_id
+       WHERE ug.group_id = $1 AND u.id != $2
        ORDER BY u.created_at ASC`,
       [groupId, req.user.id]
     );
@@ -214,11 +189,12 @@ router.get("/roster", requireAuth, requireRole("leader"), async (req, res) => {
   }
 });
 
-// GET /api/groups  (head_leader overview)
+// GET /api/groups  (head_leader overview + used to populate the "target
+// specific groups" picker when publishing a task)
 router.get("/", requireAuth, async (req, res) => {
   const result = await pool.query(`
     SELECT g.*, u.first_name AS leader_name,
-      (SELECT COUNT(*) FROM users WHERE group_id = g.id) AS member_count
+      (SELECT COUNT(*) FROM user_groups WHERE group_id = g.id) AS member_count
     FROM groups g LEFT JOIN users u ON u.id = g.leader_id
     ORDER BY g.language, g.group_number
   `);

@@ -3,17 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>الخدمات — Nativoya</title>
+<title>أنواع المهام — Nativoya</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
 <main class="container section">
   <div class="section-head">
-    <h1>خدماتنا الست</h1>
-    <p>كل خدمة ليها صفحة تفصيلية، أمثلة، واستمارة تسجيل مخصصة.</p>
+    <h1>أنواع المهام على المنصة</h1>
+    <p>كل نوع له تفاصيله الخاصة، وكل مهمة بتوصلك بفيديو شرح وسامبل صوتي والسعر قبل ما تبدأ.</p>
   </div>
   <div class="grid-3" id="services-grid"></div>
+  <div class="card text-center" style="margin-top:30px;">
+    <h3>مستعد تبدأ؟</h3>
+    <p class="text-muted">سجّل واحدة، حدد لغاتك ومهاراتك، وابدأ تشوف المهام المتاحة ليك.</p>
+    <a href="signup.html" class="btn btn-primary">إنشاء حساب</a>
+  </div>
 </main>
 
 <script src="../js/shared.js"></script>
@@ -27,7 +32,7 @@
       <div class="card">
         <div class="icon-badge" style="font-size:1.6rem;">${s.icon}</div>
         <h3 style="margin-top:10px;">${s.ar}</h3>
-        <p class="text-muted" style="margin-bottom:0;">اعرف التفاصيل وسجّل دلوقتي</p>
+        <p class="text-muted" style="margin-bottom:0;">اعرف التفاصيل</p>
       </div>`;
     grid.appendChild(a);
   });

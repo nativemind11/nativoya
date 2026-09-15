@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nativoya — منصة الترجمة الاحترافية</title>
-<meta name="description" content="Nativoya: منصة ترجمة تربطك بمترجمين معتمدين لأي لغة، وتفتحلك أبواب عمل أونلاين في مجالات لغوية تانية (تفريغ صوتي، دبلجة، توسيم بيانات، ترجمة أفلام، إرشاد سياحي).">
+<title>Nativoya — منصة عمل أونلاين لتدريب نماذج الذكاء الاصطناعي</title>
+<meta name="description" content="Nativoya: منصة عمل أونلاين بتوصّلك بمهام مدفوعة في تدريب نماذج الذكاء الاصطناعي العالمية زي Gemini وChatGPT — تسجيل صوتي، تفريغ نصي، توسيم بيانات، ترجمة، دبلجة، وأكتر.">
 <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -14,21 +14,22 @@
 <main id="main">
   <!-- HERO -->
   <section class="hero container">
-    <span class="pill eyebrow-pill" data-i18n="hero_eyebrow">منصة الترجمة الاحترافية لمتحدثي العربية</span>
-    <h1 data-i18n="hero_title">ترجمة دقيقة، من مترجمين تقدر تثق فيهم</h1>
+    <span class="pill eyebrow-pill" data-i18n="hero_eyebrow">منصة عمل أونلاين لتدريب نماذج الذكاء الاصطناعي</span>
+    <h1 data-i18n="hero_title">اشتغل في تدريب نماذج زي Gemini وChatGPT من مكانك</h1>
     <p class="lead" data-i18n="hero_lead">
-      Nativoya منصة ترجمة تربطك بمترجمين محترفين لأي لغة أو مجال. وبمجرد ما تنضم، بتتفتحلك أبواب عمل أونلاين إضافية —
-      تفريغ صوتي، دبلجة، توسيم بيانات، ترجمة أفلام، وحتى الإرشاد السياحي — كل ده تحت منصة واحدة.
+      Nativoya منصة بتوصّلك بمهام حقيقية ومدفوعة في تدريب نماذج الذكاء الاصطناعي العالمية —
+      تسجيل صوتي، تفريغ نصي، توسيم بيانات، ترجمة، دبلجة، ترجمة أفلام، بيانات محادثة، وكتابة محتوى.
+      سجّل، حدد لغاتك ومهاراتك، وابدأ تستلم مهام من جروبك.
     </p>
     <div class="hero-actions">
-      <a href="pages/signup.html?path=specialist" class="btn btn-primary" data-i18n="hero_cta_specialist">انضم كمترجم</a>
-      <a href="pages/signup.html?path=tourist" class="btn btn-secondary" data-i18n="hero_cta_tourist">اطلب خدمة ترجمة</a>
+      <a href="pages/signup.html" class="btn btn-primary" data-i18n="hero_cta_specialist">سجّل وابدأ الشغل</a>
+      <a href="pages/login.html" class="btn btn-secondary" data-i18n="hero_cta_tourist">عندي حساب بالفعل</a>
     </div>
 
     <div class="stats-row" id="stats-row">
-      <div class="stat-card"><div class="num" id="stat-guides">—</div><div class="label" data-i18n="stat_guides">مرشد ومتخصص لغة</div></div>
-      <div class="stat-card"><div class="num" id="stat-languages">—</div><div class="label" data-i18n="stat_languages">لغة متاحة</div></div>
-      <div class="stat-card"><div class="num" id="stat-countries">—</div><div class="label" data-i18n="stat_countries">دولة يوصلها المحتوى</div></div>
+      <div class="stat-card"><div class="num" id="stat-guides">—</div><div class="label" data-i18n="stat_guides">متخصص مسجل</div></div>
+      <div class="stat-card"><div class="num" id="stat-languages">—</div><div class="label" data-i18n="stat_languages">لغة ولهجة متاحة</div></div>
+      <div class="stat-card"><div class="num" id="stat-countries">—</div><div class="label" data-i18n="stat_countries">دولة نشط فيها أعضاؤنا</div></div>
     </div>
   </section>
 
@@ -36,41 +37,27 @@
   <section class="container">
     <div class="dual-cta">
       <div class="card cta-card">
-        <div class="icon-badge">🧭</div>
-        <h3 data-i18n="dual_cta_1_title">للمترجمين ومتخصصي اللغة</h3>
-        <p data-i18n="dual_cta_1_body">سجّل كمترجم، انضم لجروب لغتك، وابدأ تستلم مهام ترجمة حقيقية — وبعدين اكتشف مجالات عمل أونلاين تانية زي التفريغ الصوتي، الدبلجة، وتوسيم البيانات.</p>
-        <a href="pages/signup.html?path=specialist" class="btn btn-primary btn-block" data-i18n="dual_cta_1_btn">سجّل كمترجم</a>
+        <div class="icon-badge">🧩</div>
+        <h3 data-i18n="dual_cta_1_title">للمتخصصين اللي عايزين يشتغلوا أونلاين</h3>
+        <p data-i18n="dual_cta_1_body">سجّل، حدد اللغات واللهجات اللي بتتكلمها والمهارات اللي تقدمها، وهتنضم تلقائيًا لجروبات لغاتك وتبدأ تشوف المهام المتاحة ليك أول بأول.</p>
+        <a href="pages/signup.html" class="btn btn-primary btn-block" data-i18n="dual_cta_1_btn">سجّل دلوقتي</a>
       </div>
       <div class="card cta-card">
-        <div class="icon-badge">🧳</div>
-        <h3 data-i18n="dual_cta_2_title">عايز تترجم مستند أو محتوى؟</h3>
-        <p data-i18n="dual_cta_2_body">اطلب ترجمة من مترجمين معتمدين لأي لغة، وتابع تقدم طلبك أول بأول.</p>
-        <a href="pages/services.html" class="btn btn-primary btn-block" data-i18n="dual_cta_2_btn">اطلب ترجمة الآن</a>
+        <div class="icon-badge">📋</div>
+        <h3 data-i18n="dual_cta_2_title">عندك حساب بالفعل؟</h3>
+        <p data-i18n="dual_cta_2_body">ادخل على لوحة التحكم وشوف المهام المتاحة لجروبك، وكل مهمة فيها فيديو شرح وسامبل صوتي والسعر قبل ما تبدأ.</p>
+        <a href="pages/login.html" class="btn btn-primary btn-block" data-i18n="dual_cta_2_btn">دخول للوحة التحكم</a>
       </div>
     </div>
   </section>
 
-  <!-- SERVICES PREVIEW -->
+  <!-- SKILLS / TASK TYPES PREVIEW -->
   <section class="section">
     <div class="container">
       <div class="section-head">
-        <h2 data-i18n="services_title">الترجمة... وأكتر</h2>
-        <p data-i18n="services_subtitle">الترجمة هي جوهر Nativoya — وبجانبها بتفتح المنصة أبواب عمل أونلاين في مجالات لغوية تانية.</p>
+        <h2 data-i18n="services_title">أنواع المهام على المنصة</h2>
+        <p data-i18n="services_subtitle">كل نوع مهمة ليه تفاصيله الخاصة — وبتشوف الفيديو، السامبل الصوتي، والسعر قبل ما تبدأ أي تاسك.</p>
       </div>
-
-      <!-- Featured: Translation -->
-      <a href="pages/service.html?s=translation" style="text-decoration:none; display:block; margin-bottom:28px;">
-        <div class="card" style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
-          <div class="icon-badge" style="font-size:2.2rem; width:64px; height:64px;">🌐</div>
-          <div style="flex:1; min-width:200px;">
-            <span class="pill" data-i18n="featured_service_badge" style="margin-bottom:8px;">الخدمة الأساسية</span>
-            <h3 id="featured-service-title" style="margin-top:8px;">ترجمة</h3>
-            <p class="mb-0 text-muted" data-i18n="services_cta">اعرف التفاصيل وسجّل دلوقتي</p>
-          </div>
-        </div>
-      </a>
-
-      <h3 data-i18n="other_fields_title" style="margin-bottom:16px;">مجالات عمل أونلاين تانية</h3>
       <div class="grid-3" id="services-grid"></div>
     </div>
   </section>
@@ -84,15 +71,14 @@
         <div class="activity-feed" id="activity-feed"></div>
       </div>
       <div class="card">
-        <h3 data-i18n="matching_title">مطابقة ذكية بسيطة</h3>
+        <h3 data-i18n="matching_title">توزيع مهام بسيط وواضح</h3>
         <p class="text-muted" data-i18n="matching_body">
-          لما شركة سياحة أو عميل ينشر مهمة، النظام بيقترح أنسب مرشد أو متخصص لغة
-          بناءً على اللغة، التخصص، ومعدل السمعة (Reputation Score) — أول نسخة MVP بمنطق بسيط قائم على قواعد،
-          وهنطورها لنموذج ذكاء اصطناعي كامل في المرحلة التالية.
+          الهيد ليدر بينشر التاسك — إما لكل الجروبات، أو لجروبات لغات محددة بس.
+          كل تاسك بيوصلك بفيديو شرح، سامبل صوتي، والسعر، عشان تقرر قبل ما تبدأ.
         </p>
         <div class="flex gap-8" style="margin-top:14px;">
           <span class="pill" data-i18n="match_pill_1">لغة مطابقة</span>
-          <span class="pill" data-i18n="match_pill_2">تخصص مطابق</span>
+          <span class="pill" data-i18n="match_pill_2">مهارة مطابقة</span>
           <span class="pill" data-i18n="match_pill_3">أعلى سمعة</span>
         </div>
       </div>
@@ -110,11 +96,9 @@
 
   function renderServicesGrid() {
     const lang = NM.getLang();
-    document.getElementById("featured-service-title").textContent =
-      lang === "ar" ? "ترجمة" : "Translation";
     const grid = document.getElementById("services-grid");
     grid.innerHTML = "";
-    NM.SERVICES.filter(s => s.slug !== "translation").forEach(s => {
+    NM.SERVICES.forEach(s => {
       const a = document.createElement("a");
       a.href = `pages/service.html?s=${s.slug}`;
       a.style.textDecoration = "none";

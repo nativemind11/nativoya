@@ -3,114 +3,76 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title id="page-title">خدمة — Nativoya</title>
+<title id="page-title">مهارة — Nativoya</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-<main class="container section">
-  <div class="grid-2" style="align-items:start; gap:40px;">
-    <div>
-      <span class="pill" id="service-icon-pill">🧭 خدمة</span>
-      <h1 id="service-title" style="margin-top:14px;">—</h1>
-      <p id="service-desc" style="font-size:1.05rem;">—</p>
+<main class="container section" style="max-width:640px;">
+  <span class="pill" id="service-icon-pill">🧩 مهارة</span>
+  <h1 id="service-title" style="margin-top:14px;">—</h1>
+  <p id="service-desc" style="font-size:1.05rem;">—</p>
 
-      <h3 style="margin-top:30px;">أمثلة على المهام</h3>
-      <div id="service-examples" style="display:grid; gap:12px;"></div>
+  <h3 style="margin-top:30px;">أمثلة على المهام</h3>
+  <div id="service-examples" style="display:grid; gap:12px;"></div>
 
-      <h3 style="margin-top:30px;">إيه اللي هتاخده</h3>
-      <div id="service-benefits" style="display:grid; gap:14px;"></div>
-    </div>
+  <h3 style="margin-top:30px;">إيه اللي هتاخده</h3>
+  <div id="service-benefits" style="display:grid; gap:14px;"></div>
 
-    <div class="card" style="position:sticky; top:96px;">
-      <h3>سجّل في الخدمة دي</h3>
-      <p class="text-muted">هتنضم تلقائيًا لجروب لغتك الأم بعد التسجيل.</p>
-      <form id="service-form">
-        <div class="field">
-          <label for="f-name">الاسم بالكامل</label>
-          <input type="text" id="f-name" placeholder="مثال: أحمد محمود" required>
-        </div>
-        <div class="field">
-          <label for="f-email">البريد الإلكتروني</label>
-          <input type="email" id="f-email" placeholder="you@example.com" required>
-        </div>
-        <div class="field">
-          <label for="f-whatsapp">رقم واتساب</label>
-          <input type="tel" id="f-whatsapp" placeholder="+20 1xx xxx xxxx" required>
-        </div>
-        <div class="field">
-          <label for="f-password">كلمة المرور</label>
-          <input type="password" id="f-password" required minlength="6">
-          <div class="hint">6 أحرف على الأقل</div>
-        </div>
-        <div class="field">
-          <label for="f-country">الدولة</label>
-          <input type="text" id="f-country" placeholder="مصر" required>
-        </div>
-        <div class="field">
-          <label for="f-lang">لغتك الأم</label>
-          <select id="f-lang" required>
-            <option value="">اختر اللغة</option>
-            <option>العربية (مصرية)</option>
-            <option>الإنجليزية</option>
-            <option>الفرنسية</option>
-            <option>الإسبانية</option>
-            <option>الألمانية</option>
-            <option>الإيطالية</option>
-            <option>الصينية</option>
-            <option>الروسية</option>
-          </select>
-          <div class="hint">هتنضم تلقائيًا لجروب اللغة دي — الرقم بيتحدد تلقائيًا (مثال: جروب #7)</div>
-        </div>
-        <p id="service-error" class="hint" style="color:#e0245e; display:none;"></p>
-        <button type="submit" class="btn btn-primary btn-block" id="service-submit">إرسال التسجيل</button>
-      </form>
-      <div id="form-success" class="hidden" style="margin-top:16px; padding:14px; background:#E1F6EA; border-radius:10px; color:#1F7A4D; font-weight:700;">
-        ✅ تم التسجيل وانضممت لجروبك! هتتحول الآن للوحة التحكم.
-      </div>
-    </div>
+  <div class="card text-center" style="margin-top:30px;">
+    <h3>سجّل وابدأ الشغل</h3>
+    <p class="text-muted">هتحدد لغاتك والمهارات اللي تقدمها (من ضمنها المهارة دي) وقت التسجيل.</p>
+    <a href="signup.html" class="btn btn-primary btn-block">إنشاء حساب</a>
   </div>
 </main>
 
 <script src="../js/shared.js"></script>
 <script>
   const SERVICE_DETAILS = {
-    "tour-guides": {
-      examples: ["جولة نصف يوم في القاهرة القديمة ومصر الفرعونية", "مرافقة مجموعة سياحية لمدة أسبوع في الأقصر وأسوان"],
-      benefits: ["ظهور في الدليل الرسمي أمام السائحين مباشرة", "نظام سمعة (Reputation) يبني ثقتك مع الوقت", "حجوزات وأنت بالفعل داخل مصر"],
-    },
-    "translation": {
-      examples: ["ترجمة عقد تجاري من الإنجليزية للعربية", "ترجمة موقع إلكتروني لشركة ناشئة"],
-      benefits: ["مهام مدفوعة تُنشر بانتظام من الهيد ليدر", "شهادة إتمام لكل مهمة تخلصها", "عمل عن بُعد بالكامل"],
+    "voice_recording": {
+      examples: ["تسجيل جمل قصيرة بلهجات مختلفة", "تسجيل ردود صوتية طبيعية لمحادثات قصيرة"],
+      benefits: ["مهام قصيرة تناسب الوقت الفاضي", "مايحتاجش خبرة سابقة", "دفع بعد المراجعة والموافقة مباشرة"],
     },
     "transcription": {
-      examples: ["تفريغ تسجيل بودكاست مدته ساعة لنص مكتوب", "تفريغ مكالمة اجتماع عمل"],
-      benefits: ["مهام قصيرة تناسب الوقت الفاضي", "تدريب بسيط قبل أول مهمة", "دفع بعد المراجعة والموافقة مباشرة"],
+      examples: ["تفريغ تسجيل صوتي مدته دقايق لنص مكتوب", "تفريغ مكالمة قصيرة بلهجة معينة"],
+      benefits: ["مهام قصيرة تناسب الوقت الفاضي", "تدريب بسيط قبل أول مهمة", "دفع سريع بعد المراجعة"],
     },
-    "dubbing": {
-      examples: ["دبلجة إعلان تجاري قصير", "تسجيل صوت لفيديو تعليمي"],
-      benefits: ["فرصة لاستغلال موهبتك الصوتية", "شارة \"صوت موثّق\" بعد مراجعة عينة صوتية", "مهام متنوعة بين إعلانات ومحتوى تعليمي"],
-    },
-    "annotation": {
-      examples: ["توسيم صور لمشروع تعرّف على الكائنات", "تصنيف نصوص عربية حسب المشاعر"],
+    "data_annotation": {
+      examples: ["توسيم نصوص حسب المشاعر أو النية", "تصنيف ردود شات بوت صح/غلط"],
       benefits: ["مهام بسيطة ومنظمة بخطوات واضحة", "تناسب المبتدئين تمامًا", "دفع سريع بعد المراجعة"],
     },
+    "translation": {
+      examples: ["ترجمة جمل قصيرة بين لغتين", "ترجمة محادثات نموذجية لأغراض تدريب نموذج"],
+      benefits: ["مهام مدفوعة تُنشر بانتظام من الهيد ليدر", "شهادة إتمام لكل مهمة تخلصها", "عمل عن بُعد بالكامل"],
+    },
     "subtitling": {
-      examples: ["ترجمة أفلام قصيرة للعربية", "توقيت ترجمة حلقة بودكاست مرئي"],
+      examples: ["ترجمة وتوقيت مقاطع فيديو قصيرة", "مراجعة ترجمة موجودة والتأكد من دقتها"],
       benefits: ["عمل إبداعي ومتنوع", "مهارة مطلوبة باستمرار", "شهادات إتمام لكل مشروع"],
+    },
+    "dubbing": {
+      examples: ["دبلجة مقطع صوتي قصير", "تسجيل صوت لمحتوى تدريبي"],
+      benefits: ["فرصة لاستغلال موهبتك الصوتية", "شارة \"صوت موثّق\" بعد مراجعة عينة صوتية", "مهام متنوعة"],
+    },
+    "conversational_data": {
+      examples: ["كتابة أو تقييم حوارات نموذجية", "ترتيب ردود شات بوت من الأفضل للأسوأ"],
+      benefits: ["مهام تناسب اللي بيحبوا الكتابة", "مايحتاجش معدات خاصة", "دفع سريع بعد المراجعة"],
+    },
+    "copywriting_nlp": {
+      examples: ["كتابة أمثلة نصية لتدريب نموذج", "مراجعة وتحسين نصوص مولّدة بالذكاء الاصطناعي"],
+      benefits: ["مهام تناسب أصحاب الخلفية اللغوية القوية", "عمل عن بُعد بالكامل", "شهادات إتمام لكل مشروع"],
     },
   };
 
   const params = new URLSearchParams(location.search);
-  const slug = params.get("s") || "tour-guides";
+  const slug = params.get("s") || NM.SERVICES[0].slug;
   const svc = NM.SERVICES.find(s => s.slug === slug) || NM.SERVICES[0];
-  const details = SERVICE_DETAILS[svc.slug];
+  const details = SERVICE_DETAILS[svc.slug] || { examples: [], benefits: [] };
 
   document.getElementById("page-title").textContent = `${svc.ar} — Nativoya`;
   document.getElementById("service-icon-pill").textContent = `${svc.icon} ${svc.ar}`;
   document.getElementById("service-title").textContent = svc.ar;
   document.getElementById("service-desc").textContent =
-    `سجّل كمتخصص في "${svc.ar}" وانضم لجروب لغتك الأم، عشان تستلم مهام حقيقية من فريق Nativoya أول بأول.`;
+    `سجّل واختار "${svc.ar}" ضمن مهاراتك، عشان تستلم مهام حقيقية من فريق Nativoya أول بأول.`;
 
   const exWrap = document.getElementById("service-examples");
   details.examples.forEach(ex => {
@@ -124,45 +86,6 @@
         <div class="icon">✓</div>
         <p class="mb-0">${b}</p>
       </div>`;
-  });
-
-  document.getElementById("service-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = document.getElementById("f-name").value;
-    const email = document.getElementById("f-email").value;
-    const password = document.getElementById("f-password").value;
-    const country = document.getElementById("f-country").value;
-    const whatsapp = document.getElementById("f-whatsapp").value;
-    const language = document.getElementById("f-lang").value;
-
-    const errorBox = document.getElementById("service-error");
-    const submitBtn = document.getElementById("service-submit");
-    errorBox.style.display = "none";
-    submitBtn.disabled = true;
-    submitBtn.textContent = "جاري الإرسال...";
-
-    try {
-      await NM.apiSignup({
-        firstName: name,
-        email,
-        password,
-        whatsappNumber: whatsapp,
-        country,
-      });
-      // the specialist already picked their language in this form, so join
-      // that language's group directly instead of sending them through
-      // language-select.html again.
-      await NM.apiJoinGroup(language, false);
-
-      document.getElementById("service-form").classList.add("hidden");
-      document.getElementById("form-success").classList.remove("hidden");
-      setTimeout(() => { location.href = "dashboard-member.html"; }, 1400);
-    } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.style.display = "block";
-      submitBtn.disabled = false;
-      submitBtn.textContent = "إرسال التسجيل";
-    }
   });
 </script>
 </body>
