@@ -19,10 +19,10 @@
   <h3 style="margin-top:30px;">إيه اللي هتاخده</h3>
   <div id="service-benefits" style="display:grid; gap:14px;"></div>
 
-  <div class="card text-center" style="margin-top:30px;">
-    <h3>سجّل وابدأ الشغل</h3>
-    <p class="text-muted">هتحدد لغاتك والمهارات اللي تقدمها (من ضمنها المهارة دي) وقت التسجيل.</p>
-    <a href="signup.html" class="btn btn-primary btn-block">إنشاء حساب</a>
+  <div class="card text-center" style="margin-top:30px;" id="service-cta-card">
+    <h3 id="service-cta-title">سجّل وابدأ الشغل</h3>
+    <p class="text-muted" id="service-cta-body">هتحدد لغاتك والمهارات اللي تقدمها (من ضمنها المهارة دي) وقت التسجيل.</p>
+    <a href="signup.html" class="btn btn-primary btn-block" id="service-cta-btn">إنشاء حساب</a>
   </div>
 </main>
 
@@ -87,6 +87,18 @@
         <p class="mb-0">${b}</p>
       </div>`;
   });
+
+  // already have an account? point them to their dashboard instead of signup
+  const loggedInUser = NM.currentUser();
+  if (loggedInUser) {
+    const dashboardPath = loggedInUser.role === "head_leader" ? "dashboard-admin.html"
+      : loggedInUser.role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
+    document.getElementById("service-cta-title").textContent = "شايف مهمة عايز تبدأها؟";
+    document.getElementById("service-cta-body").textContent = "روح لوحة التحكم بتاعتك وشوف المهام المتاحة ليك دلوقتي.";
+    const btn = document.getElementById("service-cta-btn");
+    btn.textContent = "روح لوحة التحكم";
+    btn.href = dashboardPath;
+  }
 </script>
 </body>
 </html>

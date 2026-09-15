@@ -14,10 +14,10 @@
     <p>كل نوع له تفاصيله الخاصة، وكل مهمة بتوصلك بفيديو شرح وسامبل صوتي والسعر قبل ما تبدأ.</p>
   </div>
   <div class="grid-3" id="services-grid"></div>
-  <div class="card text-center" style="margin-top:30px;">
-    <h3>مستعد تبدأ؟</h3>
-    <p class="text-muted">سجّل واحدة، حدد لغاتك ومهاراتك، وابدأ تشوف المهام المتاحة ليك.</p>
-    <a href="signup.html" class="btn btn-primary">إنشاء حساب</a>
+  <div class="card text-center" style="margin-top:30px;" id="services-cta-card">
+    <h3 id="services-cta-title">مستعد تبدأ؟</h3>
+    <p class="text-muted" id="services-cta-body">سجّل واحدة، حدد لغاتك ومهاراتك، وابدأ تشوف المهام المتاحة ليك.</p>
+    <a href="signup.html" class="btn btn-primary" id="services-cta-btn">إنشاء حساب</a>
   </div>
 </main>
 
@@ -36,6 +36,18 @@
       </div>`;
     grid.appendChild(a);
   });
+
+  // already have an account? point them to their dashboard instead of signup
+  const loggedInUser = NM.currentUser();
+  if (loggedInUser) {
+    const dashboardPath = loggedInUser.role === "head_leader" ? "dashboard-admin.html"
+      : loggedInUser.role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
+    document.getElementById("services-cta-title").textContent = "شايف مهمة عايز تبدأها؟";
+    document.getElementById("services-cta-body").textContent = "روح لوحة التحكم بتاعتك وشوف المهام المتاحة ليك دلوقتي.";
+    const btn = document.getElementById("services-cta-btn");
+    btn.textContent = "روح لوحة التحكم";
+    btn.href = dashboardPath;
+  }
 </script>
 </body>
 </html>

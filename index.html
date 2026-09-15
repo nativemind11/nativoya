@@ -142,6 +142,19 @@
 
   renderServicesGrid();
   renderActivityFeed();
+
+  // already logged in? point straight to their dashboard instead of signup/login
+  const loggedInUser = NM.currentUser();
+  if (loggedInUser) {
+    const dashboardPath = loggedInUser.role === "head_leader" ? "pages/dashboard-admin.html"
+      : loggedInUser.role === "leader" ? "pages/dashboard-leader.html" : "pages/dashboard-member.html";
+    document.querySelectorAll('a[href="pages/signup.html"], a[href="pages/login.html"]').forEach(a => {
+      a.href = dashboardPath;
+      a.textContent = "روح لوحة التحكم";
+      a.removeAttribute("data-i18n");
+    });
+  }
+
   document.addEventListener("nm:langchange", () => {
     renderServicesGrid();
     renderActivityFeed();
