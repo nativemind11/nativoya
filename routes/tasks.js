@@ -69,6 +69,43 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   }
 });
 
+// GET /api/tasks/:id/claims  (head_leader only) — full breakdown of who has
+// claimed how much of this task (which group/leader) and every individual
+// submission made against it (which member, from which group).
+router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, res) => {
+  try {
+    const claims = await pool.query(`
+      SELECT tc.id AS claim_id, tc.quantity, tc.claimed_at,
+             g.language, g.group_number, g.leader_id,
+             lu.first_name AS leader_name,
+             COALESCE(sc.submitted_count, 0) AS submitted_count
+      FROM task_claims tc
+      JOIN groups g ON g.id = tc.group_id
+      LEFT JOIN users lu ON lu.id = g.leader_id
+      LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
+        ON sc.task_claim_id = tc.id
+      WHERE tc.task_id = $1
+      ORDER BY tc.claimed_at ASC
+    `, [req.params.id]);
+
+    const submissions = await pool.query(`
+      SELECT s.id, s.status, s.file_url, s.created_at,
+             u.first_name AS member_name, g.language, g.group_number
+      FROM submissions s
+      JOIN task_claims tc ON tc.id = s.task_claim_id
+      JOIN groups g ON g.id = tc.group_id
+      JOIN users u ON u.id = s.submitted_by
+      WHERE tc.task_id = $1
+      ORDER BY s.created_at DESC
+    `, [req.params.id]);
+
+    res.json({ claims: claims.rows, submissions: submissions.rows });
+  } catch (err) {
+    console.error("[tasks:claims-breakdown]", err);
+    res.status(500).json({ error: "Could not load claim breakdown" });
+  }
+});
+
 // GET /api/tasks/manage  (head_leader only) — every task ever published,
 // with full details + how much has been claimed, for the admin management table
 router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) => {

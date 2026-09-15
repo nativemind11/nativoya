@@ -96,6 +96,24 @@
         </div>
       </div>
 
+      <div class="card hidden" id="task-claims-panel" style="margin-top:20px;">
+        <h3 id="task-claims-title">مين اخد ايه</h3>
+        <p class="text-muted" style="font-size:0.85rem;">الجروبات اللي استلمت من المهمة دي:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الجروب</th><th>الليدر</th><th>الكمية المستلمة</th><th>اتسلّم / المستلم</th></tr></thead>
+            <tbody id="task-claims-body"></tbody>
+          </table>
+        </div>
+        <p class="text-muted" style="font-size:0.85rem; margin-top:20px;">كل التسليمات الفردية على المهمة دي:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>العضو</th><th>الجروب</th><th>الملف</th><th>الحالة</th></tr></thead>
+            <tbody id="task-submissions-body"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card" id="leader-requests" style="margin-top:20px;">
         <h3>طلبات ليدرشيب معلّقة</h3>
         <p class="text-muted">لما توافق، بيتعمل جروب جديد فورًا وحساب اللي طلب بيترقى لـ"ليدر" تلقائيًا.</p>
@@ -231,6 +249,7 @@
               <td>${t.claimed_quantity} / ${t.total_quantity}</td>
               <td>
                 <button class="btn btn-secondary" style="padding:6px 12px;" onclick='startEditTask(${JSON.stringify(t).replace(/'/g, "&apos;")})'>✏️ تعديل</button>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="showTaskClaims('${t.id}', '${String(t.title).replace(/'/g, "&apos;")}')">👥 مين اخد ايه</button>
                 <button class="btn btn-secondary" style="padding:6px 12px; color:#e0245e;" onclick="deleteTask('${t.id}', this)">🗑️ حذف</button>
               </td>
             </tr>`).join("")
@@ -238,6 +257,40 @@
     } catch (err) {
       document.getElementById("manage-tasks-error").textContent = err.message;
       document.getElementById("manage-tasks-error").style.display = "block";
+    }
+  }
+
+  async function showTaskClaims(taskId, taskTitle) {
+    const panel = document.getElementById("task-claims-panel");
+    panel.classList.remove("hidden");
+    document.getElementById("task-claims-title").textContent = `مين اخد ايه من: ${taskTitle}`;
+    document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
+    panel.scrollIntoView({ behavior: "smooth" });
+
+    try {
+      const { claims, submissions } = await NM.apiGetTaskClaims(taskId);
+      document.getElementById("task-claims-body").innerHTML = claims.length
+        ? claims.map(c => `
+            <tr>
+              <td>${c.language} #${c.group_number}</td>
+              <td>${c.leader_name || "بدون ليدر (تحت الهيد ليدر)"}</td>
+              <td>${c.quantity}</td>
+              <td>${c.submitted_count} / ${c.quantity}</td>
+            </tr>`).join("")
+        : `<tr><td colspan="4" class="text-muted">مفيش أي جروب استلم من المهمة دي لسه</td></tr>`;
+
+      document.getElementById("task-submissions-body").innerHTML = submissions.length
+        ? submissions.map(s => `
+            <tr>
+              <td>${s.member_name}</td>
+              <td>${s.language} #${s.group_number}</td>
+              <td>${s.file_url ? `<a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a>` : "—"}</td>
+              <td><span class="pill">${s.status === "completed" ? "✅ مقبول" : "بانتظار المراجعة"}</span></td>
+            </tr>`).join("")
+        : `<tr><td colspan="4" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
+    } catch (err) {
+      document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">${err.message}</td></tr>`;
     }
   }
 

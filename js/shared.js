@@ -263,6 +263,7 @@ const NM = (() => {
     return apiFetch(`/api/tasks/${taskId}`, { method: "DELETE" });
   }
   function apiGetAllTasks() { return apiFetch("/api/tasks/manage"); }
+  function apiGetTaskClaims(taskId) { return apiFetch(`/api/tasks/${taskId}/claims`); }
   function apiReviewSubmission(submissionId, approve) {
     return apiFetch(`/api/tasks/submissions/${submissionId}/review`, {
       method: "POST",
@@ -600,7 +601,7 @@ const NM = (() => {
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
     apiSignup, apiLogin, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
-    apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiDeleteTask, apiGetAllTasks,
+    apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiDeleteTask, apiGetAllTasks, apiGetTaskClaims,
     apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
     apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
     apiGetGroups, apiGetRoster,
