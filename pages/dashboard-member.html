@@ -66,6 +66,20 @@
         </div>
       </div>
 
+      <div class="card" id="profile" style="margin-top:20px;">
+        <h3>عايز تبقى ليدر؟</h3>
+        <p class="text-muted" style="font-size:0.85rem;">
+          لما تبقى ليدر لجروب لغة، بيتعمللك جروب جديد لوحدك تحت اللغة دي، وهتاخد رابط دعوة تبعته
+          لأي حد عايز يشتغل معاك — وهما هينضموا لجروبك انت بالتحديد (مش أي جروب تاني في نفس اللغة).
+          الطلب محتاج موافقة الهيد ليدر الأول.
+        </p>
+        <p id="leader-req-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="flex gap-8" id="leader-req-form">
+          <select id="leader-req-language" style="flex:1;"></select>
+          <button class="btn btn-primary" id="leader-req-btn" style="white-space:nowrap;">اطلب تبقى ليدر</button>
+        </div>
+      </div>
+
       <div class="card" id="certs" style="margin-top:20px;">
         <h3>شهاداتي</h3>
         <div class="grid-3" id="certs-grid"></div>
@@ -106,7 +120,42 @@
           `طلبك تبقى ليدر جروب ${request.language} اترفض حاليًا. تقدر تكمل كعضو عادي أو تتواصل مع الهيد ليدر.`;
       }
     } catch (_) { /* no request yet — nothing to show */ }
+
+    // "become a leader" picker — only offer languages I actually belong to,
+    // and hide it entirely if I already have a pending/approved request
+    try {
+      const existing = await NM.apiMyLeaderRequest();
+      if (existing && existing.status === "pending") {
+        document.getElementById("leader-req-form").classList.add("hidden");
+      } else {
+        const select = document.getElementById("leader-req-language");
+        select.innerHTML = groups.length
+          ? groups.map(g => `<option value="${g.language}">${g.language}</option>`).join("")
+          : `<option value="">سجّل في لغة الأول من صفحة جروباتي</option>`;
+      }
+    } catch (_) {
+      const select = document.getElementById("leader-req-language");
+      select.innerHTML = groups.map(g => `<option value="${g.language}">${g.language}</option>`).join("");
+    }
   }
+
+  document.getElementById("leader-req-btn").addEventListener("click", async () => {
+    const language = document.getElementById("leader-req-language").value;
+    const errorBox = document.getElementById("leader-req-error");
+    errorBox.style.display = "none";
+    if (!language) return;
+    const btn = document.getElementById("leader-req-btn");
+    btn.disabled = true;
+    try {
+      await NM.apiRequestLeadership(language);
+      await refreshHeader();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   async function loadAvailableTasks() {
     try {
