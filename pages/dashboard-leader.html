@@ -113,10 +113,13 @@
       document.getElementById("claim-body").innerHTML = tasks.length
         ? tasks.map(t => `
             <tr>
-              <td>${t.title}</td>
+              <td><a href="task.html?id=${t.id}">${t.title}</a></td>
               <td>${t.remaining}</td>
               <td>${t.total_quantity}</td>
-              <td><button class="btn btn-primary" style="padding:6px 14px;" onclick="claimTask('${t.id}', ${t.remaining}, this)">استلام</button></td>
+              <td>
+                <a class="btn btn-secondary" style="padding:6px 12px;" href="task.html?id=${t.id}">التفاصيل</a>
+                <button class="btn btn-primary" style="padding:6px 14px;" onclick="claimTask('${t.id}', ${t.remaining}, this)">استلام</button>
+              </td>
             </tr>`).join("")
         : `<tr><td colspan="4" class="text-muted">مفيش مهام متاحة دلوقتي</td></tr>`;
     } catch (err) {
@@ -130,7 +133,7 @@
       const claims = await NM.apiMyClaims();
       document.getElementById("my-claims-body").innerHTML = claims.length
         ? claims.map(c => `
-            <tr><td>${c.title}</td><td>${c.quantity}</td><td>${c.remaining_in_claim}</td></tr>
+            <tr><td><a href="task.html?id=${c.task_id}">${c.title}</a></td><td>${c.quantity}</td><td>${c.remaining_in_claim}</td></tr>
           `).join("")
         : `<tr><td colspan="3" class="text-muted">لسه ما استلمتش أي مهمة</td></tr>`;
     } catch (err) {
