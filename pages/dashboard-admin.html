@@ -16,6 +16,7 @@
       <a href="#groups">👥 كل الجروبات</a>
       <a href="groups.html">💬 مراقبة الشات</a>
       <a href="#tasks">📋 نشر مهمة</a>
+      <a href="#manage-tasks">🗂️ إدارة المهام</a>
       <a href="#payments">💸 المدفوعات</a>
       <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
     </aside>
@@ -76,8 +77,23 @@
             <div id="t-groups-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; max-height:220px; overflow-y:auto;"></div>
           </div>
 
-          <div style="grid-column:1/-1;"><button class="btn btn-primary" type="submit" id="task-submit">نشر المهمة</button></div>
+          <div style="grid-column:1/-1;" class="flex gap-8">
+            <button class="btn btn-primary" type="submit" id="task-submit">نشر المهمة</button>
+            <button class="btn btn-secondary hidden" type="button" id="task-cancel-edit">إلغاء التعديل</button>
+          </div>
         </form>
+      </div>
+
+      <div class="card" id="manage-tasks" style="margin-top:20px;">
+        <h3>إدارة المهام المنشورة</h3>
+        <p class="text-muted" style="font-size:0.85rem;">عدّل تفاصيل أي مهمة أو احذفها. الكمية الإجمالية منقدرش تقل عن اللي اتاستلم بالفعل.</p>
+        <p id="manage-tasks-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>المهمة</th><th>النوع</th><th>السعر</th><th>اتاستلم / الإجمالي</th><th></th></tr></thead>
+            <tbody id="manage-tasks-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card" id="leader-requests" style="margin-top:20px;">
@@ -201,6 +217,65 @@
     }
   }
 
+  let editingTaskId = null;
+
+  async function loadManageTasks() {
+    try {
+      const tasks = await NM.apiGetAllTasks();
+      document.getElementById("manage-tasks-body").innerHTML = tasks.length
+        ? tasks.map(t => `
+            <tr>
+              <td>${t.title}</td>
+              <td>${t.skill_icon || ""} ${t.skill_name_ar || t.skill_slug}</td>
+              <td>${t.price ? `${Number(t.price).toLocaleString("ar-EG")} ${t.currency}` : "—"}</td>
+              <td>${t.claimed_quantity} / ${t.total_quantity}</td>
+              <td>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick='startEditTask(${JSON.stringify(t).replace(/'/g, "&apos;")})'>✏️ تعديل</button>
+                <button class="btn btn-secondary" style="padding:6px 12px; color:#e0245e;" onclick="deleteTask('${t.id}', this)">🗑️ حذف</button>
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="5" class="text-muted">لسه مفيش مهام منشورة</td></tr>`;
+    } catch (err) {
+      document.getElementById("manage-tasks-error").textContent = err.message;
+      document.getElementById("manage-tasks-error").style.display = "block";
+    }
+  }
+
+  function startEditTask(t) {
+    editingTaskId = t.id;
+    document.getElementById("t-service").value = t.skill_slug;
+    document.getElementById("t-name").value = t.title;
+    document.getElementById("t-qty").value = t.total_quantity;
+    document.getElementById("t-price").value = t.price || "";
+    document.getElementById("t-currency").value = t.currency || "USD";
+    document.getElementById("t-video").value = (t.video_urls || []).join("\n");
+    document.getElementById("t-audio").value = (t.audio_sample_urls || []).join("\n");
+    document.getElementById("t-instructions").value = t.instructions || "";
+    document.getElementById("task-submit").textContent = "حفظ التعديلات";
+    document.getElementById("task-cancel-edit").classList.remove("hidden");
+    document.getElementById("tasks").scrollIntoView({ behavior: "smooth" });
+  }
+
+  document.getElementById("task-cancel-edit").addEventListener("click", () => {
+    editingTaskId = null;
+    document.getElementById("task-form").reset();
+    document.getElementById("task-submit").textContent = "نشر المهمة";
+    document.getElementById("task-cancel-edit").classList.add("hidden");
+    document.getElementById("t-groups-field").classList.add("hidden");
+  });
+
+  async function deleteTask(id, btn) {
+    if (!confirm("متأكد إنك عايز تحذف المهمة دي؟ هيتحذف معاها أي استلامات وتسليمات مرتبطة بيها.")) return;
+    btn.disabled = true;
+    try {
+      await NM.apiDeleteTask(id);
+      await loadManageTasks();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  }
+
   document.querySelectorAll('input[name="t-target"]').forEach(r => {
     r.addEventListener("change", () => {
       const specific = document.querySelector('input[name="t-target"]:checked').value === "specific";
@@ -252,7 +327,7 @@
     const targetAll = document.querySelector('input[name="t-target"]:checked').value === "all";
     const groupIds = Array.from(document.querySelectorAll('input[name="t-group"]:checked')).map(i => i.value);
 
-    if (!targetAll && groupIds.length === 0) {
+    if (!editingTaskId && !targetAll && groupIds.length === 0) {
       errorBox.textContent = "اختار جروب واحد على الأقل، أو اختار \"كل الجروبات\".";
       errorBox.style.display = "block";
       submitBtn.disabled = false;
@@ -261,7 +336,7 @@
     }
 
     try {
-      await NM.apiCreateTask({
+      const payload = {
         skillSlug: document.getElementById("t-service").value,
         title: document.getElementById("t-name").value,
         instructions: document.getElementById("t-instructions").value,
@@ -270,20 +345,29 @@
         currency: document.getElementById("t-currency").value,
         videoUrls: document.getElementById("t-video").value.split("\n").map(s => s.trim()).filter(Boolean),
         audioSampleUrls: document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean),
-        targetAll,
-        groupIds,
-      });
-      alert(targetAll
-        ? "✅ اتنشرت المهمة لكل الجروبات!"
-        : `✅ اتنشرت المهمة لـ ${groupIds.length} جروب محدد!`);
+      };
+
+      if (editingTaskId) {
+        await NM.apiUpdateTask(editingTaskId, payload);
+        alert("✅ اتحفظت التعديلات!");
+        editingTaskId = null;
+        document.getElementById("task-cancel-edit").classList.add("hidden");
+      } else {
+        await NM.apiCreateTask({ ...payload, targetAll, groupIds });
+        alert(targetAll
+          ? "✅ اتنشرت المهمة لكل الجروبات!"
+          : `✅ اتنشرت المهمة لـ ${groupIds.length} جروب محدد!`);
+      }
       e.target.reset();
       document.getElementById("t-groups-field").classList.add("hidden");
+      document.getElementById("task-submit").textContent = "نشر المهمة";
+      await loadManageTasks();
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.style.display = "block";
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = "نشر المهمة";
+      if (!editingTaskId) submitBtn.textContent = "نشر المهمة";
     }
   });
 
@@ -362,6 +446,7 @@
   loadPayments();
   loadLeaderRequests();
   loadDriveStatus();
+  loadManageTasks();
 </script>
 </body>
 </html>

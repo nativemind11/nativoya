@@ -71,6 +71,14 @@ router.post("/leader-requests", requireAuth, async (req, res) => {
       return res.status(409).json({ error: "Already have a pending leader request", request: existing.rows[0] });
     }
 
+    const alreadyLeads = await pool.query(
+      "SELECT 1 FROM groups WHERE leader_id = $1 AND language = $2",
+      [req.user.id, language]
+    );
+    if (alreadyLeads.rows.length) {
+      return res.status(409).json({ error: "You already lead a group for this language" });
+    }
+
     const result = await pool.query(
       `INSERT INTO leader_requests (user_id, language) VALUES ($1, $2) RETURNING *`,
       [req.user.id, language]
@@ -165,11 +173,19 @@ router.post("/leader-requests/:id/reject", requireAuth, requireRole("head_leader
   res.json(result.rows[0]);
 });
 
-// GET /api/groups/roster  (leader only) — the members of the group I lead
+// GET /api/groups/roster?groupId=X  (leader only) — members of one of the
+// groups I lead. groupId is required once a leader leads more than one
+// language; if omitted, defaults to the first group they lead.
 router.get("/roster", requireAuth, requireRole("leader"), async (req, res) => {
   try {
-    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
-    const groupId = led.rows[0]?.id;
+    let groupId = req.query.groupId;
+    if (groupId) {
+      const owns = await pool.query("SELECT 1 FROM groups WHERE id = $1 AND leader_id = $2", [groupId, req.user.id]);
+      if (!owns.rows.length) return res.status(403).json({ error: "You don't lead this group" });
+    } else {
+      const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1 ORDER BY created_at ASC LIMIT 1", [req.user.id]);
+      groupId = led.rows[0]?.id;
+    }
     if (!groupId) return res.json([]);
 
     const result = await pool.query(

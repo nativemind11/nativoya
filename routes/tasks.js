@@ -69,6 +69,79 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   }
 });
 
+// GET /api/tasks/manage  (head_leader only) — every task ever published,
+// with full details + how much has been claimed, for the admin management table
+router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT t.*, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
+             COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS claimed_quantity,
+             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+      FROM tasks t
+      JOIN services s ON s.slug = t.skill_slug
+      ORDER BY t.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("[tasks:manage-list]", err);
+    res.status(500).json({ error: "Could not load tasks" });
+  }
+});
+
+// PUT /api/tasks/:id  (head_leader only) — edit a task's own details.
+// total_quantity can't drop below what's already been claimed by groups.
+router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => {
+  try {
+    const { title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls } = req.body;
+
+    const claimedResult = await pool.query(
+      "SELECT COALESCE(SUM(quantity), 0) AS c FROM task_claims WHERE task_id = $1", [req.params.id]
+    );
+    const claimed = Number(claimedResult.rows[0].c);
+    if (totalQuantity != null && Number(totalQuantity) < claimed) {
+      return res.status(400).json({ error: `مينفعش الكمية الإجمالية تقل عن ${claimed} — ده اللي اتاستلم بالفعل من المهمة دي.` });
+    }
+
+    const result = await pool.query(
+      `UPDATE tasks SET
+         title = $1, instructions = $2, total_quantity = $3, price = $4,
+         currency = $5, video_urls = $6, audio_sample_urls = $7
+       WHERE id = $8 RETURNING *`,
+      [title, instructions, totalQuantity, price || null, currency,
+       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("[tasks:update]", err);
+    res.status(500).json({ error: "Could not update this task" });
+  }
+});
+
+// DELETE /api/tasks/:id  (head_leader only) — removes the task and everything
+// under it (claims + submissions). task_targets cascades automatically.
+router.delete("/:id", requireAuth, requireRole("head_leader"), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `DELETE FROM submissions WHERE task_claim_id IN (SELECT id FROM task_claims WHERE task_id = $1)`,
+      [req.params.id]
+    );
+    await client.query(`DELETE FROM task_claims WHERE task_id = $1`, [req.params.id]);
+    const result = await client.query(`DELETE FROM tasks WHERE id = $1 RETURNING id`, [req.params.id]);
+    await client.query("COMMIT");
+    if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
+    res.json({ deleted: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[tasks:delete]", err);
+    res.status(500).json({ error: "Could not delete this task" });
+  } finally {
+    client.release();
+  }
+});
+
 // GET /api/tasks/open — tasks visible to the current user with remaining
 // unclaimed quantity. head_leader sees everything; a leader/member only
 // sees tasks that are target_all=true or specifically targeted at one of
@@ -104,12 +177,18 @@ router.get("/open", requireAuth, async (req, res) => {
 
 // GET /api/tasks/:id — full task detail (video(s), audio sample(s), price,
 // instructions) — only if the task is visible to this user.
-// GET /api/tasks/claims/mine  (leader only) — everything the group I lead
-// has claimed, with how much capacity is still unfilled inside each claim
+// GET /api/tasks/claims/mine?groupId=X  (leader only) — everything a group I
+// lead has claimed, with how much capacity is still unfilled inside each claim
 router.get("/claims/mine", requireAuth, requireRole("leader"), async (req, res) => {
   try {
-    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
-    const groupId = led.rows[0]?.id;
+    let groupId = req.query.groupId;
+    if (groupId) {
+      const owns = await pool.query("SELECT 1 FROM groups WHERE id = $1 AND leader_id = $2", [groupId, req.user.id]);
+      if (!owns.rows.length) return res.status(403).json({ error: "You don't lead this group" });
+    } else {
+      const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1 ORDER BY created_at ASC LIMIT 1", [req.user.id]);
+      groupId = led.rows[0]?.id;
+    }
     if (!groupId) return res.json([]);
 
     const result = await pool.query(`
@@ -178,12 +257,18 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/tasks/review-queue  (leader only) — submissions from the group I
-// lead that are still waiting for a decision
+// GET /api/tasks/review-queue?groupId=X  (leader only) — submissions from a
+// group I lead that are still waiting for a decision
 router.get("/review-queue", requireAuth, requireRole("leader"), async (req, res) => {
   try {
-    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
-    const groupId = led.rows[0]?.id;
+    let groupId = req.query.groupId;
+    if (groupId) {
+      const owns = await pool.query("SELECT 1 FROM groups WHERE id = $1 AND leader_id = $2", [groupId, req.user.id]);
+      if (!owns.rows.length) return res.status(403).json({ error: "You don't lead this group" });
+    } else {
+      const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1 ORDER BY created_at ASC LIMIT 1", [req.user.id]);
+      groupId = led.rows[0]?.id;
+    }
     if (!groupId) return res.json([]);
 
     const result = await pool.query(`
@@ -256,7 +341,8 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/tasks/:id/claim  (leader only) — claim quantity for the group I lead
+// POST /api/tasks/:id/claim  (leader only) — claim quantity for one of the
+// groups I lead (groupId required once a leader leads more than one language)
 router.post("/:id/claim", requireAuth, requireRole("leader"), async (req, res) => {
   try {
     const quantity = Number(req.body.quantity);
@@ -264,8 +350,14 @@ router.post("/:id/claim", requireAuth, requireRole("leader"), async (req, res) =
       return res.status(400).json({ error: "Enter a valid quantity greater than zero" });
     }
 
-    const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1", [req.user.id]);
-    const groupId = led.rows[0]?.id;
+    let groupId = req.body.groupId;
+    if (groupId) {
+      const owns = await pool.query("SELECT 1 FROM groups WHERE id = $1 AND leader_id = $2", [groupId, req.user.id]);
+      if (!owns.rows.length) return res.status(403).json({ error: "You don't lead this group" });
+    } else {
+      const led = await pool.query("SELECT id FROM groups WHERE leader_id = $1 ORDER BY created_at ASC LIMIT 1", [req.user.id]);
+      groupId = led.rows[0]?.id;
+    }
     if (!groupId) return res.status(400).json({ error: "Leader has no group assigned" });
 
     const taskCheck = await pool.query("SELECT id FROM tasks WHERE id = $1", [req.params.id]);

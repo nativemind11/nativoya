@@ -119,17 +119,19 @@ router.get("/me", requireAuth, async (req, res) => {
       [req.user.id]
     );
 
-    let ledGroup = null;
+    let ledGroups = [];
     if (user.role === "leader") {
-      const ledResult = await pool.query(`SELECT * FROM groups WHERE leader_id = $1 LIMIT 1`, [req.user.id]);
-      ledGroup = ledResult.rows[0] || null;
+      const ledResult = await pool.query(`SELECT * FROM groups WHERE leader_id = $1 ORDER BY created_at ASC`, [req.user.id]);
+      ledGroups = ledResult.rows;
     }
+    const ledGroup = ledGroups[0] || null; // first led group, kept for backward compatibility
 
     res.json({
       ...user,
       groups: groupsResult.rows,
       languages: groupsResult.rows.map((g) => g.language),
       skills: skillsResult.rows.map((r) => r.skill_slug),
+      led_groups: ledGroups, // ALL groups this user leads (a leader can now lead several languages)
       led_group: ledGroup,
       // kept for backward-compatible clients that still read a single group
       group_id: ledGroup ? ledGroup.id : (groupsResult.rows[0] ? groupsResult.rows[0].id : null),

@@ -14,7 +14,15 @@
     <p class="text-muted">انت ممكن تكون عضو في أكتر من جروب لغة في نفس الوقت — اختار الجروب اللي عايز تفتحه.</p>
   </div>
 
-  <div id="group-tabs" class="flex gap-8" style="flex-wrap:wrap; margin-bottom:18px;"></div>
+  <div id="group-tabs" class="flex gap-8" style="flex-wrap:wrap; margin-bottom:10px;"></div>
+
+  <div class="card card-compact" style="margin-bottom:18px;">
+    <div class="flex gap-8" style="align-items:center; flex-wrap:wrap;">
+      <select id="add-lang-select" style="flex:1; min-width:180px;"></select>
+      <button class="btn btn-secondary" id="add-lang-btn">+ اضف لغة جديدة</button>
+    </div>
+    <p id="add-lang-error" class="hint" style="color:#e0245e; display:none; margin-top:8px;"></p>
+  </div>
 
   <div class="chat-shell card" style="padding:0; grid-template-columns: 1fr;" id="chat-shell">
     <section class="chat-main">
@@ -50,6 +58,7 @@
 
   async function init() {
     try { user = await NM.apiRefreshMe(); } catch (_) {}
+    populateAddLangSelect(user.groups || []);
     const groups = user.groups || [];
     if (!groups.length) {
       document.getElementById("page-main").innerHTML = `
@@ -63,6 +72,36 @@
     renderTabs(groups);
     openGroup(groups[0]);
   }
+
+  function populateAddLangSelect(myGroups) {
+    const myLanguages = new Set(myGroups.map(g => g.language));
+    const select = document.getElementById("add-lang-select");
+    const available = NM.LANGUAGES.filter(l => !myLanguages.has(l.name));
+    select.innerHTML = available.length
+      ? available.map(l => `<option value="${l.name}">${l.name}</option>`).join("")
+      : `<option value="">انضممت لكل اللغات المتاحة بالفعل</option>`;
+    document.getElementById("add-lang-btn").disabled = available.length === 0;
+  }
+
+  document.getElementById("add-lang-btn").addEventListener("click", async () => {
+    const language = document.getElementById("add-lang-select").value;
+    const errorBox = document.getElementById("add-lang-error");
+    errorBox.style.display = "none";
+    if (!language) return;
+    const btn = document.getElementById("add-lang-btn");
+    btn.disabled = true;
+    try {
+      await NM.apiJoinGroup(language);
+      user = await NM.apiRefreshMe();
+      populateAddLangSelect(user.groups || []);
+      renderTabs(user.groups || []);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   function renderTabs(groups) {
     const wrap = document.getElementById("group-tabs");

@@ -17,12 +17,15 @@
       <a href="#claim">📥 استلام مهام</a>
       <a href="#roster">👥 أعضاء الجروب</a>
       <a href="#review">✅ مراجعة التسليمات</a>
+      <a href="#lead-more">➕ قود لغة تانية</a>
       <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
     </aside>
 
     <div>
       <h1 style="font-size:1.6rem;" id="welcome-msg">لوحة الليدر</h1>
       <p class="text-muted" id="group-info-line">—</p>
+
+      <div id="led-group-tabs" class="flex gap-8 hidden" style="flex-wrap:wrap; margin-bottom:16px;"></div>
 
       <div class="card" id="claim">
         <h3>مهام متاحة للاستلام (من الهيد ليدر)</h3>
@@ -36,7 +39,7 @@
       </div>
 
       <div class="card" id="my-claims" style="margin-top:20px;">
-        <h3>مهام استلمتها لجروبي</h3>
+        <h3>مهام استلمها الجروب المختار</h3>
         <div class="table-wrap">
           <table>
             <thead><tr><th>المهمة</th><th>الكمية اللي استلمتها</th><th>المتبقي لسه محتاج تسليم</th></tr></thead>
@@ -46,10 +49,10 @@
       </div>
 
       <div class="card" id="roster" style="margin-top:20px;">
-        <h3>أعضاء جروبي</h3>
+        <h3>أعضاء الجروب المختار</h3>
         <div class="card card-compact" style="background:var(--color-pill-bg); border:none; margin-bottom:20px;">
-          <p class="mb-0" style="font-weight:700; color:var(--color-pill-text);">🔗 رابط دعوة لجروبك</p>
-          <p class="text-muted" style="font-size:0.85rem;">ابعت الرابط ده لأي حد عايز يشتغل معاك — هيسجل حساب وينضم مباشرة لجروبك انت (مش الجروب الأصلي للغة).</p>
+          <p class="mb-0" style="font-weight:700; color:var(--color-pill-text);">🔗 رابط دعوة للجروب ده</p>
+          <p class="text-muted" style="font-size:0.85rem;">ابعت الرابط ده لأي حد عايز يشتغل معاك — هيسجل حساب وينضم مباشرة للجروب ده (مش الجروب الأصلي للغة).</p>
           <div class="flex gap-8">
             <input type="text" id="invite-link-input" readonly style="flex:1;">
             <button class="btn btn-primary" id="copy-invite-btn" style="white-space:nowrap;">نسخ الرابط</button>
@@ -64,13 +67,26 @@
       </div>
 
       <div class="card" id="review" style="margin-top:20px;">
-        <h3>تسليمات بانتظار المراجعة</h3>
+        <h3>تسليمات بانتظار المراجعة (الجروب المختار)</h3>
         <p id="review-error" class="hint" style="color:#e0245e; display:none;"></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>العضو</th><th>المهمة</th><th>الملف</th><th></th></tr></thead>
             <tbody id="review-body"><tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
+        </div>
+      </div>
+
+      <div class="card" id="lead-more" style="margin-top:20px;">
+        <h3>عايز تقود لغة تانية؟</h3>
+        <p class="text-muted" style="font-size:0.85rem;">
+          تقدر تكون ليدر لأكتر من لغة في نفس الوقت. اختار لغة جديدة مش بتقودها بالفعل وابعت طلب — بعد موافقة الهيد ليدر
+          هتاخد جروب جديد لوحدك في اللغة دي، ورابط دعوة خاص بيه هيظهر في التابات فوق.
+        </p>
+        <p id="lead-more-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="flex gap-8" id="lead-more-form">
+          <select id="lead-more-language" style="flex:1;"></select>
+          <button class="btn btn-primary" id="lead-more-btn" style="white-space:nowrap;">ابعت طلب قيادة</button>
         </div>
       </div>
     </div>
@@ -83,29 +99,63 @@
   if (!user) { location.href = "login.html"; }
   document.getElementById("welcome-msg").textContent = `أهلاً بيك يا ${user.firstName || "ليدر"} 👋`;
 
+  let ledGroups = [];
+  let activeGroupId = null;
+
   async function refreshHeader() {
     try {
       user = await NM.apiRefreshMe();
     } catch (_) { /* fall back to cached copy if /me fails */ }
-    document.getElementById("group-info-line").textContent = user.language
-      ? `جروب ${user.language} — رقم #${user.groupNumber || "-"}`
-      : "لسه محددتش لغتك — روح اختارها الأول";
 
-    if (user.language && user.groupNumber) {
-      const link = NM.inviteUrl(user.language, user.groupNumber);
+    ledGroups = user.ledGroups || (user.ledGroup ? [user.ledGroup] : []);
+    document.getElementById("group-info-line").textContent = ledGroups.length
+      ? `بتقود ${ledGroups.length} جروب: ${ledGroups.map(g => `${g.language} #${g.group_number}`).join(" · ")}`
+      : "لسه مش بتقود أي جروب";
+
+    renderGroupTabs();
+    if (ledGroups.length) selectGroup(ledGroups[0].id);
+
+    populateLeadMoreSelect();
+    checkPendingLeaderRequest();
+  }
+
+  function renderGroupTabs() {
+    const wrap = document.getElementById("led-group-tabs");
+    if (ledGroups.length <= 1) { wrap.classList.add("hidden"); return; }
+    wrap.classList.remove("hidden");
+    wrap.innerHTML = ledGroups.map(g => `
+      <button class="btn ${g.id === activeGroupId ? "btn-primary" : "btn-secondary"}" data-id="${g.id}">
+        ${g.language} — جروب #${g.group_number}
+      </button>`).join("");
+    wrap.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => selectGroup(btn.dataset.id));
+    });
+  }
+
+  function selectGroup(groupId) {
+    activeGroupId = groupId;
+    renderGroupTabs();
+    const g = ledGroups.find(g => g.id === groupId);
+    if (g) {
+      const link = NM.inviteUrl(g.language, g.group_number);
       const inviteInput = document.getElementById("invite-link-input");
       inviteInput.value = link;
-      document.getElementById("copy-invite-btn").addEventListener("click", () => {
-        inviteInput.select();
-        navigator.clipboard.writeText(link).then(() => {
-          const btn = document.getElementById("copy-invite-btn");
-          const original = btn.textContent;
-          btn.textContent = "✅ اتنسخ!";
-          setTimeout(() => { btn.textContent = original; }, 1500);
-        });
-      });
     }
+    loadMyClaims();
+    loadRoster();
+    loadReviewQueue();
   }
+
+  document.getElementById("copy-invite-btn").addEventListener("click", () => {
+    const inviteInput = document.getElementById("invite-link-input");
+    inviteInput.select();
+    navigator.clipboard.writeText(inviteInput.value).then(() => {
+      const btn = document.getElementById("copy-invite-btn");
+      const original = btn.textContent;
+      btn.textContent = "✅ اتنسخ!";
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  });
 
   async function loadOpenTasks() {
     try {
@@ -129,24 +179,26 @@
   }
 
   async function loadMyClaims() {
+    if (!activeGroupId) return;
     try {
-      const claims = await NM.apiMyClaims();
+      const claims = await NM.apiMyClaims(activeGroupId);
       document.getElementById("my-claims-body").innerHTML = claims.length
         ? claims.map(c => `
             <tr><td><a href="task.html?id=${c.task_id}">${c.title}</a></td><td>${c.quantity}</td><td>${c.remaining_in_claim}</td></tr>
           `).join("")
-        : `<tr><td colspan="3" class="text-muted">لسه ما استلمتش أي مهمة</td></tr>`;
+        : `<tr><td colspan="3" class="text-muted">لسه ما استلمتش أي مهمة للجروب ده</td></tr>`;
     } catch (err) {
       document.getElementById("my-claims-body").innerHTML = `<tr><td colspan="3" class="text-muted">${err.message}</td></tr>`;
     }
   }
 
   async function claimTask(taskId, remaining, btn) {
-    const qty = prompt(`كام وحدة عايز تستلم لجروبك؟ (المتاح: ${remaining})`, Math.min(10, remaining));
+    if (!activeGroupId) { alert("اختار جروب الأول من التابات فوق"); return; }
+    const qty = prompt(`كام وحدة عايز تستلم للجروب المختار؟ (المتاح: ${remaining})`, Math.min(10, remaining));
     if (!qty) return;
     btn.disabled = true;
     try {
-      await NM.apiClaimTask(taskId, Number(qty));
+      await NM.apiClaimTask(taskId, Number(qty), activeGroupId);
       await Promise.all([loadOpenTasks(), loadMyClaims()]);
     } catch (err) {
       alert(err.message);
@@ -155,8 +207,9 @@
   }
 
   async function loadRoster() {
+    if (!activeGroupId) return;
     try {
-      const roster = await NM.apiGetRoster();
+      const roster = await NM.apiGetRoster(activeGroupId);
       document.getElementById("roster-body").innerHTML = roster.length
         ? roster.map(m => `
             <tr><td>${m.first_name}</td><td>${m.completed_count}</td><td>${m.reputation_score}%</td><td><span class="pill">نشط</span></td></tr>
@@ -168,8 +221,9 @@
   }
 
   async function loadReviewQueue() {
+    if (!activeGroupId) return;
     try {
-      const queue = await NM.apiReviewQueue();
+      const queue = await NM.apiReviewQueue(activeGroupId);
       document.getElementById("review-body").innerHTML = queue.length
         ? queue.map(s => `
             <tr>
@@ -197,11 +251,54 @@
     }
   }
 
+  // --- lead a second (or third...) language ---
+  function populateLeadMoreSelect() {
+    const ledLanguages = new Set(ledGroups.map(g => g.language));
+    const select = document.getElementById("lead-more-language");
+    const available = NM.LANGUAGES.filter(l => !ledLanguages.has(l.name));
+    select.innerHTML = available.length
+      ? available.map(l => `<option value="${l.name}">${l.name}</option>`).join("")
+      : `<option value="">بتقود كل اللغات المتاحة بالفعل</option>`;
+  }
+
+  async function checkPendingLeaderRequest() {
+    try {
+      const existing = await NM.apiMyLeaderRequest();
+      const form = document.getElementById("lead-more-form");
+      const errorBox = document.getElementById("lead-more-error");
+      if (existing && existing.status === "pending") {
+        form.classList.add("hidden");
+        errorBox.style.display = "block";
+        errorBox.style.color = "var(--color-primary-blue)";
+        errorBox.textContent = `طلبك لقيادة لغة "${existing.language}" لسه قيد المراجعة عند الهيد ليدر.`;
+      } else {
+        form.classList.remove("hidden");
+        errorBox.style.display = "none";
+      }
+    } catch (_) { /* no request yet */ }
+  }
+
+  document.getElementById("lead-more-btn").addEventListener("click", async () => {
+    const language = document.getElementById("lead-more-language").value;
+    const errorBox = document.getElementById("lead-more-error");
+    errorBox.style.color = "#e0245e";
+    errorBox.style.display = "none";
+    if (!language) return;
+    const btn = document.getElementById("lead-more-btn");
+    btn.disabled = true;
+    try {
+      await NM.apiRequestLeadership(language);
+      await checkPendingLeaderRequest();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   refreshHeader();
   loadOpenTasks();
-  loadMyClaims();
-  loadRoster();
-  loadReviewQueue();
 </script>
 </body>
 </html>
