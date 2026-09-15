@@ -104,33 +104,6 @@ router.get("/open", requireAuth, async (req, res) => {
 
 // GET /api/tasks/:id — full task detail (video(s), audio sample(s), price,
 // instructions) — only if the task is visible to this user.
-router.get("/:id", requireAuth, async (req, res) => {
-  try {
-    const isHeadLeader = req.user.role === "head_leader";
-    const result = await pool.query(
-      `
-      SELECT t.*, s.name_ar AS skill_name_ar, s.name_en AS skill_name_en, s.icon AS skill_icon,
-             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
-      FROM tasks t
-      JOIN services s ON s.slug = t.skill_slug
-      WHERE t.id = $1 AND (
-        $2 = true OR t.target_all = true OR EXISTS (
-          SELECT 1 FROM task_targets tt
-          JOIN user_groups ug ON ug.group_id = tt.group_id
-          WHERE tt.task_id = t.id AND ug.user_id = $3
-        )
-      )
-      `,
-      [req.params.id, isHeadLeader, req.user.id]
-    );
-    if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error("[tasks:detail]", err);
-    res.status(500).json({ error: "Could not load task" });
-  }
-});
-
 // GET /api/tasks/claims/mine  (leader only) — everything the group I lead
 // has claimed, with how much capacity is still unfilled inside each claim
 router.get("/claims/mine", requireAuth, requireRole("leader"), async (req, res) => {
@@ -223,6 +196,40 @@ router.get("/my-submissions", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("[tasks:my-submissions]", err);
     res.status(500).json({ error: "Could not load your submissions" });
+  }
+});
+
+// GET /api/tasks/:id — full task detail (video(s), audio sample(s), price,
+// instructions) — only if the task is visible to this user.
+// IMPORTANT: this wildcard route must stay registered AFTER every specific
+// GET path above (/open, /review-queue, /my-submissions, etc.) — Express
+// matches routes in registration order, and "/:id" matches ANY single path
+// segment, so if it came first it would swallow requests to those routes
+// too (treating "review-queue" as if it were a task id, for example).
+router.get("/:id", requireAuth, async (req, res) => {
+  try {
+    const isHeadLeader = req.user.role === "head_leader";
+    const result = await pool.query(
+      `
+      SELECT t.*, s.name_ar AS skill_name_ar, s.name_en AS skill_name_en, s.icon AS skill_icon,
+             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+      FROM tasks t
+      JOIN services s ON s.slug = t.skill_slug
+      WHERE t.id = $1 AND (
+        $2 = true OR t.target_all = true OR EXISTS (
+          SELECT 1 FROM task_targets tt
+          JOIN user_groups ug ON ug.group_id = tt.group_id
+          WHERE tt.task_id = t.id AND ug.user_id = $3
+        )
+      )
+      `,
+      [req.params.id, isHeadLeader, req.user.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("[tasks:detail]", err);
+    res.status(500).json({ error: "Could not load task" });
   }
 });
 
