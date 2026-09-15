@@ -149,6 +149,9 @@ const NM = (() => {
     "Submission not found": "التسليم ده مش موجود.",
     "Could not review this submission": "تعذّر مراجعة التسليم ده. حاول تاني.",
     "groupIds is required when targetAll is false": "اختار جروب واحد على الأقل، أو اختار \"كل الجروبات\".",
+    "Forbidden — insufficient role": "الحساب ده معندوش صلاحية للإجراء ده. لو دورك اتغيّر مؤخرًا، جرّب تسجّل خروج ودخول تاني.",
+    "Missing token": "لازم تسجّل دخول الأول.",
+    "Invalid or expired token": "جلستك انتهت. سجّل دخول تاني.",
   };
 
   function friendlyErrorMessage(rawMessage) {

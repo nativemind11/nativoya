@@ -133,7 +133,9 @@
             <tr><td>${c.title}</td><td>${c.quantity}</td><td>${c.remaining_in_claim}</td></tr>
           `).join("")
         : `<tr><td colspan="3" class="text-muted">لسه ما استلمتش أي مهمة</td></tr>`;
-    } catch (err) { /* non-critical, silently keep loading state */ }
+    } catch (err) {
+      document.getElementById("my-claims-body").innerHTML = `<tr><td colspan="3" class="text-muted">${err.message}</td></tr>`;
+    }
   }
 
   async function claimTask(taskId, remaining, btn) {
@@ -157,7 +159,9 @@
             <tr><td>${m.first_name}</td><td>${m.completed_count}</td><td>${m.reputation_score}%</td><td><span class="pill">نشط</span></td></tr>
           `).join("")
         : `<tr><td colspan="4" class="text-muted">مفيش أعضاء في الجروب لسه — ابعت رابط الدعوة</td></tr>`;
-    } catch (err) { /* non-critical */ }
+    } catch (err) {
+      document.getElementById("roster-body").innerHTML = `<tr><td colspan="4" class="text-muted">${err.message}</td></tr>`;
+    }
   }
 
   async function loadReviewQueue() {
