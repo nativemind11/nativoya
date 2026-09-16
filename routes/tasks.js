@@ -256,12 +256,11 @@ router.get("/claims/mine", requireAuth, requireRole("leader"), async (req, res) 
 // letting the member upload immediately without waiting on a leader.
 router.get("/claims/for-my-group", requireAuth, async (req, res) => {
   try {
-    await pool.query(
+    // Find every (task, leaderless-group-I'm-in) pair that's visible to me
+    // and doesn't have an auto-claim yet.
+    const candidates = await pool.query(
       `
-      INSERT INTO task_claims (task_id, group_id, claimed_by, quantity, auto_claimed)
-      SELECT t.id, g.id, t.created_by,
-             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0),
-             true
+      SELECT DISTINCT t.id AS task_id, g.id AS group_id, t.created_by
       FROM tasks t
       JOIN user_groups ug ON ug.user_id = $1
       JOIN groups g ON g.id = ug.group_id AND g.leader_id IS NULL
@@ -269,11 +268,32 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
               SELECT 1 FROM task_targets tt WHERE tt.task_id = t.id AND tt.group_id = g.id
             ))
         AND NOT EXISTS (SELECT 1 FROM task_claims tc WHERE tc.task_id = t.id AND tc.group_id = g.id)
-        AND (t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0)) > 0
-      ON CONFLICT (task_id, group_id) WHERE auto_claimed DO NOTHING
       `,
       [req.user.id]
     );
+
+    // Auto-claim them ONE AT A TIME, each as its own statement. This matters:
+    // a single INSERT...SELECT that matches several groups at once would have
+    // every one of those rows compute "how much is left" against the SAME
+    // starting snapshot — so a member in 5 different leaderless groups would
+    // get the task's FULL quantity auto-claimed 5 times over, instead of
+    // splitting a fixed pool. Doing it in a loop makes each claim see the
+    // ones before it actually committed, so the task can never be over-claimed.
+    for (const c of candidates.rows) {
+      await pool.query(
+        `
+        INSERT INTO task_claims (task_id, group_id, claimed_by, quantity, auto_claimed)
+        SELECT $1, $2, $3, remaining, true
+        FROM (
+          SELECT t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+          FROM tasks t WHERE t.id = $1
+        ) x
+        WHERE remaining > 0
+        ON CONFLICT (task_id, group_id) WHERE auto_claimed DO NOTHING
+        `,
+        [c.task_id, c.group_id, c.created_by]
+      );
+    }
 
     const result = await pool.query(`
       SELECT tc.id AS claim_id, tc.quantity, tc.group_id,

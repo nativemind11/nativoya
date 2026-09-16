@@ -81,3 +81,53 @@ CREATE UNIQUE INDEX IF NOT EXISTS task_claims_auto_unique ON task_claims (task_i
 
 COMMIT;
 ```
+
+## تحديث تالت: نفس مشكلة التكرار، بس السبب الحقيقي كان مختلف
+
+اتضح إن السبب الحقيقي مش تكرار نفس الجروب — السبب إن أي عضو بقى منضم لأكتر من لغة/جروب
+(ميزة "اضف لغة جديدة")، والكود كان بيدي **كل جروب من جروباته الكمية الكاملة للمهمة نفسها
+في نفس اللحظة**، بدل ما يوزّعها بينهم صح. اتصلح الكود خالص (بقى بيستلم جروب واحد بعد التاني
+مش كلهم مرة واحدة). السكريبت ده بينظف أي تكرار حصل قبل كده:
+
+```sql
+BEGIN;
+
+WITH ranked AS (
+  SELECT tc.id, tc.task_id,
+         ROW_NUMBER() OVER (
+           PARTITION BY tc.task_id
+           ORDER BY (SELECT COUNT(*) FROM submissions WHERE task_claim_id = tc.id) DESC, tc.claimed_at ASC
+         ) AS rn
+  FROM task_claims tc WHERE tc.auto_claimed
+),
+survivors AS (SELECT task_id, id AS keep_id FROM ranked WHERE rn = 1)
+UPDATE submissions SET task_claim_id = survivors.keep_id
+FROM ranked r JOIN survivors ON survivors.task_id = r.task_id
+WHERE submissions.task_claim_id = r.id AND r.rn > 1;
+
+UPDATE task_claims tc SET quantity = t.total_quantity
+FROM tasks t, (
+  SELECT id, ROW_NUMBER() OVER (
+    PARTITION BY task_id
+    ORDER BY (SELECT COUNT(*) FROM submissions WHERE task_claim_id = task_claims.id) DESC, claimed_at ASC
+  ) AS rn
+  FROM task_claims WHERE auto_claimed
+) ranked
+WHERE tc.id = ranked.id AND ranked.rn = 1 AND t.id = tc.task_id;
+
+DELETE FROM task_claims WHERE id IN (
+  SELECT id FROM (
+    SELECT id, ROW_NUMBER() OVER (
+      PARTITION BY task_id
+      ORDER BY (SELECT COUNT(*) FROM submissions WHERE task_claim_id = task_claims.id) DESC, claimed_at ASC
+    ) AS rn
+    FROM task_claims WHERE auto_claimed
+  ) x WHERE rn > 1
+);
+
+COMMIT;
+```
+
+⚠️ بعد السكريبت ده، هيفضل **جروب واحد بس** (الأول اللي عليه تسليمات حقيقية، أو الأقدم لو
+مفيش) هو اللي شايل المهمة دي فعليًا — باقي جروبات نفس العضو مش هيشوفوها تاني، وده صح لأن
+الكمية الأصلية اتحسبت مرة واحدة بس.
