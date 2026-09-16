@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>اختيار اللغة — Nativoya</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" style="max-width:520px;">
+  <div class="card text-center">
+    <h1 style="font-size:1.5rem;">إيه هي لغتك الأم؟</h1>
+    <p>هننضمك تلقائيًا لجروب اللغة دي — هتشوف رقم الجروب على طول.</p>
+    <div id="lang-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin:20px 0;"></div>
+    <div id="group-result" class="hidden card card-compact" style="background:var(--color-pill-bg); border:none;">
+      <p class="mb-0" style="color:var(--color-pill-text); font-weight:700;" id="group-result-text"></p>
+    </div>
+    <a href="dashboard-member.html" class="btn btn-primary btn-block hidden" id="continue-btn" style="margin-top:16px;">الدخول للوحة التحكم</a>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const languages = NM.LANGUAGES;
+  const grid = document.getElementById("lang-grid");
+  languages.forEach(l => {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-secondary";
+    btn.innerHTML = `<span class="pill-code">${l.code}</span> ${l.name}`;
+    btn.onclick = () => selectLanguage(l);
+    grid.appendChild(btn);
+  });
+
+  async function selectLanguage(lang) {
+    const grid = document.getElementById("lang-grid");
+    grid.querySelectorAll("button").forEach(b => b.disabled = true);
+
+    // Becoming a leader now needs head_leader approval — this only *requests*
+    // it. Joining the language's original group as a regular member is
+    // instant and needs no approval.
+    const wantsLeadership = confirm("عايز تبقى ليدر جروب جديد في اللغة دي؟\n(هيتبعت طلب للهيد ليدر يوافق عليه الأول)\nدوس إلغاء لو هتنضم كعضو عادي دلوقتي.");
+
+    try {
+      if (wantsLeadership) {
+        await NM.apiRequestLeadership(lang.name);
+        document.getElementById("group-result").classList.remove("hidden");
+        document.getElementById("group-result-text").textContent =
+          `✅ اتبعت طلبك تبقى ليدر جروب ${lang.name} للهيد ليدر. هيتفعّل حسابك تلقائيًا فور الموافقة.`;
+        document.getElementById("continue-btn").classList.remove("hidden");
+        document.getElementById("continue-btn").href = "dashboard-member.html";
+      } else {
+        const { group } = await NM.apiJoinGroup(lang.name, false);
+        document.getElementById("group-result").classList.remove("hidden");
+        document.getElementById("group-result-text").textContent =
+          `تم انضمامك إلى جروب ${lang.name} — رقم الجروب #${group.group_number} 🎉`;
+        document.getElementById("continue-btn").classList.remove("hidden");
+        document.getElementById("continue-btn").href = "dashboard-member.html";
+      }
+      grid.classList.add("hidden");
+    } catch (err) {
+      alert(err.message);
+      grid.querySelectorAll("button").forEach(b => b.disabled = false);
+    }
+  }
+</script>
+</body>
+</html>

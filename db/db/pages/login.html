@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تسجيل الدخول — Nativoya</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" style="max-width:420px;">
+  <div class="card">
+    <h1 class="text-center" style="font-size:1.6rem;">تسجيل الدخول</h1>
+    <p class="text-center">أهلاً بيك تاني في Nativoya</p>
+    <form id="login-form">
+      <div class="field">
+        <label for="l-email">البريد الإلكتروني</label>
+        <input type="email" id="l-email" required>
+      </div>
+      <div class="field">
+        <label for="l-password">كلمة المرور</label>
+        <input type="password" id="l-password" required>
+      </div>
+      <p id="login-error" class="hint" style="color:#e0245e; display:none;"></p>
+      <button type="submit" class="btn btn-primary btn-block" id="login-submit">دخول</button>
+    </form>
+    <p class="text-center" style="margin-top:16px;">
+      حساب جديد؟ <a href="signup.html">سجّل الآن</a>
+    </p>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  // real login — talks to the actual backend
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("login-error");
+    const submitBtn = document.getElementById("login-submit");
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جاري الدخول...";
+
+    try {
+      const user = await NM.apiLogin(
+        document.getElementById("l-email").value,
+        document.getElementById("l-password").value
+      );
+      const target = user.role === "head_leader" ? "dashboard-admin.html" :
+                     user.role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
+      location.href = target;
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "دخول";
+    }
+  });
+</script>
+</body>
+</html>

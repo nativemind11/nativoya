@@ -9,21 +9,14 @@ const firebaseAdmin = require("../config/firebaseAdmin");
 const router = express.Router();
 
 // POST /api/auth/signup
-// body: { firstName, email, password, whatsappNumber, country, gender,
-//         payoutIdentifier, languages: [..], skills: [..] }
+// body: { firstName, email, password, whatsappNumber, country, languages: [..], skills: [..] }
 // Creates the user, records the skills they offer, and auto-joins them into
 // a group (#1) for every language/dialect they picked — a member can end up
 // in several groups at once this way.
 router.post("/signup", async (req, res) => {
-  const {
-    firstName, email, password, whatsappNumber, country,
-    gender, payoutIdentifier, languages, skills,
-  } = req.body;
+  const { firstName, email, password, whatsappNumber, country, languages, skills } = req.body;
   if (!firstName || !email || !password) {
     return res.status(400).json({ error: "firstName, email and password are required" });
-  }
-  if (gender && gender !== "male" && gender !== "female") {
-    return res.status(400).json({ error: "gender must be 'male' or 'female'" });
   }
 
   const client = await pool.connect();
@@ -32,10 +25,10 @@ router.post("/signup", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const userResult = await client.query(
-      `INSERT INTO users (first_name, email, password_hash, whatsapp_number, country, gender, payout_identifier)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, first_name, email, role, gender, payout_identifier`,
-      [firstName, email, passwordHash, whatsappNumber, country, gender || null, payoutIdentifier || null]
+      `INSERT INTO users (first_name, email, password_hash, whatsapp_number, country)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, first_name, email, role`,
+      [firstName, email, passwordHash, whatsappNumber, country]
     );
     const user = userResult.rows[0];
 
@@ -107,7 +100,7 @@ router.post("/login", async (req, res) => {
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, first_name, email, role, country, whatsapp_number, gender, payout_identifier, reputation_score FROM users WHERE id = $1`,
+      `SELECT id, first_name, email, role, country, reputation_score FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (!userResult.rows.length) return res.status(404).json({ error: "User not found" });
@@ -126,19 +119,17 @@ router.get("/me", requireAuth, async (req, res) => {
       [req.user.id]
     );
 
-    let ledGroups = [];
+    let ledGroup = null;
     if (user.role === "leader") {
-      const ledResult = await pool.query(`SELECT * FROM groups WHERE leader_id = $1 ORDER BY created_at ASC`, [req.user.id]);
-      ledGroups = ledResult.rows;
+      const ledResult = await pool.query(`SELECT * FROM groups WHERE leader_id = $1 LIMIT 1`, [req.user.id]);
+      ledGroup = ledResult.rows[0] || null;
     }
-    const ledGroup = ledGroups[0] || null; // first led group, kept for backward compatibility
 
     res.json({
       ...user,
       groups: groupsResult.rows,
       languages: groupsResult.rows.map((g) => g.language),
       skills: skillsResult.rows.map((r) => r.skill_slug),
-      led_groups: ledGroups, // ALL groups this user leads (a leader can now lead several languages)
       led_group: ledGroup,
       // kept for backward-compatible clients that still read a single group
       group_id: ledGroup ? ledGroup.id : (groupsResult.rows[0] ? groupsResult.rows[0].id : null),

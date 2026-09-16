@@ -41,24 +41,6 @@
           <option value="">اختر الدولة</option>
         </select>
       </div>
-      <div class="field">
-        <label>النوع</label>
-        <div class="radio-card-group">
-          <label class="radio-card">
-            <input type="radio" name="s-gender" value="male" required>
-            <div><strong>ذكر</strong></div>
-          </label>
-          <label class="radio-card">
-            <input type="radio" name="s-gender" value="female" required>
-            <div><strong>أنثى</strong></div>
-          </label>
-        </div>
-      </div>
-      <div class="field">
-        <label for="s-payout">رقم/حساب استلام التحويلات</label>
-        <input type="text" id="s-payout" placeholder="رقم فودافون كاش / إنستاباي أو إيميل PayPal" required>
-        <div class="hint">ده اللي هيتحول عليه مستحقاتك من المهام.</div>
-      </div>
 
       <hr style="border:none; border-top:1px solid var(--color-border, #e5e7f5); margin:24px 0;">
 
@@ -135,13 +117,7 @@
 
     const languages = Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(i => i.value);
     const skills = Array.from(document.querySelectorAll('input[name="skill"]:checked')).map(i => i.value);
-    const genderInput = document.querySelector('input[name="s-gender"]:checked');
 
-    if (!genderInput) {
-      errorBox.textContent = "من فضلك اختار النوع.";
-      errorBox.style.display = "block";
-      return;
-    }
     if (!invite && languages.length === 0) {
       errorBox.textContent = "من فضلك اختار لغة واحدة على الأقل.";
       errorBox.style.display = "block";
@@ -163,8 +139,6 @@
         password: document.getElementById("s-password").value,
         whatsappNumber: document.getElementById("s-whatsapp").value,
         country: document.getElementById("s-country").value,
-        gender: genderInput.value,
-        payoutIdentifier: document.getElementById("s-payout").value,
         languages,
         skills,
       });

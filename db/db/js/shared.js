@@ -152,10 +152,6 @@ const NM = (() => {
     "Forbidden — insufficient role": "الحساب ده معندوش صلاحية للإجراء ده. لو دورك اتغيّر مؤخرًا، جرّب تسجّل خروج ودخول تاني.",
     "Missing token": "لازم تسجّل دخول الأول.",
     "Invalid or expired token": "جلستك انتهت. سجّل دخول تاني.",
-    "You don't lead this group": "انت مش الليدر بتاع الجروب ده.",
-    "You already lead a group for this language": "انت بالفعل ليدر لجروب في اللغة دي.",
-    "Could not update this task": "تعذّر تعديل المهمة. حاول تاني.",
-    "Could not delete this task": "تعذّر حذف المهمة. حاول تاني.",
   };
 
   function friendlyErrorMessage(rawMessage) {
@@ -186,10 +182,10 @@ const NM = (() => {
     return data;
   }
 
-  async function apiSignup({ firstName, email, password, whatsappNumber, country, gender, payoutIdentifier, languages, skills }) {
+  async function apiSignup({ firstName, email, password, whatsappNumber, country, languages, skills }) {
     const data = await apiFetch("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, gender, payoutIdentifier, languages, skills }),
+      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, languages, skills }),
     });
     localStorage.setItem("nm_token", data.token);
     localStorage.setItem("nm_user", JSON.stringify(data.user));
@@ -224,10 +220,9 @@ const NM = (() => {
     const merged = {
       ...cached,
       id: me.id, firstName: me.first_name, email: me.email, role: me.role,
-      whatsappNumber: me.whatsapp_number, gender: me.gender, payoutIdentifier: me.payout_identifier,
       language: me.language, groupNumber: me.group_number, groupId: me.group_id,
       languages: me.languages || [], skills: me.skills || [], groups: me.groups || [],
-      ledGroup: me.led_group || null, ledGroups: me.led_groups || [],
+      ledGroup: me.led_group || null,
     };
     localStorage.setItem("nm_user", JSON.stringify(merged));
     return merged;
@@ -242,13 +237,13 @@ const NM = (() => {
       body: JSON.stringify({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls, targetAll, groupIds }),
     });
   }
-  function apiClaimTask(taskId, quantity, groupId) {
+  function apiClaimTask(taskId, quantity) {
     return apiFetch(`/api/tasks/${taskId}/claim`, {
       method: "POST",
-      body: JSON.stringify({ quantity, groupId }),
+      body: JSON.stringify({ quantity }),
     });
   }
-  function apiMyClaims(groupId) { return apiFetch(`/api/tasks/claims/mine${groupId ? `?groupId=${groupId}` : ""}`); }
+  function apiMyClaims() { return apiFetch("/api/tasks/claims/mine"); }
   function apiClaimsForMyGroup() { return apiFetch("/api/tasks/claims/for-my-group"); }
   function apiSubmitFile(claimId, fileUrl) {
     return apiFetch(`/api/tasks/claims/${claimId}/submissions`, {
@@ -256,15 +251,7 @@ const NM = (() => {
       body: JSON.stringify({ fileUrl }),
     });
   }
-  function apiReviewQueue(groupId) { return apiFetch(`/api/tasks/review-queue${groupId ? `?groupId=${groupId}` : ""}`); }
-  function apiUpdateTask(taskId, payload) {
-    return apiFetch(`/api/tasks/${taskId}`, { method: "PUT", body: JSON.stringify(payload) });
-  }
-  function apiDeleteTask(taskId) {
-    return apiFetch(`/api/tasks/${taskId}`, { method: "DELETE" });
-  }
-  function apiGetAllTasks() { return apiFetch("/api/tasks/manage"); }
-  function apiGetTaskClaims(taskId) { return apiFetch(`/api/tasks/${taskId}/claims`); }
+  function apiReviewQueue() { return apiFetch("/api/tasks/review-queue"); }
   function apiReviewSubmission(submissionId, approve) {
     return apiFetch(`/api/tasks/submissions/${submissionId}/review`, {
       method: "POST",
@@ -291,7 +278,7 @@ const NM = (() => {
 
   // ---- groups (admin) ----
   function apiGetGroups() { return apiFetch("/api/groups"); }
-  function apiGetRoster(groupId) { return apiFetch(`/api/groups/roster${groupId ? `?groupId=${groupId}` : ""}`); }
+  function apiGetRoster() { return apiFetch("/api/groups/roster"); }
 
   // FormData upload — can't reuse apiFetch since it always forces JSON headers
   async function apiUploadSubmission(claimId, file) {
@@ -602,8 +589,7 @@ const NM = (() => {
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
     apiSignup, apiLogin, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
-    apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiDeleteTask, apiGetAllTasks, apiGetTaskClaims,
-    apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
+    apiGetOpenTasks, apiGetTask, apiCreateTask, apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
     apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
     apiGetGroups, apiGetRoster,
     apiRequestLeadership, apiMyLeaderRequest, apiPendingLeaderRequests,
