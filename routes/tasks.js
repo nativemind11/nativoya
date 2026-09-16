@@ -279,7 +279,7 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
       SELECT tc.id AS claim_id, tc.quantity, tc.group_id,
              t.id AS task_id, t.title, t.instructions, t.video_urls, t.audio_sample_urls,
              t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
-             g.leader_id, lu.first_name AS leader_name,
+             g.leader_id, g.group_number, lu.first_name AS leader_name,
              tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
       FROM task_claims tc
       JOIN tasks t ON t.id = tc.task_id
@@ -445,7 +445,7 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
   try {
     const claimResult = await pool.query(
       `SELECT tc.id, tc.group_id, t.id AS task_id, t.title, t.drive_folder_id,
-              g.leader_id, lu.first_name AS leader_first_name
+              g.leader_id, g.group_number, lu.first_name AS leader_first_name
        FROM task_claims tc
        JOIN tasks t ON t.id = tc.task_id
        JOIN groups g ON g.id = tc.group_id
@@ -470,8 +470,17 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
     const me = await pool.query("SELECT first_name, whatsapp_number FROM users WHERE id = $1", [req.user.id]);
     const uploaderName = me.rows[0]?.first_name || "member";
     const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "no-whatsapp";
-    const leaderPart = claim.leader_id ? (claim.leader_first_name || "leader") : "بدون ليدر";
-    const filename = `${uploaderName} - ${uploaderWhatsapp} - ${leaderPart} - ${Date.now()}-${req.file.originalname}`;
+
+    // A leader uploading to a claim held by the group THEY lead gets a
+    // simpler name (their own account name + their group number) — spelling
+    // out "leader: <their own name>" back at them would just be noise.
+    // Anyone else (a regular member) gets name + WhatsApp + their leader's
+    // name (or "بدون ليدر" when the group has none), so the head_leader/leader
+    // can always tell who sent a file.
+    const isUploaderTheLeader = claim.leader_id && claim.leader_id === req.user.id;
+    const filename = isUploaderTheLeader
+      ? `${uploaderName} - جروب ${claim.group_number} - ${Date.now()}-${req.file.originalname}`
+      : `${uploaderName} - ${uploaderWhatsapp} - ${claim.leader_id ? (claim.leader_first_name || "leader") : "بدون ليدر"} - ${Date.now()}-${req.file.originalname}`;
 
     const uploaded = await driveService.uploadSubmissionFile(
       claim.drive_folder_id, filename, req.file.mimetype, req.file.buffer

@@ -42,8 +42,8 @@
         <h3>مهام استلمها الجروب المختار</h3>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>المهمة</th><th>الكمية اللي استلمتها</th><th>المتبقي لسه محتاج تسليم</th></tr></thead>
-            <tbody id="my-claims-body"><tr><td colspan="3" class="text-muted">جاري التحميل...</td></tr></tbody>
+            <thead><tr><th>المهمة</th><th>الكمية اللي استلمتها</th><th>المتبقي لسه محتاج تسليم</th><th></th></tr></thead>
+            <tbody id="my-claims-body"><tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -184,11 +184,36 @@
       const claims = await NM.apiMyClaims(activeGroupId);
       document.getElementById("my-claims-body").innerHTML = claims.length
         ? claims.map(c => `
-            <tr><td><a href="task.html?id=${c.task_id}">${c.title}</a></td><td>${c.quantity}</td><td>${c.remaining_in_claim}</td></tr>
-          `).join("")
-        : `<tr><td colspan="3" class="text-muted">لسه ما استلمتش أي مهمة للجروب ده</td></tr>`;
+            <tr>
+              <td><a href="task.html?id=${c.task_id}">${c.title}</a></td>
+              <td>${c.quantity}</td>
+              <td>${c.remaining_in_claim}</td>
+              <td>
+                ${c.remaining_in_claim > 0 ? `
+                  <input type="file" id="file-${c.claim_id}" class="hidden" onchange="submitWork('${c.claim_id}', this)">
+                  <button class="btn btn-secondary" style="padding:6px 14px;" onclick="document.getElementById('file-${c.claim_id}').click()">📎 تسليم عمل</button>
+                ` : `<span class="text-muted">اتسلّم بالكامل</span>`}
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="4" class="text-muted">لسه ما استلمتش أي مهمة للجروب ده</td></tr>`;
     } catch (err) {
-      document.getElementById("my-claims-body").innerHTML = `<tr><td colspan="3" class="text-muted">${err.message}</td></tr>`;
+      document.getElementById("my-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">${err.message}</td></tr>`;
+    }
+  }
+
+  // Uploads straight to that task's Google Drive folder — same mechanism the
+  // member dashboard uses, so a leader can contribute work themselves too.
+  async function submitWork(claimId, inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+    inputEl.disabled = true;
+    try {
+      await NM.apiUploadSubmission(claimId, file);
+      await loadMyClaims();
+    } catch (err) {
+      alert(err.message);
+      inputEl.disabled = false;
+      inputEl.value = "";
     }
   }
 
