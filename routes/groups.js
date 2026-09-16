@@ -210,6 +210,7 @@ router.get("/roster", requireAuth, requireRole("leader"), async (req, res) => {
 router.get("/", requireAuth, async (req, res) => {
   const result = await pool.query(`
     SELECT g.*, u.first_name AS leader_name,
+      u.whatsapp_number AS leader_whatsapp, u.payout_identifier AS leader_payout_identifier,
       (SELECT COUNT(*) FROM user_groups WHERE group_id = g.id) AS member_count
     FROM groups g LEFT JOIN users u ON u.id = g.leader_id
     ORDER BY g.language, g.group_number

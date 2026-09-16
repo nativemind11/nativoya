@@ -16,7 +16,6 @@
       <a href="#groups">👥 كل الجروبات</a>
       <a href="groups.html">💬 مراقبة الشات</a>
       <a href="#tasks">📋 نشر مهمة</a>
-      <a href="#manage-tasks">🗂️ إدارة المهام</a>
       <a href="#payments">💸 المدفوعات</a>
       <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
     </aside>
@@ -45,14 +44,6 @@
           <div class="field"><label>نوع المهمة (المهارة)</label><select id="t-service" required></select></div>
           <div class="field"><label>اسم المهمة</label><input type="text" id="t-name" placeholder="مثال: توسيم بيانات محادثة" required></div>
           <div class="field"><label>الكمية الإجمالية</label><input type="number" id="t-qty" placeholder="100" required></div>
-          <div class="field">
-            <label>عدد الذكور المطلوب (اختياري)</label>
-            <input type="number" id="t-qty-male" placeholder="مثال: 60">
-          </div>
-          <div class="field">
-            <label>عدد الإناث المطلوب (اختياري)</label>
-            <input type="number" id="t-qty-female" placeholder="مثال: 40">
-          </div>
           <div class="field">
             <label>السعر لكل وحدة</label>
             <div class="flex gap-8">
@@ -85,42 +76,8 @@
             <div id="t-groups-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; max-height:220px; overflow-y:auto;"></div>
           </div>
 
-          <div style="grid-column:1/-1;" class="flex gap-8">
-            <button class="btn btn-primary" type="submit" id="task-submit">نشر المهمة</button>
-            <button class="btn btn-secondary hidden" type="button" id="task-cancel-edit">إلغاء التعديل</button>
-          </div>
+          <div style="grid-column:1/-1;"><button class="btn btn-primary" type="submit" id="task-submit">نشر المهمة</button></div>
         </form>
-      </div>
-
-      <div class="card" id="manage-tasks" style="margin-top:20px;">
-        <h3>إدارة المهام المنشورة</h3>
-        <p class="text-muted" style="font-size:0.85rem;">عدّل تفاصيل أي مهمة أو احذفها. الكمية الإجمالية منقدرش تقل عن اللي اتاستلم بالفعل.</p>
-        <p id="manage-tasks-error" class="hint" style="color:#e0245e; display:none;"></p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>المهمة</th><th>النوع</th><th>السعر</th><th>اتاستلم / الإجمالي</th><th></th></tr></thead>
-            <tbody id="manage-tasks-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card hidden" id="task-claims-panel" style="margin-top:20px;">
-        <h3 id="task-claims-title">مين اخد ايه</h3>
-        <div id="task-gender-breakdown" class="flex gap-8" style="margin-bottom:16px;"></div>
-        <p class="text-muted" style="font-size:0.85rem;">الجروبات اللي استلمت من المهمة دي:</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>الجروب</th><th>الليدر</th><th>الكمية المستلمة</th><th>اتسلّم / المستلم</th></tr></thead>
-            <tbody id="task-claims-body"></tbody>
-          </table>
-        </div>
-        <p class="text-muted" style="font-size:0.85rem; margin-top:20px;">كل التسليمات الفردية على المهمة دي:</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>العضو</th><th>الجروب</th><th>الملف</th><th>الحالة</th></tr></thead>
-            <tbody id="task-submissions-body"></tbody>
-          </table>
-        </div>
       </div>
 
       <div class="card" id="leader-requests" style="margin-top:20px;">
@@ -226,7 +183,7 @@
       const leaderSelect = document.getElementById("p-leader");
       const leaders = groupsCache.filter(g => g.leader_id);
       leaderSelect.innerHTML = leaders.length
-        ? leaders.map(g => `<option value="${g.leader_id}" data-payout="${g.leader_payout_identifier || ""}">${g.leader_name} — ${g.language} #${g.group_number}</option>`).join("")
+        ? leaders.map(g => `<option value="${g.leader_id}">${g.leader_name} — ${g.language} #${g.group_number}</option>`).join("")
         : `<option value="">مفيش ليدرز لسه</option>`;
 
       // group checkboxes for the "publish to specific groups" picker
@@ -244,126 +201,11 @@
     }
   }
 
-  let editingTaskId = null;
-
-  async function loadManageTasks() {
-    try {
-      const tasks = await NM.apiGetAllTasks();
-      document.getElementById("manage-tasks-body").innerHTML = tasks.length
-        ? tasks.map(t => `
-            <tr>
-              <td>${t.title}${(t.male_quantity != null || t.female_quantity != null)
-                  ? `<div class="hint">🎯 مطلوب: ${t.male_quantity != null ? `${t.male_quantity} ذكر` : "—"} / ${t.female_quantity != null ? `${t.female_quantity} أنثى` : "—"}</div>`
-                  : ""}</td>
-              <td>${t.skill_icon || ""} ${t.skill_name_ar || t.skill_slug}</td>
-              <td>${t.price ? `${Number(t.price).toLocaleString("ar-EG")} ${t.currency}` : "—"}</td>
-              <td>${t.claimed_quantity} / ${t.total_quantity}</td>
-              <td>
-                <button class="btn btn-secondary" style="padding:6px 12px;" onclick='startEditTask(${JSON.stringify(t).replace(/'/g, "&apos;")})'>✏️ تعديل</button>
-                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="showTaskClaims('${t.id}', '${String(t.title).replace(/'/g, "&apos;")}')">👥 مين اخد ايه</button>
-                ${t.drive_folder_id ? `<a class="btn btn-secondary" style="padding:6px 12px;" href="https://drive.google.com/drive/folders/${t.drive_folder_id}" target="_blank" rel="noopener">📁 فولدر الدرايف</a>` : `<span class="pill" style="opacity:0.6;">📁 لسه من غير فولدر</span>`}
-                <button class="btn btn-secondary" style="padding:6px 12px; color:#e0245e;" onclick="deleteTask('${t.id}', this)">🗑️ حذف</button>
-              </td>
-            </tr>`).join("")
-        : `<tr><td colspan="5" class="text-muted">لسه مفيش مهام منشورة</td></tr>`;
-    } catch (err) {
-      document.getElementById("manage-tasks-error").textContent = err.message;
-      document.getElementById("manage-tasks-error").style.display = "block";
-    }
-  }
-
-  async function showTaskClaims(taskId, taskTitle) {
-    const panel = document.getElementById("task-claims-panel");
-    panel.classList.remove("hidden");
-    document.getElementById("task-claims-title").textContent = `مين اخد ايه من: ${taskTitle}`;
-    document.getElementById("task-gender-breakdown").innerHTML = "";
-    document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
-    document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
-    panel.scrollIntoView({ behavior: "smooth" });
-
-    try {
-      const { claims, submissions, genderBreakdown } = await NM.apiGetTaskClaims(taskId);
-      if (genderBreakdown) {
-        document.getElementById("task-gender-breakdown").innerHTML = `
-          <span class="pill">👨 ذكور سلّموا شغل: ${genderBreakdown.male}</span>
-          <span class="pill">👩 إناث سلّموا شغل: ${genderBreakdown.female}</span>
-          ${genderBreakdown.unspecified ? `<span class="pill">❔ بدون نوع محدد: ${genderBreakdown.unspecified}</span>` : ""}
-        `;
-      }
-      document.getElementById("task-claims-body").innerHTML = claims.length
-        ? claims.map(c => `
-            <tr>
-              <td>${c.language} #${c.group_number}</td>
-              <td>${c.leader_name || "بدون ليدر (تحت الهيد ليدر)"}</td>
-              <td>${c.quantity}</td>
-              <td>${c.submitted_count} / ${c.quantity}</td>
-            </tr>`).join("")
-        : `<tr><td colspan="4" class="text-muted">مفيش أي جروب استلم من المهمة دي لسه</td></tr>`;
-
-      document.getElementById("task-submissions-body").innerHTML = submissions.length
-        ? submissions.map(s => `
-            <tr>
-              <td>${s.member_name}</td>
-              <td>${s.language} #${s.group_number}</td>
-              <td>${s.file_url ? `<a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a>` : "—"}</td>
-              <td><span class="pill">${s.status === "completed" ? "✅ مقبول" : "بانتظار المراجعة"}</span></td>
-            </tr>`).join("")
-        : `<tr><td colspan="4" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
-    } catch (err) {
-      document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">${err.message}</td></tr>`;
-    }
-  }
-
-  function startEditTask(t) {
-    editingTaskId = t.id;
-    document.getElementById("t-service").value = t.skill_slug;
-    document.getElementById("t-name").value = t.title;
-    document.getElementById("t-qty").value = t.total_quantity;
-    document.getElementById("t-qty-male").value = t.male_quantity != null ? t.male_quantity : "";
-    document.getElementById("t-qty-female").value = t.female_quantity != null ? t.female_quantity : "";
-    document.getElementById("t-price").value = t.price || "";
-    document.getElementById("t-currency").value = t.currency || "USD";
-    document.getElementById("t-video").value = (t.video_urls || []).join("\n");
-    document.getElementById("t-audio").value = (t.audio_sample_urls || []).join("\n");
-    document.getElementById("t-instructions").value = t.instructions || "";
-    document.getElementById("task-submit").textContent = "حفظ التعديلات";
-    document.getElementById("task-cancel-edit").classList.remove("hidden");
-    document.getElementById("tasks").scrollIntoView({ behavior: "smooth" });
-  }
-
-  document.getElementById("task-cancel-edit").addEventListener("click", () => {
-    editingTaskId = null;
-    document.getElementById("task-form").reset();
-    document.getElementById("task-submit").textContent = "نشر المهمة";
-    document.getElementById("task-cancel-edit").classList.add("hidden");
-    document.getElementById("t-groups-field").classList.add("hidden");
-  });
-
-  async function deleteTask(id, btn) {
-    if (!confirm("متأكد إنك عايز تحذف المهمة دي؟ هيتحذف معاها أي استلامات وتسليمات مرتبطة بيها.")) return;
-    btn.disabled = true;
-    try {
-      await NM.apiDeleteTask(id);
-      await loadManageTasks();
-    } catch (err) {
-      alert(err.message);
-      btn.disabled = false;
-    }
-  }
-
   document.querySelectorAll('input[name="t-target"]').forEach(r => {
     r.addEventListener("change", () => {
       const specific = document.querySelector('input[name="t-target"]:checked').value === "specific";
       document.getElementById("t-groups-field").classList.toggle("hidden", !specific);
     });
-  });
-
-  // pre-fill the payout identifier with what the leader saved at signup —
-  // still fully editable in case this payout is going somewhere else.
-  document.getElementById("p-leader").addEventListener("change", (e) => {
-    const opt = e.target.selectedOptions[0];
-    const payout = opt ? opt.getAttribute("data-payout") : "";
-    if (payout) document.getElementById("p-identifier").value = payout;
   });
 
   async function loadPayments() {
@@ -410,7 +252,7 @@
     const targetAll = document.querySelector('input[name="t-target"]:checked').value === "all";
     const groupIds = Array.from(document.querySelectorAll('input[name="t-group"]:checked')).map(i => i.value);
 
-    if (!editingTaskId && !targetAll && groupIds.length === 0) {
+    if (!targetAll && groupIds.length === 0) {
       errorBox.textContent = "اختار جروب واحد على الأقل، أو اختار \"كل الجروبات\".";
       errorBox.style.display = "block";
       submitBtn.disabled = false;
@@ -419,40 +261,29 @@
     }
 
     try {
-      const payload = {
+      await NM.apiCreateTask({
         skillSlug: document.getElementById("t-service").value,
         title: document.getElementById("t-name").value,
         instructions: document.getElementById("t-instructions").value,
         totalQuantity: Number(document.getElementById("t-qty").value),
-        maleQuantity: document.getElementById("t-qty-male").value ? Number(document.getElementById("t-qty-male").value) : null,
-        femaleQuantity: document.getElementById("t-qty-female").value ? Number(document.getElementById("t-qty-female").value) : null,
         price: document.getElementById("t-price").value ? Number(document.getElementById("t-price").value) : null,
         currency: document.getElementById("t-currency").value,
         videoUrls: document.getElementById("t-video").value.split("\n").map(s => s.trim()).filter(Boolean),
         audioSampleUrls: document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean),
-      };
-
-      if (editingTaskId) {
-        await NM.apiUpdateTask(editingTaskId, payload);
-        alert("✅ اتحفظت التعديلات!");
-        editingTaskId = null;
-        document.getElementById("task-cancel-edit").classList.add("hidden");
-      } else {
-        await NM.apiCreateTask({ ...payload, targetAll, groupIds });
-        alert(targetAll
-          ? "✅ اتنشرت المهمة لكل الجروبات!"
-          : `✅ اتنشرت المهمة لـ ${groupIds.length} جروب محدد!`);
-      }
+        targetAll,
+        groupIds,
+      });
+      alert(targetAll
+        ? "✅ اتنشرت المهمة لكل الجروبات!"
+        : `✅ اتنشرت المهمة لـ ${groupIds.length} جروب محدد!`);
       e.target.reset();
       document.getElementById("t-groups-field").classList.add("hidden");
-      document.getElementById("task-submit").textContent = "نشر المهمة";
-      await loadManageTasks();
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.style.display = "block";
     } finally {
       submitBtn.disabled = false;
-      if (!editingTaskId) submitBtn.textContent = "نشر المهمة";
+      submitBtn.textContent = "نشر المهمة";
     }
   });
 
@@ -531,7 +362,6 @@
   loadPayments();
   loadLeaderRequests();
   loadDriveStatus();
-  loadManageTasks();
 </script>
 </body>
 </html>

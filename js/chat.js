@@ -35,13 +35,33 @@
   // Exchanges our own JWT (via the backend) for a Firebase custom token, then
   // signs into Firebase Auth with it. After this, Firestore Security Rules
   // can see request.auth.uid / request.auth.token.role / .groupId.
-  async function ensureFirebaseAuth() {
+  async function ensureFirebaseAuth(forceRefresh) {
     ensureInitialized();
-    if (signedIn && auth.currentUser) return;
+    if (!forceRefresh && signedIn && auth.currentUser) return;
 
     const { token } = await NM.apiFetch("/api/auth/firebase-token");
     await auth.signInWithCustomToken(token);
     signedIn = true;
+  }
+
+  // Runs a Firestore operation; if it fails with permission-denied (e.g. the
+  // signed-in session doesn't yet know about a group the user just joined),
+  // re-authenticates once with a fresh token/claims and retries automatically
+  // before giving up — the user never sees a fixable error like this.
+  async function withAuthRetry(fn) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err && err.code === "permission-denied") {
+        try {
+          await ensureFirebaseAuth(true);
+          return await fn();
+        } catch (retryErr) {
+          throw friendlyChatError(retryErr);
+        }
+      }
+      throw friendlyChatError(err);
+    }
   }
 
   // Live-listens to a group's messages (oldest → newest, capped at the last
@@ -58,7 +78,7 @@
   }
 
   async function sendMessage(groupId, text, senderName) {
-    try {
+    return withAuthRetry(async () => {
       ensureInitialized();
       await ensureFirebaseAuth();
       const uid = auth.currentUser.uid;
@@ -69,9 +89,7 @@
         senderName,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-    } catch (err) {
-      throw friendlyChatError(err);
-    }
+    });
   }
 
   // Voice messages are stored as a base64 data URL directly on the message
@@ -79,7 +97,7 @@
   // document at 1MiB, so recordings are capped client-side (see
   // startVoiceRecording) well below that so the base64 inflation still fits.
   async function sendVoiceMessage(groupId, base64Audio, mimeType, senderName) {
-    try {
+    return withAuthRetry(async () => {
       ensureInitialized();
       await ensureFirebaseAuth();
       const uid = auth.currentUser.uid;
@@ -91,9 +109,7 @@
         senderName,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-    } catch (err) {
-      throw friendlyChatError(err);
-    }
+    });
   }
 
   // Records mic audio and resolves { base64, mimeType, seconds } when the
@@ -155,9 +171,54 @@
     });
   }
 
+  // Editing your own text message — updates the text and stamps editedAt so
+  // the UI can show a "(معدّلة)" tag. Only the original sender can do this
+  // (enforced server-side by Firestore Security Rules, not just the client).
+  async function editMessage(groupId, messageId, newText) {
+    return withAuthRetry(async () => {
+      ensureInitialized();
+      await ensureFirebaseAuth();
+      await db.collection("groups").doc(groupId).collection("messages").doc(messageId).update({
+        text: newText,
+        editedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  // Deleting your own message entirely (text or voice). Only the original
+  // sender can do this — enforced server-side by Firestore Security Rules.
+  async function deleteMessage(groupId, messageId) {
+    return withAuthRetry(async () => {
+      ensureInitialized();
+      await ensureFirebaseAuth();
+      await db.collection("groups").doc(groupId).collection("messages").doc(messageId).delete();
+    });
+  }
+
+  // Reactions: one emoji per person per message, stored as a
+  // { [uid]: emoji } map directly on the message document — so they show up
+  // live for free through the existing message listener, no extra reads.
+  // Clicking the same emoji you already picked removes your reaction;
+  // clicking a different one switches it. Anyone in the group can react to
+  // ANY message (not just their own).
+  async function toggleReaction(groupId, messageId, emoji, currentReactionForMe) {
+    return withAuthRetry(async () => {
+      ensureInitialized();
+      await ensureFirebaseAuth();
+      const uid = auth.currentUser.uid;
+      const field = `reactions.${uid}`;
+      await db.collection("groups").doc(groupId).collection("messages").doc(messageId).update({
+        [field]: currentReactionForMe === emoji ? firebase.firestore.FieldValue.delete() : emoji,
+      });
+    });
+  }
+
   function currentUid() {
     return auth && auth.currentUser ? auth.currentUser.uid : null;
   }
 
-  window.NMChat = { ensureFirebaseAuth, listenToGroup, sendMessage, sendVoiceMessage, startVoiceRecording, currentUid };
+  window.NMChat = {
+    ensureFirebaseAuth, listenToGroup, sendMessage, sendVoiceMessage,
+    startVoiceRecording, currentUid, editMessage, deleteMessage, toggleReaction,
+  };
 })();

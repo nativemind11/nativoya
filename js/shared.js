@@ -186,10 +186,10 @@ const NM = (() => {
     return data;
   }
 
-  async function apiSignup({ firstName, email, password, whatsappNumber, country, languages, skills }) {
+  async function apiSignup({ firstName, email, password, whatsappNumber, country, gender, payoutIdentifier, languages, skills }) {
     const data = await apiFetch("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, languages, skills }),
+      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, gender, payoutIdentifier, languages, skills }),
     });
     localStorage.setItem("nm_token", data.token);
     localStorage.setItem("nm_user", JSON.stringify(data.user));
@@ -204,6 +204,20 @@ const NM = (() => {
     localStorage.setItem("nm_token", data.token);
     localStorage.setItem("nm_user", JSON.stringify(data.user));
     return data.user;
+  }
+
+  async function apiForgotPassword(email) {
+    return apiFetch("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async function apiResetPassword(token, newPassword) {
+    return apiFetch("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, newPassword }),
+    });
   }
 
   async function apiJoinGroup(language, groupNumber) {
@@ -224,7 +238,7 @@ const NM = (() => {
     const merged = {
       ...cached,
       id: me.id, firstName: me.first_name, email: me.email, role: me.role,
-      whatsappNumber: me.whatsapp_number,
+      whatsappNumber: me.whatsapp_number, gender: me.gender, payoutIdentifier: me.payout_identifier,
       language: me.language, groupNumber: me.group_number, groupId: me.group_id,
       languages: me.languages || [], skills: me.skills || [], groups: me.groups || [],
       ledGroup: me.led_group || null, ledGroups: me.led_groups || [],
@@ -601,7 +615,7 @@ const NM = (() => {
     currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup,
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
-    apiSignup, apiLogin, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
+    apiSignup, apiLogin, apiForgotPassword, apiResetPassword, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
     apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiDeleteTask, apiGetAllTasks, apiGetTaskClaims,
     apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
     apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,

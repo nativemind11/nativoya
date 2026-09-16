@@ -14,11 +14,14 @@ function cleanUrlList(list) {
 // POST /api/tasks  (head_leader only) — publish a new task, either to every
 // group (targetAll: true) or to a specific list of groupIds. videoUrls and
 // audioSampleUrls each accept an ARRAY of links (a task can have several).
+// maleQuantity/femaleQuantity are OPTIONAL — a head_leader can split the
+// total quantity by gender (e.g. "60 male, 40 female") so leaders/members
+// know how many of each are still needed; leave them out to skip the split.
 router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   const {
     skillSlug, title, instructions, totalQuantity,
     price, currency, videoUrls, audioSampleUrls,
-    targetAll, groupIds,
+    targetAll, groupIds, maleQuantity, femaleQuantity,
   } = req.body;
 
   const isTargetAll = targetAll !== false; // default true
@@ -30,10 +33,13 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
     await client.query("BEGIN");
     const result = await client.query(
-      `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, price, currency,
-                           video_urls, audio_sample_urls, target_all, created_by)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'USD'), $7, $8, $9, $10) RETURNING *`,
-      [skillSlug, title, instructions, totalQuantity, price || null, currency,
+      `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, male_quantity, female_quantity,
+                           price, currency, video_urls, audio_sample_urls, target_all, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'USD'), $9, $10, $11, $12) RETURNING *`,
+      [skillSlug, title, instructions, totalQuantity,
+       maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
+       femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
+       price || null, currency,
        cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), isTargetAll, req.user.id]
     );
     const task = result.rows[0];
@@ -71,7 +77,8 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
 
 // GET /api/tasks/:id/claims  (head_leader only) — full breakdown of who has
 // claimed how much of this task (which group/leader) and every individual
-// submission made against it (which member, from which group).
+// submission made against it (which member, from which group). Also returns
+// genderBreakdown: how many males/females have submitted work on this task.
 router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
     const claims = await pool.query(`
@@ -90,7 +97,7 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
 
     const submissions = await pool.query(`
       SELECT s.id, s.status, s.file_url, s.created_at,
-             u.first_name AS member_name, g.language, g.group_number
+             u.first_name AS member_name, u.gender AS member_gender, g.language, g.group_number
       FROM submissions s
       JOIN task_claims tc ON tc.id = s.task_claim_id
       JOIN groups g ON g.id = tc.group_id
@@ -99,7 +106,22 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
       ORDER BY s.created_at DESC
     `, [req.params.id]);
 
-    res.json({ claims: claims.rows, submissions: submissions.rows });
+    const genderCounts = await pool.query(`
+      SELECT u.gender, COUNT(*) AS cnt
+      FROM submissions s
+      JOIN task_claims tc ON tc.id = s.task_claim_id
+      JOIN users u ON u.id = s.submitted_by
+      WHERE tc.task_id = $1
+      GROUP BY u.gender
+    `, [req.params.id]);
+    const genderBreakdown = { male: 0, female: 0, unspecified: 0 };
+    for (const row of genderCounts.rows) {
+      if (row.gender === "male") genderBreakdown.male = Number(row.cnt);
+      else if (row.gender === "female") genderBreakdown.female = Number(row.cnt);
+      else genderBreakdown.unspecified += Number(row.cnt);
+    }
+
+    res.json({ claims: claims.rows, submissions: submissions.rows, genderBreakdown });
   } catch (err) {
     console.error("[tasks:claims-breakdown]", err);
     res.status(500).json({ error: "Could not load claim breakdown" });
@@ -129,7 +151,10 @@ router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) 
 // total_quantity can't drop below what's already been claimed by groups.
 router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
-    const { title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls } = req.body;
+    const {
+      title, instructions, totalQuantity, price, currency,
+      videoUrls, audioSampleUrls, maleQuantity, femaleQuantity,
+    } = req.body;
 
     const claimedResult = await pool.query(
       "SELECT COALESCE(SUM(quantity), 0) AS c FROM task_claims WHERE task_id = $1", [req.params.id]
@@ -142,10 +167,14 @@ router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => 
     const result = await pool.query(
       `UPDATE tasks SET
          title = $1, instructions = $2, total_quantity = $3, price = $4,
-         currency = $5, video_urls = $6, audio_sample_urls = $7
-       WHERE id = $8 RETURNING *`,
+         currency = $5, video_urls = $6, audio_sample_urls = $7,
+         male_quantity = $8, female_quantity = $9
+       WHERE id = $10 RETURNING *`,
       [title, instructions, totalQuantity, price || null, currency,
-       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), req.params.id]
+       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls),
+       maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
+       femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
+       req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
     res.json(result.rows[0]);
@@ -457,8 +486,8 @@ router.post("/claims/:claimId/submissions", requireAuth, requireRole("member", "
 // against a claim their own group holds — a leader can contribute work to
 // their own group's claims too, not just manage/review others' submissions)
 //
-// Drive filename convention: "<uploader name> - <uploader WhatsApp> - <leader
-// name, or 'بدون ليدر' if the group has none> - timestamp-<original name>"
+// Drive filename convention: "<uploader name> - <uploader WhatsApp> - <ذكر/أنثى> - <original name>"
+// Applies the same way whether the uploader is a leader or a regular member.
 router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leader"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file was attached" });
 
@@ -487,14 +516,14 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
 
-    const me = await pool.query("SELECT first_name, email FROM users WHERE id = $1", [req.user.id]);
+    const me = await pool.query("SELECT first_name, whatsapp_number, gender FROM users WHERE id = $1", [req.user.id]);
     const uploaderName = me.rows[0]?.first_name || "member";
-    const uploaderEmail = me.rows[0]?.email || "no-email";
-    // Keep it simple and human-readable: who uploaded it (name + email) plus
-    // their original filename for content context. No raw timestamp number —
-    // Drive already tracks the upload date/time on every file on its own,
-    // and Drive is fine with two files sharing a name (each stays a distinct file).
-    const filename = `${uploaderName} - ${uploaderEmail} - ${req.file.originalname}`;
+    const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "بدون رقم";
+    const genderLabel = me.rows[0]?.gender === "male" ? "ذكر" : me.rows[0]?.gender === "female" ? "أنثى" : "غير محدد";
+    // Name - WhatsApp number - Gender - original filename (extension preserved).
+    // Drive is fine with two files sharing a name (each stays a distinct file),
+    // so we don't need to append a raw timestamp — Drive already tracks that.
+    const filename = `${uploaderName} - ${uploaderWhatsapp} - ${genderLabel} - ${req.file.originalname}`;
 
     const uploaded = await driveService.uploadSubmissionFile(
       claim.drive_folder_id, filename, req.file.mimetype, req.file.buffer

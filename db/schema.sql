@@ -10,6 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- for gen_random_uuid()
 -- USERS
 -- --------------------------------------------------------------------------
 CREATE TYPE user_role AS ENUM ('member', 'leader', 'head_leader');
+CREATE TYPE user_gender AS ENUM ('male', 'female');
 
 CREATE TABLE users (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -18,6 +19,10 @@ CREATE TABLE users (
   password_hash     TEXT NOT NULL,
   whatsapp_number   TEXT,
   country           TEXT,                 -- selected from a fixed dropdown list
+  gender            user_gender,          -- selected at signup (ذكر / أنثى)
+  payout_identifier TEXT,                 -- default account/number for task payouts (InstaPay, Vodafone Cash, PayPal email...)
+  reset_token_hash       TEXT,            -- sha256 of the raw "forgot password" token (never store the raw token)
+  reset_token_expires_at TIMESTAMPTZ,     -- reset link expires 1 hour after it's requested
   role              user_role NOT NULL DEFAULT 'member',
   reputation_score  INTEGER NOT NULL DEFAULT 100,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -110,6 +115,8 @@ CREATE TABLE tasks (
   price           NUMERIC(10,2),
   currency        TEXT NOT NULL DEFAULT 'USD',
   total_quantity  INTEGER NOT NULL,
+  male_quantity   INTEGER,                                -- optional split: how many units should come from males
+  female_quantity INTEGER,                                -- optional split: how many units should come from females
   target_all      BOOLEAN NOT NULL DEFAULT true,          -- true = every group sees it
   created_by      UUID NOT NULL REFERENCES users(id),     -- head_leader
   drive_folder_id TEXT,                                   -- this task's Google Drive folder
