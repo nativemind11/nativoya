@@ -128,10 +128,18 @@ CREATE TABLE task_claims (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id       UUID NOT NULL REFERENCES tasks(id),
   group_id      UUID NOT NULL REFERENCES groups(id),
-  claimed_by    UUID NOT NULL REFERENCES users(id), -- leader
+  claimed_by    UUID NOT NULL REFERENCES users(id), -- leader (or the task's creator, for auto-claims)
   quantity      INTEGER NOT NULL,
+  auto_claimed  BOOLEAN NOT NULL DEFAULT false, -- true for the automatic claim a leaderless group gets
   claimed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- A leaderless group can only ever get ONE auto-claim per task — this is what
+-- actually stops the duplicate-claim bug (an app-level "IF NOT EXISTS" check
+-- alone isn't atomic and can still double-insert under quick repeat requests).
+-- Real leaders can still claim the same task for their group multiple times
+-- (topping up in batches), since this constraint only applies to auto-claims.
+CREATE UNIQUE INDEX task_claims_auto_unique ON task_claims (task_id, group_id) WHERE auto_claimed;
 
 -- individual member submissions against a claim
 CREATE TABLE submissions (

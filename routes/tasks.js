@@ -258,9 +258,10 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
   try {
     await pool.query(
       `
-      INSERT INTO task_claims (task_id, group_id, claimed_by, quantity)
+      INSERT INTO task_claims (task_id, group_id, claimed_by, quantity, auto_claimed)
       SELECT t.id, g.id, t.created_by,
-             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0)
+             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0),
+             true
       FROM tasks t
       JOIN user_groups ug ON ug.user_id = $1
       JOIN groups g ON g.id = ug.group_id AND g.leader_id IS NULL
@@ -269,6 +270,7 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
             ))
         AND NOT EXISTS (SELECT 1 FROM task_claims tc WHERE tc.task_id = t.id AND tc.group_id = g.id)
         AND (t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0)) > 0
+      ON CONFLICT (task_id, group_id) WHERE auto_claimed DO NOTHING
       `,
       [req.user.id]
     );
