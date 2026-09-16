@@ -129,7 +129,12 @@
     if (user.role !== "member" && user.role !== "leader") { submitCard.classList.add("hidden"); return; }
     try {
       const claims = await NM.apiClaimsForMyGroup();
-      matchingClaim = claims.find(c => c.task_id === taskId) || null;
+      const taskClaims = claims.filter(c => c.task_id === taskId);
+      // I might be a leader of one group AND just a member of another — when
+      // both hold a claim for the same task, always prefer the group I
+      // actually LEAD, so the naming notice and upload target are correct.
+      const ledGroupIds = new Set((user.ledGroups || []).map(g => g.id));
+      matchingClaim = taskClaims.find(c => ledGroupIds.has(c.group_id)) || taskClaims[0] || null;
       const namingNotice = document.getElementById("naming-notice");
       if (!matchingClaim) {
         document.getElementById("submit-hint").textContent = "جروبك لسه ما استلمش كمية من المهمة دي — استنى الليدر أو الهيد ليدر يستلمها الأول.";

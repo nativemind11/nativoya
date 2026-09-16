@@ -276,7 +276,7 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
     );
 
     const result = await pool.query(`
-      SELECT tc.id AS claim_id, tc.quantity,
+      SELECT tc.id AS claim_id, tc.quantity, tc.group_id,
              t.id AS task_id, t.title, t.instructions, t.video_urls, t.audio_sample_urls,
              t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
              g.leader_id, lu.first_name AS leader_name,
