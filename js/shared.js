@@ -224,6 +224,7 @@ const NM = (() => {
     const merged = {
       ...cached,
       id: me.id, firstName: me.first_name, email: me.email, role: me.role,
+      whatsappNumber: me.whatsapp_number,
       language: me.language, groupNumber: me.group_number, groupId: me.group_id,
       languages: me.languages || [], skills: me.skills || [], groups: me.groups || [],
       ledGroup: me.led_group || null, ledGroups: me.led_groups || [],

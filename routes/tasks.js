@@ -277,9 +277,12 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
       SELECT tc.id AS claim_id, tc.quantity,
              t.id AS task_id, t.title, t.instructions, t.video_urls, t.audio_sample_urls,
              t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
+             g.leader_id, lu.first_name AS leader_name,
              tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
       FROM task_claims tc
       JOIN tasks t ON t.id = tc.task_id
+      JOIN groups g ON g.id = tc.group_id
+      LEFT JOIN users lu ON lu.id = g.leader_id
       JOIN services s ON s.slug = t.skill_slug
       LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
         ON sc.task_claim_id = tc.id
@@ -412,8 +415,8 @@ router.post("/:id/claim", requireAuth, requireRole("leader"), async (req, res) =
   }
 });
 
-// POST /api/tasks/claims/:claimId/submissions  (member submits a file)
-router.post("/claims/:claimId/submissions", requireAuth, requireRole("member"), async (req, res) => {
+// POST /api/tasks/claims/:claimId/submissions  (member or leader submits a file)
+router.post("/claims/:claimId/submissions", requireAuth, requireRole("member", "leader"), async (req, res) => {
   try {
     const { fileUrl } = req.body; // uploaded to Google Drive first, URL passed here
     const result = await pool.query(
@@ -428,14 +431,13 @@ router.post("/claims/:claimId/submissions", requireAuth, requireRole("member"), 
   }
 });
 
-// POST /api/tasks/claims/:claimId/upload  (member submits a file — REAL upload)
-// Sends the file straight to that task's Google Drive folder and records the
-// resulting link as the submission — no manual link-pasting needed.
+// POST /api/tasks/claims/:claimId/upload  (member OR leader submits a file
+// against a claim their own group holds — a leader can contribute work to
+// their own group's claims too, not just manage/review others' submissions)
 //
-// Drive filename convention:
-//   • member is under a Leader's group  -> "<task title> - <leader first name>"
-//   • member is under the Head Leader's group (no leader) -> "<member first name> - <year>"
-router.post("/claims/:claimId/upload", requireAuth, requireRole("member"), upload.single("file"), async (req, res) => {
+// Drive filename convention: "<uploader name> - <uploader WhatsApp> - <leader
+// name, or 'بدون ليدر' if the group has none> - timestamp-<original name>"
+router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leader"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file was attached" });
 
   try {
@@ -463,11 +465,11 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member"), uploa
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
 
-    const me = await pool.query("SELECT first_name FROM users WHERE id = $1", [req.user.id]);
-    const memberName = me.rows[0]?.first_name || "member";
-    const filename = claim.leader_id
-      ? `${claim.title} - ${claim.leader_first_name || "leader"} - ${Date.now()}-${req.file.originalname}`
-      : `${memberName} - ${new Date().getFullYear()} - ${Date.now()}-${req.file.originalname}`;
+    const me = await pool.query("SELECT first_name, whatsapp_number FROM users WHERE id = $1", [req.user.id]);
+    const uploaderName = me.rows[0]?.first_name || "member";
+    const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "no-whatsapp";
+    const leaderPart = claim.leader_id ? (claim.leader_first_name || "leader") : "بدون ليدر";
+    const filename = `${uploaderName} - ${uploaderWhatsapp} - ${leaderPart} - ${Date.now()}-${req.file.originalname}`;
 
     const uploaded = await driveService.uploadSubmissionFile(
       claim.drive_folder_id, filename, req.file.mimetype, req.file.buffer

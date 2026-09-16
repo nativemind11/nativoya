@@ -100,7 +100,7 @@ router.post("/login", async (req, res) => {
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, first_name, email, role, country, reputation_score FROM users WHERE id = $1`,
+      `SELECT id, first_name, email, role, country, whatsapp_number, reputation_score FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (!userResult.rows.length) return res.status(404).json({ error: "User not found" });

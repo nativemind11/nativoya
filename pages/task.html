@@ -9,7 +9,7 @@
 </head>
 <body>
 <main class="container section" id="page-main" style="max-width:720px;">
-  <a href="dashboard-member.html" class="text-muted" style="display:inline-block; margin-bottom:16px;">→ رجوع للوحة التحكم</a>
+  <a href="#" id="back-link" class="text-muted" style="display:inline-block; margin-bottom:16px;">→ رجوع للوحة التحكم</a>
 
   <div id="task-loading" class="card text-center">
     <p class="text-muted mb-0">جاري تحميل تفاصيل المهمة...</p>
@@ -48,7 +48,9 @@
     <div class="card" style="margin-top:16px;" id="submit-card">
       <h3>📎 تسليم شغلك على المهمة دي</h3>
       <p class="text-muted" id="submit-hint">لو جروبك استلم كمية من المهمة دي، هتقدر ترفع شغلك من هنا.</p>
+      <p id="naming-notice" class="card card-compact hidden" style="background:var(--color-pill-bg); border:none; font-size:0.85rem; color:var(--color-pill-text); font-weight:600;"></p>
       <p id="submit-error" class="hint" style="color:#e0245e; display:none;"></p>
+      <p id="submit-success" class="hint" style="color:#16a34a; display:none; font-weight:700;"></p>
       <input type="file" id="submit-file" class="hidden">
       <button class="btn btn-primary" id="submit-btn" onclick="document.getElementById('submit-file').click()">📎 رفع الشغل</button>
     </div>
@@ -61,7 +63,7 @@
 
 <script src="../js/shared.js"></script>
 <script>
-  const user = NM.currentUser();
+  let user = NM.currentUser();
   if (!user) { location.href = "login.html"; }
 
   const taskId = new URLSearchParams(location.search).get("id");
@@ -70,6 +72,13 @@
   let matchingClaim = null;
 
   async function loadTask() {
+    try {
+      user = await NM.apiRefreshMe(); // make sure role + whatsapp are fresh, not a stale cached copy
+    } catch (_) { /* fall back to the cached copy if this fails */ }
+
+    document.getElementById("back-link").href = user.role === "head_leader" ? "dashboard-admin.html"
+      : user.role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
+
     try {
       const task = await NM.apiGetTask(taskId);
       document.getElementById("page-title").textContent = `${task.title} — Nativoya`;
@@ -113,21 +122,26 @@
     }
   }
 
-  // If my group already claimed some of this task, let me submit straight
-  // from here. Members don't claim tasks themselves — a leader claims a
-  // quantity for the group first (or, under the head_leader's own group,
-  // the head_leader manages that).
+  // Members AND leaders can submit against a claim their own group holds —
+  // a leader may also personally contribute work, not just manage others'.
   async function loadMatchingClaim(taskId) {
     const submitCard = document.getElementById("submit-card");
-    if (user.role !== "member") { submitCard.classList.add("hidden"); return; }
+    if (user.role !== "member" && user.role !== "leader") { submitCard.classList.add("hidden"); return; }
     try {
       const claims = await NM.apiClaimsForMyGroup();
       matchingClaim = claims.find(c => c.task_id === taskId) || null;
+      const namingNotice = document.getElementById("naming-notice");
       if (!matchingClaim) {
         document.getElementById("submit-hint").textContent = "جروبك لسه ما استلمش كمية من المهمة دي — استنى الليدر أو الهيد ليدر يستلمها الأول.";
         document.getElementById("submit-btn").disabled = true;
+        namingNotice.classList.add("hidden");
       } else {
         document.getElementById("submit-hint").textContent = `متاح لجروبك ${matchingClaim.remaining_in_claim} وحدة لسه محتاجة تسليم.`;
+        document.getElementById("submit-btn").disabled = false;
+        const leaderPart = matchingClaim.leader_id ? (matchingClaim.leader_name || "الليدر") : "بدون ليدر";
+        const whatsapp = user.whatsappNumber || "رقم واتسابك";
+        namingNotice.textContent = `📎 ملاحظة: ملفك هيتسمى تلقائيًا بالشكل ده عشان نقدر نتعرف عليه: "${user.firstName || "اسمك"} - ${whatsapp} - ${leaderPart}" — مش محتاج تسميه بنفسك، النظام بيعمل ده تلقائيًا.`;
+        namingNotice.classList.remove("hidden");
       }
     } catch (_) {
       submitCard.classList.add("hidden");
@@ -138,11 +152,18 @@
     const file = this.files[0];
     if (!file || !matchingClaim) return;
     const errorBox = document.getElementById("submit-error");
+    const successBox = document.getElementById("submit-success");
     errorBox.style.display = "none";
+    successBox.style.display = "none";
     this.disabled = true;
+    const btn = document.getElementById("submit-btn");
+    const originalBtnText = btn.textContent;
+    btn.textContent = "⏳ جاري الرفع...";
+    btn.disabled = true;
     try {
       await NM.apiUploadSubmission(matchingClaim.claim_id, file);
-      alert("✅ اترفع شغلك بنجاح!");
+      successBox.textContent = "✅ اترفع شغلك بنجاح!";
+      successBox.style.display = "block";
       await loadMatchingClaim(taskId);
     } catch (err) {
       errorBox.textContent = err.message;
@@ -150,6 +171,8 @@
     } finally {
       this.disabled = false;
       this.value = "";
+      btn.textContent = originalBtnText;
+      btn.disabled = false;
     }
   });
 
