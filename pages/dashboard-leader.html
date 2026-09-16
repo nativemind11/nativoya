@@ -209,6 +209,7 @@
     inputEl.disabled = true;
     try {
       await NM.apiUploadSubmission(claimId, file);
+      alert("✅ اترفع شغلك بنجاح!");
       await loadMyClaims();
     } catch (err) {
       alert(err.message);

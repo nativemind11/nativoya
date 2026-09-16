@@ -250,6 +250,7 @@
               <td>
                 <button class="btn btn-secondary" style="padding:6px 12px;" onclick='startEditTask(${JSON.stringify(t).replace(/'/g, "&apos;")})'>✏️ تعديل</button>
                 <button class="btn btn-secondary" style="padding:6px 12px;" onclick="showTaskClaims('${t.id}', '${String(t.title).replace(/'/g, "&apos;")}')">👥 مين اخد ايه</button>
+                ${t.drive_folder_id ? `<a class="btn btn-secondary" style="padding:6px 12px;" href="https://drive.google.com/drive/folders/${t.drive_folder_id}" target="_blank" rel="noopener">📁 فولدر الدرايف</a>` : `<span class="pill" style="opacity:0.6;">📁 لسه من غير فولدر</span>`}
                 <button class="btn btn-secondary" style="padding:6px 12px; color:#e0245e;" onclick="deleteTask('${t.id}', this)">🗑️ حذف</button>
               </td>
             </tr>`).join("")
