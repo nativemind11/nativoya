@@ -467,20 +467,14 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
 
-    const me = await pool.query("SELECT first_name, whatsapp_number FROM users WHERE id = $1", [req.user.id]);
+    const me = await pool.query("SELECT first_name, email FROM users WHERE id = $1", [req.user.id]);
     const uploaderName = me.rows[0]?.first_name || "member";
-    const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "no-whatsapp";
-
-    // A leader uploading to a claim held by the group THEY lead gets a
-    // simpler name (their own account name + their group number) — spelling
-    // out "leader: <their own name>" back at them would just be noise.
-    // Anyone else (a regular member) gets name + WhatsApp + their leader's
-    // name (or "بدون ليدر" when the group has none), so the head_leader/leader
-    // can always tell who sent a file.
-    const isUploaderTheLeader = claim.leader_id && claim.leader_id === req.user.id;
-    const filename = isUploaderTheLeader
-      ? `${uploaderName} - جروب ${claim.group_number} - ${Date.now()}-${req.file.originalname}`
-      : `${uploaderName} - ${uploaderWhatsapp} - ${claim.leader_id ? (claim.leader_first_name || "leader") : "بدون ليدر"} - ${Date.now()}-${req.file.originalname}`;
+    const uploaderEmail = me.rows[0]?.email || "no-email";
+    // Keep it simple and human-readable: who uploaded it (name + email) plus
+    // their original filename for content context. No raw timestamp number —
+    // Drive already tracks the upload date/time on every file on its own,
+    // and Drive is fine with two files sharing a name (each stays a distinct file).
+    const filename = `${uploaderName} - ${uploaderEmail} - ${req.file.originalname}`;
 
     const uploaded = await driveService.uploadSubmissionFile(
       claim.drive_folder_id, filename, req.file.mimetype, req.file.buffer
