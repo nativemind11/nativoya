@@ -17,7 +17,13 @@
   <div class="chat-shell card" style="padding:0;" id="chat-shell">
     <aside class="chat-groups" id="groups-list"></aside>
     <section class="chat-main">
-      <div class="chat-head" id="chat-head">اختر جروب</div>
+      <div class="chat-head" id="chat-head" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <span id="chat-head-title">اختر جروب</span>
+        <button type="button" class="btn btn-secondary hidden" id="lock-toggle-btn" style="padding:6px 14px; font-size:0.8rem; white-space:nowrap;"></button>
+      </div>
+      <div id="chat-locked-banner" class="hidden" style="padding:8px 18px; background:#FFF4E5; color:#8a5a00; font-size:0.82rem; border-bottom:1px solid var(--color-border);">
+        🔒 الشات مقفول دلوقتي — الأعضاء والليدرز مش هيقدروا يبعتوا رسايل.
+      </div>
       <div class="chat-messages" id="chat-messages"></div>
       <div class="chat-input-row">
         <input type="text" id="chat-input" placeholder="اكتب رسالتك...">
@@ -57,6 +63,8 @@
 
   let activeGroup = null;
   let unsubscribe = null;
+  let lockUnsubscribe = null;
+  let isGroupCurrentlyLocked = false;
 
   async function initGroupsPage() {
     const listEl = document.getElementById("groups-list");
@@ -89,21 +97,49 @@
   async function openGroup(g) {
     activeGroup = g;
     document.querySelectorAll(".group-item").forEach(el => el.classList.toggle("active", el.dataset.id === g.id));
-    document.getElementById("chat-head").textContent = `${g.language} — جروب #${g.group_number}`;
+    document.getElementById("chat-head-title").textContent = `${g.language} — جروب #${g.group_number}`;
+    document.getElementById("lock-toggle-btn").classList.remove("hidden");
 
     const wrap = document.getElementById("chat-messages");
     wrap.innerHTML = `<p class="text-muted" style="padding:16px;">جاري تحميل الرسايل...</p>`;
     if (unsubscribe) unsubscribe();
+    if (lockUnsubscribe) lockUnsubscribe();
 
     try {
       await NMChat.ensureFirebaseAuth();
       unsubscribe = NMChat.listenToGroup(g.id, renderMessages, (err) => {
         wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر تحميل الرسايل: ${err.message}</p>`;
       });
+      lockUnsubscribe = NMChat.listenToGroupLock(g.id, updateLockUi);
     } catch (err) {
       wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر الاتصال بالشات: ${err.message}</p>`;
     }
   }
+
+  function updateLockUi(locked) {
+    isGroupCurrentlyLocked = locked;
+    const btn = document.getElementById("lock-toggle-btn");
+    btn.textContent = locked ? "🔓 فتح الشات" : "🔒 قفل الشات";
+    document.getElementById("chat-locked-banner").classList.toggle("hidden", !locked);
+  }
+
+  document.getElementById("lock-toggle-btn").addEventListener("click", async () => {
+    if (!activeGroup) return;
+    const nextLocked = !isGroupCurrentlyLocked;
+    const confirmMsg = nextLocked
+      ? "متأكد إنك عايز تقفل الشات؟ الأعضاء والليدرز مش هيقدروا يبعتوا رسايل لحد ما تفتحه تاني."
+      : "متأكد إنك عايز تفتح الشات تاني؟";
+    if (!confirm(confirmMsg)) return;
+    const btn = document.getElementById("lock-toggle-btn");
+    btn.disabled = true;
+    try {
+      await NMChat.setGroupLocked(activeGroup.id, nextLocked);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
   let lastMessages = [];
@@ -133,7 +169,7 @@
             <div class="msg-actions">
               <button type="button" class="msg-action-btn" data-action="react-toggle" data-mid="${m.id}" title="رياكت">😊</button>
               ${isMine && m.type === "text" ? `<button type="button" class="msg-action-btn" data-action="edit" data-mid="${m.id}" title="تعديل">✏️</button>` : ""}
-              ${isMine ? `<button type="button" class="msg-action-btn" data-action="delete" data-mid="${m.id}" title="حذف">🗑️</button>` : ""}
+              <button type="button" class="msg-action-btn" data-action="delete" data-mid="${m.id}" title="حذف">🗑️</button>
             </div>
           </div>
           <div class="msg-emoji-picker hidden" data-picker-for="${m.id}">

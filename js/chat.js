@@ -77,6 +77,35 @@
       );
   }
 
+  // Live-listens to whether a head_leader has locked this group's chat, so
+  // both the member/leader view (to disable their input + show a banner)
+  // and the head_leader dashboard (to reflect the lock button's state) stay
+  // in sync instantly, without needing to send a message to find out.
+  // Returns an unsubscribe function.
+  function listenToGroupLock(groupId, onChange) {
+    ensureInitialized();
+    return db.collection("groups").doc(groupId).onSnapshot(
+      (doc) => onChange(Boolean(doc.exists && doc.data().chatLocked)),
+      (err) => console.error("Group lock listener error:", err)
+    );
+  }
+
+  // head_leader only (also enforced server-side by Security Rules) — locks
+  // or unlocks a group's chat for an indefinite amount of time; there's no
+  // auto-expiry, the head_leader re-opens it manually whenever they want.
+  async function setGroupLocked(groupId, locked) {
+    return withAuthRetry(async () => {
+      ensureInitialized();
+      await ensureFirebaseAuth();
+      const uid = auth.currentUser.uid;
+      await db.collection("groups").doc(groupId).set({
+        chatLocked: locked,
+        lockedAt: locked ? firebase.firestore.FieldValue.serverTimestamp() : null,
+        lockedBy: locked ? uid : null,
+      }, { merge: true });
+    });
+  }
+
   async function sendMessage(groupId, text, senderName) {
     return withAuthRetry(async () => {
       ensureInitialized();
@@ -218,7 +247,8 @@
   }
 
   window.NMChat = {
-    ensureFirebaseAuth, listenToGroup, sendMessage, sendVoiceMessage,
-    startVoiceRecording, currentUid, editMessage, deleteMessage, toggleReaction,
+    ensureFirebaseAuth, listenToGroup, listenToGroupLock, setGroupLocked,
+    sendMessage, sendVoiceMessage, startVoiceRecording, currentUid,
+    editMessage, deleteMessage, toggleReaction,
   };
 })();

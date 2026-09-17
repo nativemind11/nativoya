@@ -27,8 +27,11 @@
   <div class="chat-shell card" style="padding:0; grid-template-columns: 1fr;" id="chat-shell">
     <section class="chat-main">
       <div class="chat-head" id="chat-head">—</div>
+      <div id="chat-locked-banner" class="hidden" style="padding:8px 18px; background:#FFF4E5; color:#8a5a00; font-size:0.82rem; border-bottom:1px solid var(--color-border);">
+        🔒 الشات مقفول مؤقتًا من الهيد ليدر — هتقدر تبعت تاني لما يفتحه.
+      </div>
       <div class="chat-messages" id="chat-messages"></div>
-      <div class="chat-input-row">
+      <div class="chat-input-row" id="chat-input-row">
         <input type="text" id="chat-input" placeholder="اكتب رسالتك...">
         <button class="btn btn-secondary" id="mic-btn" title="رسالة صوتية">🎤</button>
         <button class="btn btn-secondary" id="attach-btn" title="إرفاق ملف">📎</button>
@@ -55,6 +58,8 @@
 
   let activeGroup = null;
   let unsubscribe = null;
+  let lockUnsubscribe = null;
+  let isChatCurrentlyLocked = false;
 
   async function init() {
     try { user = await NM.apiRefreshMe(); } catch (_) {}
@@ -135,14 +140,25 @@
     const wrap = document.getElementById("chat-messages");
     wrap.innerHTML = `<p class="text-muted" style="padding:16px;">جاري الاتصال بالشات...</p>`;
     if (unsubscribe) unsubscribe();
+    if (lockUnsubscribe) lockUnsubscribe();
     try {
       await NMChat.ensureFirebaseAuth();
       unsubscribe = NMChat.listenToGroup(g.id, renderMessages, (err) => {
         wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر تحميل الرسايل: ${err.message}</p>`;
       });
+      lockUnsubscribe = NMChat.listenToGroupLock(g.id, updateLockUi);
     } catch (err) {
       wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر الاتصال بالشات: ${err.message}</p>`;
     }
+  }
+
+  function updateLockUi(locked) {
+    isChatCurrentlyLocked = locked;
+    document.getElementById("chat-locked-banner").classList.toggle("hidden", !locked);
+    document.getElementById("chat-input").disabled = locked;
+    document.getElementById("send-btn").disabled = locked;
+    document.getElementById("mic-btn").disabled = locked;
+    document.getElementById("attach-btn").disabled = locked;
   }
 
   const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -287,7 +303,7 @@
   });
 
   function sendMsg() {
-    if (!activeGroup) return;
+    if (!activeGroup || isChatCurrentlyLocked) return;
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
     if (!text) return;
@@ -304,7 +320,7 @@
   let activeRecording = null;
   const micBtn = document.getElementById("mic-btn");
   micBtn.addEventListener("click", async () => {
-    if (!activeGroup) return;
+    if (!activeGroup || isChatCurrentlyLocked) return;
     if (activeRecording) { activeRecording.stop(); return; }
     try {
       activeRecording = await NMChat.startVoiceRecording(60);
