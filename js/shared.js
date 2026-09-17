@@ -22,7 +22,7 @@ const NM = (() => {
   const I18N = {
     ar: {
       home: "الرئيسية", services: "الخدمات", groups: "الجروبات", my_group: "جروبي",
-      login: "تسجيل الدخول", signup: "إنشاء حساب", dashboard: "لوحتي",
+      login: "تسجيل الدخول", signup: "إنشاء حساب", dashboard: "لوحتي", logout: "خروج",
       footer_tagline: "منصة عمل أونلاين تربطك بمهام حقيقية في تدريب نماذج الذكاء الاصطناعي العالمية.",
       footer_platform: "المنصة", footer_services: "الخدمات", footer_account: "الحساب",
       footer_about: "من نحن", footer_contact: "تواصل معنا", footer_groups: "الجروبات",
@@ -137,7 +137,7 @@ const NM = (() => {
     },
     en: {
       home: "Home", services: "Services", groups: "Groups", my_group: "My Group",
-      login: "Log in", signup: "Sign up", dashboard: "Dashboard",
+      login: "Log in", signup: "Sign up", dashboard: "Dashboard", logout: "Log out",
       footer_tagline: "An online-work platform connecting you with real tasks that help train the world's AI models.",
       footer_platform: "Platform", footer_services: "Services", footer_account: "Account",
       footer_about: "About", footer_contact: "Contact", footer_groups: "Groups",
@@ -543,7 +543,7 @@ const NM = (() => {
 
     const accountActions = user
       ? `<a href="${rel(dashboardPath)}" class="btn btn-secondary" data-i18n="dashboard">لوحتي</a>
-         <a href="#" class="btn btn-primary" onclick="NM.mockLogout(); location.href='${rel('index.html')}'; return false;">خروج</a>`
+         <a href="#" class="btn btn-primary" data-i18n="logout" onclick="NM.mockLogout(); location.href='${rel('index.html')}'; return false;">خروج</a>`
       : `<a href="${rel('pages/login.html')}" class="btn btn-secondary" data-i18n="login">تسجيل الدخول</a>
          <a href="${rel('pages/signup.html')}" class="btn btn-primary" data-i18n="signup">إنشاء حساب</a>`;
 
