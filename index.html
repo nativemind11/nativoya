@@ -145,20 +145,23 @@
 
   // already logged in? point straight to their dashboard instead of signup/login
   const loggedInUser = NM.currentUser();
-  if (loggedInUser) {
+  function applyLoggedInCta() {
+    if (!loggedInUser) return;
     const dashboardPath = loggedInUser.role === "head_leader" ? "pages/dashboard-admin.html"
       : loggedInUser.role === "leader" ? "pages/dashboard-leader.html" : "pages/dashboard-member.html";
-    document.querySelectorAll('a[href="pages/signup.html"], a[href="pages/login.html"]').forEach(a => {
+    document.querySelectorAll('a[href="pages/signup.html"], a[href="pages/login.html"], a[href$="dashboard-admin.html"], a[href$="dashboard-leader.html"], a[href$="dashboard-member.html"]').forEach(a => {
       a.href = dashboardPath;
-      a.textContent = "روح لوحة التحكم";
       a.removeAttribute("data-i18n");
+      a.textContent = NM.t("services_go_dashboard");
     });
   }
+  applyLoggedInCta();
 
   document.addEventListener("nm:langchange", () => {
     renderServicesGrid();
     renderActivityFeed();
     document.getElementById("stat-guides").textContent = stats.guides.toLocaleString(NM.getLang() === "ar" ? "ar-EG" : "en-US");
+    applyLoggedInCta();
   });
 </script>
 </body>

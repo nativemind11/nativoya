@@ -22,7 +22,7 @@ const NM = (() => {
   const I18N = {
     ar: {
       home: "الرئيسية", services: "الخدمات", groups: "الجروبات", my_group: "جروبي",
-      login: "تسجيل الدخول", signup: "إنشاء حساب", dashboard: "لوحتي",
+      login: "تسجيل الدخول", signup: "إنشاء حساب", dashboard: "لوحتي", logout: "خروج",
       footer_tagline: "منصة عمل أونلاين تربطك بمهام حقيقية في تدريب نماذج الذكاء الاصطناعي العالمية.",
       footer_platform: "المنصة", footer_services: "الخدمات", footer_account: "الحساب",
       footer_about: "من نحن", footer_contact: "تواصل معنا", footer_groups: "الجروبات",
@@ -61,10 +61,83 @@ const NM = (() => {
       activity_2: "تم إنجاز ١٢ مهمة توسيم بيانات خلال آخر ساعة",
       activity_3: "تاسك جديد اتنشر لكل الجروبات: بيانات محادثة",
       activity_4: "عضو جديد اتفعّل في جروب العربية الخليجية",
+
+      signup_title: "إنشاء حساب جديد", signup_subtitle: "ثواني وتبقى جزء من مجتمع Nativoya",
+      label_name: "الاسم بالكامل", label_email: "البريد الإلكتروني",
+      label_password: "كلمة المرور", hint_password: "6 أحرف على الأقل",
+      label_whatsapp: "رقم واتساب", label_country: "الدولة", placeholder_select_country: "اختر الدولة",
+      label_gender: "النوع", gender_male: "ذكر", gender_female: "أنثى",
+      label_payout: "رقم/حساب استلام التحويلات",
+      placeholder_payout: "رقم فودافون كاش / إنستاباي أو إيميل PayPal",
+      hint_payout: "ده اللي هيتحول عليه مستحقاتك من المهام.",
+      label_languages: "اللغات واللهجات اللي بتتكلمها",
+      hint_languages: "هتنضم تلقائيًا لجروب كل لغة تختارها — تقدر تختار أكتر من واحدة.",
+      label_skills: "المهارات اللي تقدر تقدمها", hint_skills: "اختار كل اللي ينطبق عليك.",
+      btn_create_account: "إنشاء الحساب", btn_creating_account: "جاري الإنشاء...",
+      already_have_account: "عندك حساب بالفعل؟", login_link: "سجّل دخول",
+      error_select_gender: "من فضلك اختار النوع.",
+      error_select_language: "من فضلك اختار لغة واحدة على الأقل.",
+      error_select_skill: "من فضلك اختار مهارة واحدة على الأقل.",
+      invite_join_note: "هتنضم تلقائيًا لجروب {language} رقم #{groupNumber}",
+
+      service_view_details: "اعرف التفاصيل",
+      services_ready_title: "مستعد تبدأ؟",
+      services_ready_body: "سجّل واحدة، حدد لغاتك ومهاراتك، وابدأ تشوف المهام المتاحة ليك.",
+      services_seen_task_title: "شايف مهمة عايز تبدأها؟",
+      services_seen_task_body: "روح لوحة التحكم بتاعتك وشوف المهام المتاحة ليك دلوقتي.",
+      services_go_dashboard: "روح لوحة التحكم",
+
+      task_back_link: "→ رجوع للوحة التحكم",
+      task_loading: "جاري تحميل تفاصيل المهمة...",
+      task_video_title: "🎬 فيديو الشرح",
+      task_audio_title: "🔊 سامبل صوتي",
+      task_instructions_title: "📋 التعليمات",
+      task_no_instructions: "لا توجد تعليمات إضافية.",
+      task_price_label: "السعر", task_price_unset: "غير محدد",
+      task_remaining_label: "المتبقي على المنصة",
+      task_submit_title: "📎 تسليم شغلك على المهمة دي",
+      task_submit_hint_default: "لو جروبك استلم كمية من المهمة دي، هتقدر ترفع شغلك من هنا.",
+      task_submit_hint_no_claim: "جروبك لسه ما استلمش كمية من المهمة دي — استنى الليدر أو الهيد ليدر يستلمها الأول.",
+      task_submit_hint_available: "متاح لجروبك {n} وحدة لسه محتاجة تسليم.",
+      task_naming_notice: "📎 ملاحظة: ملفك هيتسمى تلقائيًا: \"{name} - {whatsapp} - {gender} - اسم الملف الأصلي\" — مش محتاج تسميه بنفسك، النظام بيعمل ده تلقائيًا.",
+      task_upload_btn: "📎 رفع الشغل", task_uploading: "⏳ جاري الرفع...",
+      task_upload_success: "✅ اترفع شغلك بنجاح!",
+      task_video_single: "افتح الفيديو", task_video_n: "فيديو {n}",
+      task_error_default: "تعذّر تحميل المهمة.",
+
+      // shared across all dashboards
+      loading_text: "جاري التحميل...", col_task: "المهمة", col_type: "النوع", col_status: "الحالة",
+      btn_details: "التفاصيل", btn_submit_work: "📎 تسليم عمل",
+      status_in_review: "بانتظار المراجعة", status_completed: "✅ اتقبلت",
+
+      dm_role: "عضو",
+      nav_home: "🏠 الرئيسية", nav_my_group: "💬 جروبي", nav_tasks: "📋 المهام",
+      nav_certs: "🏆 الشهادات", nav_profile: "👤 الملف الشخصي", nav_logout: "🚪 خروج",
+      dm_welcome: "أهلاً بيك يا {name} 👋",
+      dm_group_info_member_of: "عضو في: {list}",
+      dm_group_info_none: "لسه مش منضم لأي جروب لغة",
+      dm_leader_request_pending: "⏳ طلبك تبقى ليدر جروب {lang} لسه قيد المراجعة من الهيد ليدر.",
+      dm_leader_request_rejected: "طلبك تبقى ليدر جروب {lang} اترفض حاليًا. تقدر تكمل كعضو عادي أو تتواصل مع الهيد ليدر.",
+      stat_available: "مهام متاحة", stat_completed: "مهام مكتملة", stat_certs: "شهادات",
+      dm_tasks_title: "مهام متاحة ليك",
+      dm_tasks_subtitle: "افتح أي مهمة عشان تشوف فيديو الشرح، السامبل الصوتي، والسعر قبل ما تبدأ.",
+      dm_no_tasks: "مفيش مهام متاحة ليك دلوقتي",
+      dm_claims_title: "مهام متاحة لتسليم شغل عليها",
+      dm_claims_subtitle: "مهام استلمها جروبك (أو الهيد ليدر) وتقدر ترفع شغلك عليها.",
+      col_remaining_for_group: "المتبقي لجروبي",
+      dm_no_claims: "مفيش مهام متاحة تسلّم عليها دلوقتي — استنى جروبك يستلم مهام جديدة",
+      dm_submissions_title: "تسليماتي",
+      dm_no_submissions: "لسه ماسلمتش أي شغل",
+      dm_become_leader_title: "عايز تبقى ليدر؟",
+      dm_become_leader_body: "لما تبقى ليدر لجروب لغة، بيتعمللك جروب جديد لوحدك تحت اللغة دي، وهتاخد رابط دعوة تبعته لأي حد عايز يشتغل معاك — وهما هينضموا لجروبك انت بالتحديد (مش أي جروب تاني في نفس اللغة). الطلب محتاج موافقة الهيد ليدر الأول.",
+      dm_become_leader_btn: "اطلب تبقى ليدر",
+      dm_become_leader_select_placeholder: "سجّل في لغة الأول من صفحة جروباتي",
+      dm_certs_title: "شهاداتي", cert_completion_label: "شهادة إتمام",
+      cert_transcription: "تفريغ صوتي", cert_translation: "ترجمة", cert_annotation: "توسيم بيانات",
     },
     en: {
       home: "Home", services: "Services", groups: "Groups", my_group: "My Group",
-      login: "Log in", signup: "Sign up", dashboard: "Dashboard",
+      login: "Log in", signup: "Sign up", dashboard: "Dashboard", logout: "Log out",
       footer_tagline: "An online-work platform connecting you with real tasks that help train the world's AI models.",
       footer_platform: "Platform", footer_services: "Services", footer_account: "Account",
       footer_about: "About", footer_contact: "Contact", footer_groups: "Groups",
@@ -101,6 +174,79 @@ const NM = (() => {
       activity_2: "12 data annotation tasks completed in the last hour",
       activity_3: "A new task was published to all groups: conversational data",
       activity_4: "A new member was activated in the Gulf Arabic group",
+
+      signup_title: "Create a new account", signup_subtitle: "A few seconds and you're part of the Nativoya community",
+      label_name: "Full name", label_email: "Email",
+      label_password: "Password", hint_password: "At least 6 characters",
+      label_whatsapp: "WhatsApp number", label_country: "Country", placeholder_select_country: "Select your country",
+      label_gender: "Gender", gender_male: "Male", gender_female: "Female",
+      label_payout: "Account/number to receive transfers",
+      placeholder_payout: "Vodafone Cash / InstaPay number or PayPal email",
+      hint_payout: "This is where your task earnings will be transferred.",
+      label_languages: "Languages & dialects you speak",
+      hint_languages: "You'll automatically join the group for each language you pick — you can pick more than one.",
+      label_skills: "Skills you can offer", hint_skills: "Pick everything that applies to you.",
+      btn_create_account: "Create account", btn_creating_account: "Creating...",
+      already_have_account: "Already have an account?", login_link: "Log in",
+      error_select_gender: "Please select your gender.",
+      error_select_language: "Please select at least one language.",
+      error_select_skill: "Please select at least one skill.",
+      invite_join_note: "You'll automatically join the {language} group #{groupNumber}",
+
+      service_view_details: "See details",
+      services_ready_title: "Ready to start?",
+      services_ready_body: "Sign up, pick your languages and skills, and start seeing tasks made for you.",
+      services_seen_task_title: "Seen a task you want to start?",
+      services_seen_task_body: "Go to your dashboard and see the tasks available to you right now.",
+      services_go_dashboard: "Go to dashboard",
+
+      task_back_link: "→ Back to dashboard",
+      task_loading: "Loading task details...",
+      task_video_title: "🎬 Walkthrough video",
+      task_audio_title: "🔊 Audio sample",
+      task_instructions_title: "📋 Instructions",
+      task_no_instructions: "No extra instructions.",
+      task_price_label: "Price", task_price_unset: "Not set",
+      task_remaining_label: "Remaining on the platform",
+      task_submit_title: "📎 Submit your work on this task",
+      task_submit_hint_default: "If your group has claimed some of this task, you'll be able to upload your work here.",
+      task_submit_hint_no_claim: "Your group hasn't claimed any of this task yet — wait for your leader or the Head Leader to claim it first.",
+      task_submit_hint_available: "{n} units are available for your group to still submit.",
+      task_naming_notice: "📎 Note: your file will be automatically named: \"{name} - {whatsapp} - {gender} - original file name\" — you don't need to name it yourself, the system does this automatically.",
+      task_upload_btn: "📎 Upload work", task_uploading: "⏳ Uploading...",
+      task_upload_success: "✅ Your work was uploaded successfully!",
+      task_video_single: "Open video", task_video_n: "Video {n}",
+      task_error_default: "Couldn't load the task.",
+
+      // shared across all dashboards
+      loading_text: "Loading...", col_task: "Task", col_type: "Type", col_status: "Status",
+      btn_details: "Details", btn_submit_work: "📎 Submit work",
+      status_in_review: "Awaiting review", status_completed: "✅ Accepted",
+
+      dm_role: "Member",
+      nav_home: "🏠 Home", nav_my_group: "💬 My Group", nav_tasks: "📋 Tasks",
+      nav_certs: "🏆 Certificates", nav_profile: "👤 Profile", nav_logout: "🚪 Log out",
+      dm_welcome: "Welcome, {name} 👋",
+      dm_group_info_member_of: "Member of: {list}",
+      dm_group_info_none: "You haven't joined any language group yet",
+      dm_leader_request_pending: "⏳ Your request to become a leader for the {lang} group is still under review by the Head Leader.",
+      dm_leader_request_rejected: "Your request to become a leader for the {lang} group was declined. You can keep working as a regular member or reach out to the Head Leader.",
+      stat_available: "Available tasks", stat_completed: "Completed tasks", stat_certs: "Certificates",
+      dm_tasks_title: "Tasks available to you",
+      dm_tasks_subtitle: "Open any task to see the walkthrough video, audio sample, and price before you start.",
+      dm_no_tasks: "No tasks available to you right now",
+      dm_claims_title: "Tasks available for you to submit work on",
+      dm_claims_subtitle: "Tasks your group (or the Head Leader) has claimed — you can upload your work on them.",
+      col_remaining_for_group: "Remaining for my group",
+      dm_no_claims: "No tasks available to submit right now — wait for your group to claim new tasks",
+      dm_submissions_title: "My submissions",
+      dm_no_submissions: "You haven't submitted any work yet",
+      dm_become_leader_title: "Want to become a leader?",
+      dm_become_leader_body: "When you become a leader for a language group, you get your own new group under that language, and an invite link you can send to anyone who wants to work with you — they'll join YOUR specific group (not just any group in that language). The request needs Head Leader approval first.",
+      dm_become_leader_btn: "Request to become a leader",
+      dm_become_leader_select_placeholder: "Join a language first from your groups page",
+      dm_certs_title: "My certificates", cert_completion_label: "Completion certificate",
+      cert_transcription: "Transcription", cert_translation: "Translation", cert_annotation: "Data Annotation",
     }
   };
 
@@ -154,7 +300,6 @@ const NM = (() => {
     "Invalid or expired token": "جلستك انتهت. سجّل دخول تاني.",
     "You don't lead this group": "انت مش الليدر بتاع الجروب ده.",
     "You already lead a group for this language": "انت بالفعل ليدر لجروب في اللغة دي.",
-    "This submission isn't from a group you lead": "التسليم ده مش من جروب انت قائده.",
     "Could not update this task": "تعذّر تعديل المهمة. حاول تاني.",
     "Could not delete this task": "تعذّر حذف المهمة. حاول تاني.",
   };
@@ -187,10 +332,10 @@ const NM = (() => {
     return data;
   }
 
-  async function apiSignup({ firstName, email, password, whatsappNumber, country, gender, payoutMethod, payoutIdentifier, languages, skills }) {
+  async function apiSignup({ firstName, email, password, whatsappNumber, country, gender, payoutIdentifier, languages, skills }) {
     const data = await apiFetch("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, gender, payoutMethod, payoutIdentifier, languages, skills }),
+      body: JSON.stringify({ firstName, email, password, whatsappNumber, country, gender, payoutIdentifier, languages, skills }),
     });
     localStorage.setItem("nm_token", data.token);
     localStorage.setItem("nm_user", JSON.stringify(data.user));
@@ -205,6 +350,20 @@ const NM = (() => {
     localStorage.setItem("nm_token", data.token);
     localStorage.setItem("nm_user", JSON.stringify(data.user));
     return data.user;
+  }
+
+  async function apiForgotPassword(email) {
+    return apiFetch("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async function apiResetPassword(token, newPassword) {
+    return apiFetch("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, newPassword }),
+    });
   }
 
   async function apiJoinGroup(language, groupNumber) {
@@ -225,8 +384,7 @@ const NM = (() => {
     const merged = {
       ...cached,
       id: me.id, firstName: me.first_name, email: me.email, role: me.role,
-      whatsappNumber: me.whatsapp_number, gender: me.gender,
-      payoutMethod: me.payout_method, payoutIdentifier: me.payout_identifier,
+      whatsappNumber: me.whatsapp_number, gender: me.gender, payoutIdentifier: me.payout_identifier,
       language: me.language, groupNumber: me.group_number, groupId: me.group_id,
       languages: me.languages || [], skills: me.skills || [], groups: me.groups || [],
       ledGroup: me.led_group || null, ledGroups: me.led_groups || [],
@@ -238,10 +396,10 @@ const NM = (() => {
   // ---- tasks ----
   function apiGetOpenTasks() { return apiFetch("/api/tasks/open"); }
   function apiGetTask(id) { return apiFetch(`/api/tasks/${id}`); }
-  function apiCreateTask({ skillSlug, title, instructions, quantityMale, quantityFemale, price_member, price_leader, currency, videoUrls, audioSampleUrls, targetAll, groupIds }) {
+  function apiCreateTask({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls, targetAll, groupIds }) {
     return apiFetch("/api/tasks", {
       method: "POST",
-      body: JSON.stringify({ skillSlug, title, instructions, quantityMale, quantityFemale, price_member, price_leader, currency, videoUrls, audioSampleUrls, targetAll, groupIds }),
+      body: JSON.stringify({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls, targetAll, groupIds }),
     });
   }
   function apiClaimTask(taskId, quantity, groupId) {
@@ -351,6 +509,10 @@ const NM = (() => {
       const key = el.getAttribute("data-i18n");
       if (dict[key]) el.textContent = dict[key];
     });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+      const key = el.getAttribute("data-i18n-placeholder");
+      if (dict[key]) el.setAttribute("placeholder", dict[key]);
+    });
     document.querySelectorAll(".lang-switch button").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.lang === lang);
     });
@@ -381,7 +543,7 @@ const NM = (() => {
 
     const accountActions = user
       ? `<a href="${rel(dashboardPath)}" class="btn btn-secondary" data-i18n="dashboard">لوحتي</a>
-         <a href="#" class="btn btn-primary" onclick="NM.mockLogout(); location.href='${rel('index.html')}'; return false;">خروج</a>`
+         <a href="#" class="btn btn-primary" data-i18n="logout" onclick="NM.mockLogout(); location.href='${rel('index.html')}'; return false;">خروج</a>`
       : `<a href="${rel('pages/login.html')}" class="btn btn-secondary" data-i18n="login">تسجيل الدخول</a>
          <a href="${rel('pages/signup.html')}" class="btn btn-primary" data-i18n="signup">إنشاء حساب</a>`;
 
@@ -524,53 +686,58 @@ const NM = (() => {
   }
 
   // dialects/languages a member can pick at signup — each becomes its own group
+  // `name` is the CANONICAL value — it's what gets saved as a group's
+  // language in the database and must never change with the UI language.
+  // `en` is ONLY a display label for when the site is switched to English.
   const LANGUAGES = [
-    { name: "العربية (مصرية)", code: "AR-EG" },
-    { name: "العربية (خليجية)", code: "AR-GULF" },
-    { name: "العربية (شامية)", code: "AR-LEV" },
-    { name: "العربية (مغاربية)", code: "AR-MAG" },
-    { name: "العربية (تونسية)", code: "AR-TN" },
-    { name: "العربية (جزائرية)", code: "AR-DZ" },
-    { name: "العربية (ليبية)", code: "AR-LY" },
-    { name: "العربية (سودانية)", code: "AR-SD" },
-    { name: "العربية (يمنية)", code: "AR-YE" },
-    { name: "العربية الفصحى (MSA)", code: "AR-MSA" },
-    { name: "الإنجليزية (بريطانية)", code: "EN-GB" },
-    { name: "الإنجليزية (أمريكية)", code: "EN-US" },
-    { name: "الفرنسية", code: "FR" },
-    { name: "الإسبانية", code: "ES" },
-    { name: "الألمانية", code: "DE" },
-    { name: "الإيطالية", code: "IT" },
-    { name: "البرتغالية", code: "PT" },
-    { name: "الروسية", code: "RU" },
-    { name: "التركية", code: "TR" },
-    { name: "الصينية", code: "ZH" },
-    { name: "اليابانية", code: "JA" },
-    { name: "الكورية", code: "KO" },
-    { name: "الهندية", code: "HI" },
-    { name: "الأردية", code: "UR" },
-    { name: "الفارسية", code: "FA" },
+    { name: "العربية (مصرية)", en: "Arabic (Egyptian)", code: "AR-EG" },
+    { name: "العربية (خليجية)", en: "Arabic (Gulf)", code: "AR-GULF" },
+    { name: "العربية (شامية)", en: "Arabic (Levantine)", code: "AR-LEV" },
+    { name: "العربية (مغاربية)", en: "Arabic (Maghrebi)", code: "AR-MAG" },
+    { name: "العربية (تونسية)", en: "Arabic (Tunisian)", code: "AR-TN" },
+    { name: "العربية (جزائرية)", en: "Arabic (Algerian)", code: "AR-DZ" },
+    { name: "العربية (ليبية)", en: "Arabic (Libyan)", code: "AR-LY" },
+    { name: "العربية (سودانية)", en: "Arabic (Sudanese)", code: "AR-SD" },
+    { name: "العربية (يمنية)", en: "Arabic (Yemeni)", code: "AR-YE" },
+    { name: "العربية الفصحى (MSA)", en: "Arabic (MSA)", code: "AR-MSA" },
+    { name: "الإنجليزية (بريطانية)", en: "English (UK)", code: "EN-GB" },
+    { name: "الإنجليزية (أمريكية)", en: "English (US)", code: "EN-US" },
+    { name: "الفرنسية", en: "French", code: "FR" },
+    { name: "الإسبانية", en: "Spanish", code: "ES" },
+    { name: "الألمانية", en: "German", code: "DE" },
+    { name: "الإيطالية", en: "Italian", code: "IT" },
+    { name: "البرتغالية", en: "Portuguese", code: "PT" },
+    { name: "الروسية", en: "Russian", code: "RU" },
+    { name: "التركية", en: "Turkish", code: "TR" },
+    { name: "الصينية", en: "Chinese", code: "ZH" },
+    { name: "اليابانية", en: "Japanese", code: "JA" },
+    { name: "الكورية", en: "Korean", code: "KO" },
+    { name: "الهندية", en: "Hindi", code: "HI" },
+    { name: "الأردية", en: "Urdu", code: "UR" },
+    { name: "الفارسية", en: "Persian", code: "FA" },
   ];
 
   // the 8 AI-training skills a member can offer at signup (alias of SERVICES,
   // kept as its own name so signup forms read cleanly)
   const SKILLS = SERVICES;
 
-  // manual payout methods available at signup / for payment records
-  const PAYOUT_METHODS = [
-    { value: "instapay", label: "إنستاباي (InstaPay)" },
-    { value: "vodafone_cash", label: "فودافون كاش" },
-    { value: "etisalat_cash", label: "اتصالات كاش" },
-    { value: "syriatel_cash", label: "سيرياتل كاش" },
-    { value: "sham_cash", label: "شام كاش" },
-    { value: "paypal", label: "PayPal" },
-  ];
+  // countries dropdown for signup. COUNTRIES stays the canonical value saved
+  // to the database (unchanged, always Arabic) — COUNTRIES_EN is the exact
+  // same list, same order, ONLY used to show an English label when the site
+  // is switched to English.
   const COUNTRIES = [
     "مصر", "السعودية", "الإمارات", "الكويت", "قطر", "البحرين", "عمان",
     "الأردن", "لبنان", "سوريا", "العراق", "فلسطين", "اليمن",
     "المغرب", "الجزائر", "تونس", "ليبيا", "السودان", "موريتانيا",
     "الولايات المتحدة", "المملكة المتحدة", "كندا", "فرنسا", "ألمانيا",
     "إسبانيا", "إيطاليا", "تركيا", "الهند", "باكستان", "أخرى",
+  ];
+  const COUNTRIES_EN = [
+    "Egypt", "Saudi Arabia", "UAE", "Kuwait", "Qatar", "Bahrain", "Oman",
+    "Jordan", "Lebanon", "Syria", "Iraq", "Palestine", "Yemen",
+    "Morocco", "Algeria", "Tunisia", "Libya", "Sudan", "Mauritania",
+    "United States", "United Kingdom", "Canada", "France", "Germany",
+    "Spain", "Italy", "Turkey", "India", "Pakistan", "Other",
   ];
 
   // ---- invite links: a leader's group is identified by "<langCode>-<groupNumber>" ----
@@ -607,11 +774,11 @@ const NM = (() => {
   }
 
   return {
-    init, setLang, getLang, toggleMobileNav, SERVICES, SKILLS, LANGUAGES, COUNTRIES, PAYOUT_METHODS, seedCounters,
+    init, setLang, getLang, toggleMobileNav, SERVICES, SKILLS, LANGUAGES, COUNTRIES, COUNTRIES_EN, seedCounters,
     currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup,
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
-    apiSignup, apiLogin, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
+    apiSignup, apiLogin, apiForgotPassword, apiResetPassword, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
     apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiDeleteTask, apiGetAllTasks, apiGetTaskClaims,
     apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
     apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,

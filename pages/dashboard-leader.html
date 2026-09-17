@@ -107,10 +107,6 @@
       user = await NM.apiRefreshMe();
     } catch (_) { /* fall back to cached copy if /me fails */ }
 
-    // wrong dashboard for this role — always send them to the right one
-    if (user.role === "member") { location.href = "dashboard-member.html"; return; }
-    if (user.role === "head_leader") { location.href = "dashboard-admin.html"; return; }
-
     ledGroups = user.ledGroups || (user.ledGroup ? [user.ledGroup] : []);
     document.getElementById("group-info-line").textContent = ledGroups.length
       ? `بتقود ${ledGroups.length} جروب: ${ledGroups.map(g => `${g.language} #${g.group_number}`).join(" · ")}`

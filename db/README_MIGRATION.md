@@ -132,48 +132,42 @@ COMMIT;
 مفيش) هو اللي شايل المهمة دي فعليًا — باقي جروبات نفس العضو مش هيشوفوها تاني، وده صح لأن
 الكمية الأصلية اتحسبت مرة واحدة بس.
 
-## تحديث رابع: النوع (ذكر/أنثى)، حساب استلام الفلوس، وتوزيع المهام حسب النوع
+## تحديث: النوع (ذكر/أنثى) + رقم التحويل + تقسيم المهام حسب النوع
 
 ```sql
-BEGIN;
-
-CREATE TYPE gender_type AS ENUM ('male', 'female');
-
-ALTER TABLE users ADD COLUMN IF NOT EXISTS gender gender_type;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_method payout_method;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_identifier TEXT;
-
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS quantity_male INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS quantity_female INTEGER NOT NULL DEFAULT 0;
-
-COMMIT;
+-- شغّل db/migration_gender_payout.sql
 ```
+ضاف عمودين لجدول `users` (`gender`, `payout_identifier`) وعمودين لجدول `tasks`
+(`male_quantity`, `female_quantity`). كل الأعمدة NULLable فمفيش أي تأثير على بيانات موجودة.
 
-⚠️ الحسابات القديمة (اللي اتسجلت قبل التحديث ده) هيبقى النوع بتاعها `NULL` لحد ما
-يحدّثوا بياناتهم من صفحة "الملف الشخصي"، أو تظبطها إنت يدويًا من Table Editor.
-
-## تحديث خامس: سعرين منفصلين لكل مهمة (عضو عادي / ليدر) + حماية الرياكشنز في الشات
+## تحديث: نسيت كلمة المرور
 
 ```sql
-BEGIN;
-
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS price_member NUMERIC(10,2);
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS price_leader NUMERIC(10,2);
-
--- انقل أي سعر قديم لعمود "سعر العضو" كبداية، وسيّب سعر الليدر فاضي لحد ما تحدده يدويًا
-UPDATE tasks SET price_member = price WHERE price IS NOT NULL AND price_member IS NULL;
-
-ALTER TABLE tasks DROP COLUMN IF EXISTS price;
-
-COMMIT;
+-- شغّل db/migration_password_reset.sql
 ```
+ضاف عمودين لجدول `users` (`reset_token_hash`, `reset_token_expires_at`).
 
-⚠️ أي مهمة قديمة هيبقى سعرها الحالي (اللي كان محفوظ في عمود `price`) هو نفسه سعر العضو
-العادي (`price_member`) بعد التحديث ده، وسعر الليدر (`price_leader`) هيفضل فاضي لحد
-ما تعدّل المهمة وتحدده من لوحة الأدمن.
+**لازم كمان تضيف متغيرات بيئة جديدة على السيرفر (Vercel/Railway/Render) عشان الإيميلات
+تبعت فعليًا** — من غيرهم هيرجع خطأ واضح للمستخدم ("خدمة الإيميلات لسه مش متصلة") بدل ما
+يكسر أي حاجة تانية في الموقع:
 
-## تحديث سادس: حماية الرياكشنز في الشات (Firestore Rules)
+| المتغير | القيمة |
+|---|---|
+| `SMTP_HOST` | مثلاً `smtp.gmail.com` أو أي SMTP بتستخدمه |
+| `SMTP_PORT` | `587` عادةً (أو `465` لو SSL) |
+| `SMTP_USER` | إيميل/يوزر SMTP |
+| `SMTP_PASS` | باسورد SMTP (لو Gmail، لازم App Password مش الباسورد العادي) |
+| `EMAIL_FROM` | اختياري، مثلاً `"Nativoya" <no-reply@nativoya.click>` |
 
-مفيش تعديل مطلوب في Supabase هنا — بس لازم تحدّث قواعد الشات نفسها. روح
-Firebase Console → Firestore Database → تاب Rules، والصق محتوى `db/firestore.rules`
-الجديد بالكامل (موجود جوه الملف المرفوع)، ودوس Publish.
+`FRONTEND_URL` غالبًا موجود عندك بالفعل (بيستخدم في CORS) — بيتستخدم برضو عشان يبني رابط
+الاسترجاع اللي بيتبعت في الإيميل، فتأكد إنه مظبوط على `https://nativoya.click`.
+
+## تحديث: تعديل/حذف الرسايل + الرياكت في الشات
+
+لازم تنسخ محتوى `db/firestore.rules` الجديد وتلزقه في Firebase Console →
+Firestore Database → Rules، وتنشره (Publish). من غير الخطوة دي التعديل/الحذف/الرياكت
+هيفشلوا بـ"permission-denied" لأن القواعد القديمة كانت مانعاهم تمامًا.
+
+كمان اتصلح باگ كان بيقفل الشات على بعض المستخدمين بعد فترة استخدام: كان بيفقد صلاحياته
+(role/groupIds) لما التوكن يتجدد تلقائيًا من فايربيز. الإصلاح في
+`config/firebaseAdmin.js` — مفيش أي حاجة تدوية مطلوبة، هيشتغل تلقائي بعد الديبلوي.

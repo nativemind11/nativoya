@@ -6,24 +6,6 @@
 <title>جروباتي — Nativoya</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
 <link rel="stylesheet" href="../css/style.css">
-<style>
-  .reactions-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
-  .reaction-pill {
-    border:1px solid var(--color-border, #e5e7f5); background:#fff; border-radius:14px;
-    padding:2px 8px; font-size:0.8rem; cursor:pointer; line-height:1.4;
-  }
-  .reaction-pill.mine { background:var(--color-pill-bg); border-color:var(--color-primary-blue); font-weight:700; }
-  .reaction-add-btn {
-    border:1px dashed var(--color-border, #ccd0e8); background:transparent; border-radius:14px;
-    padding:2px 8px; font-size:0.8rem; cursor:pointer; opacity:0.7;
-  }
-  .reaction-add-btn:hover { opacity:1; }
-  .reaction-picker {
-    position:absolute; z-index:20; background:#fff; border:1px solid var(--color-border, #e5e7f5);
-    border-radius:12px; padding:6px 8px; display:flex; gap:6px; box-shadow:0 4px 14px rgba(0,0,0,0.12);
-  }
-  .reaction-picker button { border:none; background:none; font-size:1.1rem; cursor:pointer; }
-</style>
 </head>
 <body>
 <main class="container section" id="page-main">
@@ -45,8 +27,11 @@
   <div class="chat-shell card" style="padding:0; grid-template-columns: 1fr;" id="chat-shell">
     <section class="chat-main">
       <div class="chat-head" id="chat-head">—</div>
+      <div id="chat-locked-banner" class="hidden" style="padding:8px 18px; background:#FFF4E5; color:#8a5a00; font-size:0.82rem; border-bottom:1px solid var(--color-border);">
+        🔒 الشات مقفول مؤقتًا من الهيد ليدر — هتقدر تبعت تاني لما يفتحه.
+      </div>
       <div class="chat-messages" id="chat-messages"></div>
-      <div class="chat-input-row">
+      <div class="chat-input-row" id="chat-input-row">
         <input type="text" id="chat-input" placeholder="اكتب رسالتك...">
         <button class="btn btn-secondary" id="mic-btn" title="رسالة صوتية">🎤</button>
         <button class="btn btn-secondary" id="attach-btn" title="إرفاق ملف">📎</button>
@@ -73,6 +58,8 @@
 
   let activeGroup = null;
   let unsubscribe = null;
+  let lockUnsubscribe = null;
+  let isChatCurrentlyLocked = false;
 
   async function init() {
     try { user = await NM.apiRefreshMe(); } catch (_) {}
@@ -153,65 +140,76 @@
     const wrap = document.getElementById("chat-messages");
     wrap.innerHTML = `<p class="text-muted" style="padding:16px;">جاري الاتصال بالشات...</p>`;
     if (unsubscribe) unsubscribe();
+    if (lockUnsubscribe) lockUnsubscribe();
     try {
       await NMChat.ensureFirebaseAuth();
       unsubscribe = NMChat.listenToGroup(g.id, renderMessages, (err) => {
         wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر تحميل الرسايل: ${err.message}</p>`;
       });
+      lockUnsubscribe = NMChat.listenToGroupLock(g.id, updateLockUi);
     } catch (err) {
       wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر الاتصال بالشات: ${err.message}</p>`;
     }
   }
 
+  function updateLockUi(locked) {
+    isChatCurrentlyLocked = locked;
+    document.getElementById("chat-locked-banner").classList.toggle("hidden", !locked);
+    document.getElementById("chat-input").disabled = locked;
+    document.getElementById("send-btn").disabled = locked;
+    document.getElementById("mic-btn").disabled = locked;
+    document.getElementById("attach-btn").disabled = locked;
+  }
+
+  const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+  let lastMessages = [];
+
   function renderMessages(messages) {
+    lastMessages = messages;
     const wrap = document.getElementById("chat-messages");
     const myUid = NMChat.currentUid();
     wrap.innerHTML = messages.length
-      ? messages.map(m => `
-          <div class="msg-row${m.senderId === myUid ? " mine" : ""}">
-            <div class="msg-avatar">${(m.senderName || "?")[0]}</div>
-            <div>
-              <div class="msg-bubble">${renderMessageBody(m)}</div>
-              ${renderReactions(m, myUid)}
-            </div>
-          </div>`).join("")
+      ? messages.map(m => renderMessageRow(m, myUid)).join("")
       : `<p class="text-muted" style="padding:16px;">لسه مفيش رسايل — ابدأ المحادثة!</p>`;
     wrap.scrollTop = wrap.scrollHeight;
   }
 
-  const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-
-  function renderReactions(m, myUid) {
-    const reactions = m.reactions || {};
-    const pills = Object.entries(reactions)
-      .filter(([, uids]) => Array.isArray(uids) && uids.length > 0)
-      .map(([emoji, uids]) => {
-        const mine = uids.includes(myUid);
-        return `<button class="reaction-pill${mine ? " mine" : ""}" onclick="toggleReactionUI('${m.id}','${emoji}',${mine})">${emoji} ${uids.length}</button>`;
-      }).join("");
+  function renderMessageRow(m, myUid) {
+    const isMine = m.senderId === myUid;
     return `
-      <div class="reactions-row">
-        ${pills}
-        <button class="reaction-add-btn" onclick="openReactionPicker('${m.id}', this)">😊+</button>
+      <div class="msg-row${isMine ? " mine" : ""}" data-mid="${m.id}">
+        <div class="msg-avatar">${(m.senderName || "?")[0]}</div>
+        <div class="msg-col">
+          <div class="msg-bubble">
+            ${renderMessageBody(m)}
+            ${m.editedAt ? `<span class="msg-edited-tag">(معدّلة)</span>` : ""}
+          </div>
+          <div class="msg-meta-row">
+            <div class="msg-reactions">${renderReactions(m, myUid)}</div>
+            <div class="msg-actions">
+              <button type="button" class="msg-action-btn" data-action="react-toggle" data-mid="${m.id}" title="رياكت">😊</button>
+              ${isMine && m.type === "text" ? `<button type="button" class="msg-action-btn" data-action="edit" data-mid="${m.id}" title="تعديل">✏️</button>` : ""}
+              ${isMine ? `<button type="button" class="msg-action-btn" data-action="delete" data-mid="${m.id}" title="حذف">🗑️</button>` : ""}
+            </div>
+          </div>
+          <div class="msg-emoji-picker hidden" data-picker-for="${m.id}">
+            ${REACTION_EMOJIS.map(e => `<button type="button" class="msg-emoji-opt" data-action="react" data-mid="${m.id}" data-emoji="${e}">${e}</button>`).join("")}
+          </div>
+        </div>
       </div>`;
   }
 
-  function openReactionPicker(messageId, btn) {
-    document.querySelectorAll(".reaction-picker").forEach(el => el.remove());
-    const picker = document.createElement("div");
-    picker.className = "reaction-picker";
-    picker.innerHTML = QUICK_EMOJIS.map(e => `<button onclick="toggleReactionUI('${messageId}','${e}',false); this.closest('.reaction-picker').remove();">${e}</button>`).join("");
-    btn.insertAdjacentElement("afterend", picker);
-    setTimeout(() => {
-      document.addEventListener("click", function closePicker(e) {
-        if (!picker.contains(e.target) && e.target !== btn) { picker.remove(); document.removeEventListener("click", closePicker); }
-      });
-    }, 0);
-  }
-
-  function toggleReactionUI(messageId, emoji, currentlyReacted) {
-    if (!activeGroup) return;
-    NMChat.toggleReaction(activeGroup.id, messageId, emoji, currentlyReacted).catch(err => alert(err.message));
+  function renderReactions(m, myUid) {
+    const reactions = m.reactions || {};
+    const counts = {};
+    let mine = null;
+    Object.entries(reactions).forEach(([uid, emoji]) => {
+      counts[emoji] = (counts[emoji] || 0) + 1;
+      if (uid === myUid) mine = emoji;
+    });
+    return Object.entries(counts).map(([emoji, count]) => `
+      <span class="reaction-pill${emoji === mine ? " mine" : ""}" data-action="react" data-mid="${m.id}" data-emoji="${emoji}">${emoji} ${count}</span>
+    `).join("");
   }
 
   function renderMessageBody(m) {
@@ -227,8 +225,85 @@
     return div.innerHTML;
   }
 
+  function escapeAttr(s) {
+    return String(s || "").replace(/"/g, "&quot;");
+  }
+
+  function startEdit(mid) {
+    const m = lastMessages.find(x => x.id === mid);
+    if (!m) return;
+    document.querySelectorAll(".msg-emoji-picker").forEach(p => p.classList.add("hidden"));
+    const bubble = document.querySelector(`.msg-row[data-mid="${mid}"] .msg-bubble`);
+    if (!bubble) return;
+    bubble.innerHTML = `
+      <input type="text" class="edit-input" value="${escapeAttr(m.text || "")}">
+      <div class="edit-actions">
+        <button type="button" class="btn btn-primary" style="padding:4px 10px; font-size:0.8rem;" data-action="save-edit" data-mid="${mid}">حفظ</button>
+        <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" data-action="cancel-edit" data-mid="${mid}">إلغاء</button>
+      </div>`;
+    const input = bubble.querySelector(".edit-input");
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") saveEdit(mid, input.value);
+      if (e.key === "Escape") renderMessages(lastMessages);
+    });
+  }
+
+  async function saveEdit(mid, newText) {
+    newText = newText.trim();
+    if (!newText || !activeGroup) { renderMessages(lastMessages); return; }
+    try {
+      await NMChat.editMessage(activeGroup.id, mid, newText);
+    } catch (err) {
+      alert(err.message);
+      renderMessages(lastMessages);
+    }
+  }
+
+  // One delegated listener handles every message's buttons, even after the
+  // list is fully re-rendered on every realtime update (it's attached to the
+  // container, not to the buttons themselves).
+  document.getElementById("chat-messages").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn || !activeGroup) return;
+    const action = btn.dataset.action;
+    const mid = btn.dataset.mid;
+
+    if (action === "react-toggle") {
+      const picker = document.querySelector(`.msg-emoji-picker[data-picker-for="${mid}"]`);
+      const wasOpen = picker && !picker.classList.contains("hidden");
+      document.querySelectorAll(".msg-emoji-picker").forEach(p => p.classList.add("hidden"));
+      if (picker && !wasOpen) picker.classList.remove("hidden");
+      return;
+    }
+    if (action === "react") {
+      const emoji = btn.dataset.emoji;
+      const m = lastMessages.find(x => x.id === mid);
+      const myUid = NMChat.currentUid();
+      const current = m && m.reactions ? m.reactions[myUid] : null;
+      document.querySelectorAll(".msg-emoji-picker").forEach(p => p.classList.add("hidden"));
+      try { await NMChat.toggleReaction(activeGroup.id, mid, emoji, current); }
+      catch (err) { alert(err.message); }
+      return;
+    }
+    if (action === "edit") { startEdit(mid); return; }
+    if (action === "cancel-edit") { renderMessages(lastMessages); return; }
+    if (action === "save-edit") {
+      const input = document.querySelector(`.msg-row[data-mid="${mid}"] .edit-input`);
+      if (input) saveEdit(mid, input.value);
+      return;
+    }
+    if (action === "delete") {
+      if (!confirm("متأكد إنك عايز تمسح الرسالة دي؟")) return;
+      try { await NMChat.deleteMessage(activeGroup.id, mid); }
+      catch (err) { alert(err.message); }
+      return;
+    }
+  });
+
   function sendMsg() {
-    if (!activeGroup) return;
+    if (!activeGroup || isChatCurrentlyLocked) return;
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
     if (!text) return;
@@ -245,7 +320,7 @@
   let activeRecording = null;
   const micBtn = document.getElementById("mic-btn");
   micBtn.addEventListener("click", async () => {
-    if (!activeGroup) return;
+    if (!activeGroup || isChatCurrentlyLocked) return;
     if (activeRecording) { activeRecording.stop(); return; }
     try {
       activeRecording = await NMChat.startVoiceRecording(60);

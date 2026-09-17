@@ -10,44 +10,54 @@
 <body>
 <main class="container section">
   <div class="section-head">
-    <h1>أنواع المهام على المنصة</h1>
-    <p>كل نوع له تفاصيله الخاصة، وكل مهمة بتوصلك بفيديو شرح وسامبل صوتي والسعر قبل ما تبدأ.</p>
+    <h1 data-i18n="services_title">أنواع المهام على المنصة</h1>
+    <p data-i18n="services_subtitle">كل نوع له تفاصيله الخاصة، وكل مهمة بتوصلك بفيديو شرح وسامبل صوتي والسعر قبل ما تبدأ.</p>
   </div>
   <div class="grid-3" id="services-grid"></div>
   <div class="card text-center" style="margin-top:30px;" id="services-cta-card">
-    <h3 id="services-cta-title">مستعد تبدأ؟</h3>
-    <p class="text-muted" id="services-cta-body">سجّل واحدة، حدد لغاتك ومهاراتك، وابدأ تشوف المهام المتاحة ليك.</p>
-    <a href="signup.html" class="btn btn-primary" id="services-cta-btn">إنشاء حساب</a>
+    <h3 id="services-cta-title" data-i18n="services_ready_title">مستعد تبدأ؟</h3>
+    <p class="text-muted" id="services-cta-body" data-i18n="services_ready_body">سجّل واحدة، حدد لغاتك ومهاراتك، وابدأ تشوف المهام المتاحة ليك.</p>
+    <a href="signup.html" class="btn btn-primary" id="services-cta-btn" data-i18n="signup">إنشاء حساب</a>
   </div>
 </main>
 
 <script src="../js/shared.js"></script>
 <script>
   const grid = document.getElementById("services-grid");
-  NM.SERVICES.forEach(s => {
-    const a = document.createElement("a");
-    a.href = `service.html?s=${s.slug}`;
-    a.style.textDecoration = "none";
-    a.innerHTML = `
-      <div class="card">
-        <div class="icon-badge" style="font-size:1.6rem;">${s.icon}</div>
-        <h3 style="margin-top:10px;">${s.ar}</h3>
-        <p class="text-muted" style="margin-bottom:0;">اعرف التفاصيل</p>
-      </div>`;
-    grid.appendChild(a);
-  });
 
-  // already have an account? point them to their dashboard instead of signup
-  const loggedInUser = NM.currentUser();
-  if (loggedInUser) {
+  function renderServices() {
+    const isEn = NM.getLang() === "en";
+    grid.innerHTML = "";
+    NM.SERVICES.forEach(s => {
+      const a = document.createElement("a");
+      a.href = `service.html?s=${s.slug}`;
+      a.style.textDecoration = "none";
+      a.innerHTML = `
+        <div class="card">
+          <div class="icon-badge" style="font-size:1.6rem;">${s.icon}</div>
+          <h3 style="margin-top:10px;">${isEn ? s.en : s.ar}</h3>
+          <p class="text-muted service-details-label" style="margin-bottom:0;">${NM.t("service_view_details")}</p>
+        </div>`;
+      grid.appendChild(a);
+    });
+  }
+
+  function applyLoggedInCta() {
+    const loggedInUser = NM.currentUser();
+    if (!loggedInUser) return;
     const dashboardPath = loggedInUser.role === "head_leader" ? "dashboard-admin.html"
       : loggedInUser.role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
-    document.getElementById("services-cta-title").textContent = "شايف مهمة عايز تبدأها؟";
-    document.getElementById("services-cta-body").textContent = "روح لوحة التحكم بتاعتك وشوف المهام المتاحة ليك دلوقتي.";
+    document.getElementById("services-cta-title").textContent = NM.t("services_seen_task_title");
+    document.getElementById("services-cta-body").textContent = NM.t("services_seen_task_body");
     const btn = document.getElementById("services-cta-btn");
-    btn.textContent = "روح لوحة التحكم";
+    btn.removeAttribute("data-i18n");
+    btn.textContent = NM.t("services_go_dashboard");
     btn.href = dashboardPath;
   }
+
+  renderServices();
+  applyLoggedInCta();
+  document.addEventListener("nm:langchange", () => { renderServices(); applyLoggedInCta(); });
 </script>
 </body>
 </html>

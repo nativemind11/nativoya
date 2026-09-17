@@ -27,12 +27,20 @@ function getAdminApp() {
   return app;
 }
 
-// One token per request is fine for our traffic; ties the Firestore
-// `request.auth.uid` to our own Postgres user id, and carries role/group as
-// custom claims so Security Rules can scope access per-group.
+// IMPORTANT FIX: createCustomToken(uid, claims) only bakes `claims` into the
+// very first ID token minted from that sign-in. When Firebase silently
+// refreshes that ID token later (which it does automatically, typically
+// every ~1 hour), the *new* ID token does NOT carry those claims unless
+// they were persisted on the user's Firebase Auth record — this was the bug
+// that made members/leaders get silently locked out of sending messages
+// after using the chat for a while (Firestore rules saw an empty
+// `request.auth.token.groupIds` and rejected the write as permission-denied).
+// setCustomUserClaims() persists role/groupIds on the account itself, so
+// every future token (including silent refreshes) keeps carrying them.
 async function mintCustomToken(uid, claims) {
   const adminApp = getAdminApp();
-  return adminApp.auth().createCustomToken(uid, claims);
+  await adminApp.auth().setCustomUserClaims(uid, claims);
+  return adminApp.auth().createCustomToken(uid);
 }
 
 module.exports = { mintCustomToken };
