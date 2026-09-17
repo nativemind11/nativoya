@@ -143,7 +143,7 @@
       } else {
         document.getElementById("submit-hint").textContent = `متاح لجروبك ${matchingClaim.remaining_in_claim} وحدة لسه محتاجة تسليم.`;
         document.getElementById("submit-btn").disabled = false;
-        namingNotice.textContent = `📎 ملاحظة: ملفك هيتسمى تلقائيًا: "${user.firstName || "اسمك"} - ${user.email || "إيميلك"} - اسم الملف الأصلي" — مش محتاج تسميه بنفسك، النظام بيعمل ده تلقائيًا.`;
+        namingNotice.textContent = `📎 ملاحظة: ملفك هيتسمى تلقائيًا: "${user.firstName || "اسمك"} - ${user.whatsappNumber || "رقم واتسابك"} - ${user.gender === "male" ? "ذكر" : user.gender === "female" ? "أنثى" : "غير محدد"} - اسم الملف الأصلي" — مش محتاج تسميه بنفسك، النظام بيعمل ده تلقائيًا.`;
         namingNotice.classList.remove("hidden");
       }
     } catch (_) {

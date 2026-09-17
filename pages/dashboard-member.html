@@ -50,8 +50,8 @@
         <p class="text-muted" style="font-size:0.85rem;">مهام استلمها جروبك (أو الهيد ليدر) وتقدر ترفع شغلك عليها.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>المهمة</th><th>المتبقي لجروبي</th><th></th></tr></thead>
-            <tbody id="claims-body"><tr><td colspan="3" class="text-muted">جاري التحميل...</td></tr></tbody>
+            <thead><tr><th>المهمة</th><th>المتبقي لجروبي</th><th></th><th></th></tr></thead>
+            <tbody id="claims-body"><tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -183,12 +183,13 @@
             <tr>
               <td>${c.title}</td>
               <td>${c.remaining_in_claim}</td>
+              <td><a class="btn btn-secondary" style="padding:6px 14px;" href="task.html?id=${c.task_id}">التفاصيل</a></td>
               <td>
                 <input type="file" id="file-${c.claim_id}" class="hidden" onchange="submitWork('${c.claim_id}', this)">
                 <button class="btn btn-secondary" style="padding:6px 14px;" onclick="document.getElementById('file-${c.claim_id}').click()">📎 تسليم عمل</button>
               </td>
             </tr>`).join("")
-        : `<tr><td colspan="3" class="text-muted">مفيش مهام متاحة تسلّم عليها دلوقتي — استنى جروبك يستلم مهام جديدة</td></tr>`;
+        : `<tr><td colspan="4" class="text-muted">مفيش مهام متاحة تسلّم عليها دلوقتي — استنى جروبك يستلم مهام جديدة</td></tr>`;
     } catch (err) { /* non-critical */ }
   }
 
