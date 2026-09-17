@@ -61,6 +61,24 @@ const NM = (() => {
       activity_2: "تم إنجاز ١٢ مهمة توسيم بيانات خلال آخر ساعة",
       activity_3: "تاسك جديد اتنشر لكل الجروبات: بيانات محادثة",
       activity_4: "عضو جديد اتفعّل في جروب العربية الخليجية",
+
+      signup_title: "إنشاء حساب جديد", signup_subtitle: "ثواني وتبقى جزء من مجتمع Nativoya",
+      label_name: "الاسم بالكامل", label_email: "البريد الإلكتروني",
+      label_password: "كلمة المرور", hint_password: "6 أحرف على الأقل",
+      label_whatsapp: "رقم واتساب", label_country: "الدولة", placeholder_select_country: "اختر الدولة",
+      label_gender: "النوع", gender_male: "ذكر", gender_female: "أنثى",
+      label_payout: "رقم/حساب استلام التحويلات",
+      placeholder_payout: "رقم فودافون كاش / إنستاباي أو إيميل PayPal",
+      hint_payout: "ده اللي هيتحول عليه مستحقاتك من المهام.",
+      label_languages: "اللغات واللهجات اللي بتتكلمها",
+      hint_languages: "هتنضم تلقائيًا لجروب كل لغة تختارها — تقدر تختار أكتر من واحدة.",
+      label_skills: "المهارات اللي تقدر تقدمها", hint_skills: "اختار كل اللي ينطبق عليك.",
+      btn_create_account: "إنشاء الحساب", btn_creating_account: "جاري الإنشاء...",
+      already_have_account: "عندك حساب بالفعل؟", login_link: "سجّل دخول",
+      error_select_gender: "من فضلك اختار النوع.",
+      error_select_language: "من فضلك اختار لغة واحدة على الأقل.",
+      error_select_skill: "من فضلك اختار مهارة واحدة على الأقل.",
+      invite_join_note: "هتنضم تلقائيًا لجروب {language} رقم #{groupNumber}",
     },
     en: {
       home: "Home", services: "Services", groups: "Groups", my_group: "My Group",
@@ -101,6 +119,24 @@ const NM = (() => {
       activity_2: "12 data annotation tasks completed in the last hour",
       activity_3: "A new task was published to all groups: conversational data",
       activity_4: "A new member was activated in the Gulf Arabic group",
+
+      signup_title: "Create a new account", signup_subtitle: "A few seconds and you're part of the Nativoya community",
+      label_name: "Full name", label_email: "Email",
+      label_password: "Password", hint_password: "At least 6 characters",
+      label_whatsapp: "WhatsApp number", label_country: "Country", placeholder_select_country: "Select your country",
+      label_gender: "Gender", gender_male: "Male", gender_female: "Female",
+      label_payout: "Account/number to receive transfers",
+      placeholder_payout: "Vodafone Cash / InstaPay number or PayPal email",
+      hint_payout: "This is where your task earnings will be transferred.",
+      label_languages: "Languages & dialects you speak",
+      hint_languages: "You'll automatically join the group for each language you pick — you can pick more than one.",
+      label_skills: "Skills you can offer", hint_skills: "Pick everything that applies to you.",
+      btn_create_account: "Create account", btn_creating_account: "Creating...",
+      already_have_account: "Already have an account?", login_link: "Log in",
+      error_select_gender: "Please select your gender.",
+      error_select_language: "Please select at least one language.",
+      error_select_skill: "Please select at least one skill.",
+      invite_join_note: "You'll automatically join the {language} group #{groupNumber}",
     }
   };
 
@@ -363,6 +399,10 @@ const NM = (() => {
       const key = el.getAttribute("data-i18n");
       if (dict[key]) el.textContent = dict[key];
     });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+      const key = el.getAttribute("data-i18n-placeholder");
+      if (dict[key]) el.setAttribute("placeholder", dict[key]);
+    });
     document.querySelectorAll(".lang-switch button").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.lang === lang);
     });
@@ -536,45 +576,58 @@ const NM = (() => {
   }
 
   // dialects/languages a member can pick at signup — each becomes its own group
+  // `name` is the CANONICAL value — it's what gets saved as a group's
+  // language in the database and must never change with the UI language.
+  // `en` is ONLY a display label for when the site is switched to English.
   const LANGUAGES = [
-    { name: "العربية (مصرية)", code: "AR-EG" },
-    { name: "العربية (خليجية)", code: "AR-GULF" },
-    { name: "العربية (شامية)", code: "AR-LEV" },
-    { name: "العربية (مغاربية)", code: "AR-MAG" },
-    { name: "العربية (تونسية)", code: "AR-TN" },
-    { name: "العربية (جزائرية)", code: "AR-DZ" },
-    { name: "العربية (ليبية)", code: "AR-LY" },
-    { name: "العربية (سودانية)", code: "AR-SD" },
-    { name: "العربية (يمنية)", code: "AR-YE" },
-    { name: "العربية الفصحى (MSA)", code: "AR-MSA" },
-    { name: "الإنجليزية (بريطانية)", code: "EN-GB" },
-    { name: "الإنجليزية (أمريكية)", code: "EN-US" },
-    { name: "الفرنسية", code: "FR" },
-    { name: "الإسبانية", code: "ES" },
-    { name: "الألمانية", code: "DE" },
-    { name: "الإيطالية", code: "IT" },
-    { name: "البرتغالية", code: "PT" },
-    { name: "الروسية", code: "RU" },
-    { name: "التركية", code: "TR" },
-    { name: "الصينية", code: "ZH" },
-    { name: "اليابانية", code: "JA" },
-    { name: "الكورية", code: "KO" },
-    { name: "الهندية", code: "HI" },
-    { name: "الأردية", code: "UR" },
-    { name: "الفارسية", code: "FA" },
+    { name: "العربية (مصرية)", en: "Arabic (Egyptian)", code: "AR-EG" },
+    { name: "العربية (خليجية)", en: "Arabic (Gulf)", code: "AR-GULF" },
+    { name: "العربية (شامية)", en: "Arabic (Levantine)", code: "AR-LEV" },
+    { name: "العربية (مغاربية)", en: "Arabic (Maghrebi)", code: "AR-MAG" },
+    { name: "العربية (تونسية)", en: "Arabic (Tunisian)", code: "AR-TN" },
+    { name: "العربية (جزائرية)", en: "Arabic (Algerian)", code: "AR-DZ" },
+    { name: "العربية (ليبية)", en: "Arabic (Libyan)", code: "AR-LY" },
+    { name: "العربية (سودانية)", en: "Arabic (Sudanese)", code: "AR-SD" },
+    { name: "العربية (يمنية)", en: "Arabic (Yemeni)", code: "AR-YE" },
+    { name: "العربية الفصحى (MSA)", en: "Arabic (MSA)", code: "AR-MSA" },
+    { name: "الإنجليزية (بريطانية)", en: "English (UK)", code: "EN-GB" },
+    { name: "الإنجليزية (أمريكية)", en: "English (US)", code: "EN-US" },
+    { name: "الفرنسية", en: "French", code: "FR" },
+    { name: "الإسبانية", en: "Spanish", code: "ES" },
+    { name: "الألمانية", en: "German", code: "DE" },
+    { name: "الإيطالية", en: "Italian", code: "IT" },
+    { name: "البرتغالية", en: "Portuguese", code: "PT" },
+    { name: "الروسية", en: "Russian", code: "RU" },
+    { name: "التركية", en: "Turkish", code: "TR" },
+    { name: "الصينية", en: "Chinese", code: "ZH" },
+    { name: "اليابانية", en: "Japanese", code: "JA" },
+    { name: "الكورية", en: "Korean", code: "KO" },
+    { name: "الهندية", en: "Hindi", code: "HI" },
+    { name: "الأردية", en: "Urdu", code: "UR" },
+    { name: "الفارسية", en: "Persian", code: "FA" },
   ];
 
   // the 8 AI-training skills a member can offer at signup (alias of SERVICES,
   // kept as its own name so signup forms read cleanly)
   const SKILLS = SERVICES;
 
-  // countries dropdown for signup
+  // countries dropdown for signup. COUNTRIES stays the canonical value saved
+  // to the database (unchanged, always Arabic) — COUNTRIES_EN is the exact
+  // same list, same order, ONLY used to show an English label when the site
+  // is switched to English.
   const COUNTRIES = [
     "مصر", "السعودية", "الإمارات", "الكويت", "قطر", "البحرين", "عمان",
     "الأردن", "لبنان", "سوريا", "العراق", "فلسطين", "اليمن",
     "المغرب", "الجزائر", "تونس", "ليبيا", "السودان", "موريتانيا",
     "الولايات المتحدة", "المملكة المتحدة", "كندا", "فرنسا", "ألمانيا",
     "إسبانيا", "إيطاليا", "تركيا", "الهند", "باكستان", "أخرى",
+  ];
+  const COUNTRIES_EN = [
+    "Egypt", "Saudi Arabia", "UAE", "Kuwait", "Qatar", "Bahrain", "Oman",
+    "Jordan", "Lebanon", "Syria", "Iraq", "Palestine", "Yemen",
+    "Morocco", "Algeria", "Tunisia", "Libya", "Sudan", "Mauritania",
+    "United States", "United Kingdom", "Canada", "France", "Germany",
+    "Spain", "Italy", "Turkey", "India", "Pakistan", "Other",
   ];
 
   // ---- invite links: a leader's group is identified by "<langCode>-<groupNumber>" ----
@@ -611,7 +664,7 @@ const NM = (() => {
   }
 
   return {
-    init, setLang, getLang, toggleMobileNav, SERVICES, SKILLS, LANGUAGES, COUNTRIES, seedCounters,
+    init, setLang, getLang, toggleMobileNav, SERVICES, SKILLS, LANGUAGES, COUNTRIES, COUNTRIES_EN, seedCounters,
     currentUser, mockSignup, mockLogout, rel, t, joinLanguageGroup,
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
