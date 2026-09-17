@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إنشاء حساب — Nativoya</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" style="max-width:560px;">
+  <div class="card">
+    <h1 class="text-center" style="font-size:1.6rem;">إنشاء حساب جديد</h1>
+    <p class="text-center">ثواني وتبقى جزء من مجتمع Nativoya</p>
+
+    <div id="invite-banner" class="hidden card card-compact" style="background:var(--color-pill-bg); border:none; margin-bottom:20px;">
+      <p class="mb-0" style="color:var(--color-pill-text); font-weight:700;" id="invite-banner-text"></p>
+    </div>
+
+    <form id="signup-form">
+      <div class="field">
+        <label for="s-name">الاسم بالكامل</label>
+        <input type="text" id="s-name" required>
+      </div>
+      <div class="field">
+        <label for="s-email">البريد الإلكتروني</label>
+        <input type="email" id="s-email" required>
+      </div>
+      <div class="field">
+        <label for="s-password">كلمة المرور</label>
+        <input type="password" id="s-password" required minlength="6">
+        <div class="hint">6 أحرف على الأقل</div>
+      </div>
+      <div class="field">
+        <label for="s-whatsapp">رقم واتساب</label>
+        <input type="tel" id="s-whatsapp" required>
+      </div>
+      <div class="field">
+        <label for="s-country">الدولة</label>
+        <select id="s-country" required>
+          <option value="">اختر الدولة</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>النوع</label>
+        <div class="radio-card-group">
+          <label class="radio-card">
+            <input type="radio" name="s-gender" value="male" required>
+            <div><strong>ذكر</strong></div>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="s-gender" value="female" required>
+            <div><strong>أنثى</strong></div>
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label for="s-payout">رقم/حساب استلام التحويلات</label>
+        <input type="text" id="s-payout" placeholder="رقم فودافون كاش / إنستاباي أو إيميل PayPal" required>
+        <div class="hint">ده اللي هيتحول عليه مستحقاتك من المهام.</div>
+      </div>
+
+      <hr style="border:none; border-top:1px solid var(--color-border, #e5e7f5); margin:24px 0;">
+
+      <div class="field">
+        <label>اللغات واللهجات اللي بتتكلمها <span style="color:var(--color-primary-blue);">*</span></label>
+        <div class="hint" style="margin-bottom:10px;">هتنضم تلقائيًا لجروب كل لغة تختارها — تقدر تختار أكتر من واحدة.</div>
+        <div id="languages-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; max-height:260px; overflow-y:auto; padding-inline-end:4px;"></div>
+      </div>
+
+      <hr style="border:none; border-top:1px solid var(--color-border, #e5e7f5); margin:24px 0;">
+
+      <div class="field">
+        <label>المهارات اللي تقدر تقدمها <span style="color:var(--color-primary-blue);">*</span></label>
+        <div class="hint" style="margin-bottom:10px;">اختار كل اللي ينطبق عليك.</div>
+        <div id="skills-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+      </div>
+
+      <p id="signup-error" class="hint" style="color:#e0245e; display:none; margin-top:16px;"></p>
+      <button type="submit" class="btn btn-primary btn-block" id="signup-submit" style="margin-top:20px;">إنشاء الحساب</button>
+    </form>
+    <p class="text-center" style="margin-top:16px;">
+      عندك حساب بالفعل؟ <a href="login.html">سجّل دخول</a>
+    </p>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  // country dropdown
+  const countrySelect = document.getElementById("s-country");
+  NM.COUNTRIES.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c; opt.textContent = c;
+    countrySelect.appendChild(opt);
+  });
+
+  // languages checkbox grid (radio-card style, reused with checkboxes)
+  const langGrid = document.getElementById("languages-grid");
+  NM.LANGUAGES.forEach((l, i) => {
+    const label = document.createElement("label");
+    label.className = "radio-card";
+    label.innerHTML = `
+      <input type="checkbox" name="lang" value="${l.name}" id="lang-${i}">
+      <div><strong>${l.name}</strong></div>`;
+    langGrid.appendChild(label);
+  });
+
+  // skills checkbox grid
+  const skillsGrid = document.getElementById("skills-grid");
+  NM.SKILLS.forEach((s, i) => {
+    const label = document.createElement("label");
+    label.className = "radio-card";
+    label.innerHTML = `
+      <input type="checkbox" name="skill" value="${s.slug}" id="skill-${i}">
+      <div><strong>${s.icon} ${s.ar}</strong></div>`;
+    skillsGrid.appendChild(label);
+  });
+
+  // invite link flow: pre-select the invited language and hide the picker
+  // (they'll join that specific leader's group right after account creation)
+  const params = new URLSearchParams(location.search);
+  const invite = NM.resolveInviteCode(params.get("invite"));
+  if (invite) {
+    document.getElementById("invite-banner").classList.remove("hidden");
+    document.getElementById("invite-banner-text").textContent =
+      `🎉 هتنضم تلقائيًا لجروب ${invite.language} رقم #${invite.groupNumber}`;
+  }
+
+  document.getElementById("signup-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("signup-error");
+    const submitBtn = document.getElementById("signup-submit");
+    errorBox.style.display = "none";
+
+    const languages = Array.from(document.querySelectorAll('input[name="lang"]:checked')).map(i => i.value);
+    const skills = Array.from(document.querySelectorAll('input[name="skill"]:checked')).map(i => i.value);
+    const genderInput = document.querySelector('input[name="s-gender"]:checked');
+
+    if (!genderInput) {
+      errorBox.textContent = "من فضلك اختار النوع.";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (!invite && languages.length === 0) {
+      errorBox.textContent = "من فضلك اختار لغة واحدة على الأقل.";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (skills.length === 0) {
+      errorBox.textContent = "من فضلك اختار مهارة واحدة على الأقل.";
+      errorBox.style.display = "block";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جاري الإنشاء...";
+
+    try {
+      await NM.apiSignup({
+        firstName: document.getElementById("s-name").value,
+        email: document.getElementById("s-email").value,
+        password: document.getElementById("s-password").value,
+        whatsappNumber: document.getElementById("s-whatsapp").value,
+        country: document.getElementById("s-country").value,
+        gender: genderInput.value,
+        payoutIdentifier: document.getElementById("s-payout").value,
+        languages,
+        skills,
+      });
+
+      if (invite) {
+        // joining an existing leader's group directly — not the language's default group
+        await NM.apiJoinGroup(invite.language, invite.groupNumber);
+      }
+      location.href = "dashboard-member.html";
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "إنشاء الحساب";
+    }
+  });
+</script>
+</body>
+</html>

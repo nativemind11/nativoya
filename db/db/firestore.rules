@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Group chat — one document per group, messages as a subcollection.
+    // A member/leader can read/write any group THEY belong to (matched
+    // against the groupIds array custom claim baked into their Firebase
+    // token by our backend, since one user can be in several language
+    // groups at once). head_leader accounts can read/write ANY group, so
+    // they can monitor or broadcast from the admin dashboard.
+    match /groups/{groupId}/messages/{messageId} {
+      allow read: if request.auth != null && (
+                     request.auth.token.role == 'head_leader' ||
+                     (groupId in request.auth.token.groupIds)
+                   );
+
+      allow create: if request.auth != null && (
+                       request.auth.token.role == 'head_leader' ||
+                       (groupId in request.auth.token.groupIds)
+                     )
+                     && request.resource.data.senderId == request.auth.uid;
+
+      // messages are never edited or deleted from the client
+      allow update, delete: if false;
+    }
+
+    // Everything else stays locked down by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
