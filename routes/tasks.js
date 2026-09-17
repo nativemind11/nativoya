@@ -14,15 +14,20 @@ function cleanUrlList(list) {
 // POST /api/tasks  (head_leader only) — publish a new task, either to every
 // group (targetAll: true) or to a specific list of groupIds. videoUrls and
 // audioSampleUrls each accept an ARRAY of links (a task can have several).
-// maleQuantity/femaleQuantity are OPTIONAL — a head_leader can split the
-// total quantity by gender (e.g. "60 male, 40 female") so leaders/members
-// know how many of each are still needed; leave them out to skip the split.
 router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   const {
-    skillSlug, title, instructions, totalQuantity,
-    price, currency, videoUrls, audioSampleUrls,
-    targetAll, groupIds, maleQuantity, femaleQuantity,
+    skillSlug, title, instructions,
+    quantityMale, quantityFemale,
+    price_member, price_leader, currency, videoUrls, audioSampleUrls,
+    targetAll, groupIds,
   } = req.body;
+
+  const qMale = Number(quantityMale) || 0;
+  const qFemale = Number(quantityFemale) || 0;
+  const totalQuantity = qMale + qFemale;
+  if (totalQuantity <= 0) {
+    return res.status(400).json({ error: "لازم تحط عدد للذكور أو للإناث أكبر من صفر." });
+  }
 
   const isTargetAll = targetAll !== false; // default true
   if (!isTargetAll && (!Array.isArray(groupIds) || !groupIds.length)) {
@@ -33,13 +38,10 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
     await client.query("BEGIN");
     const result = await client.query(
-      `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, male_quantity, female_quantity,
-                           price, currency, video_urls, audio_sample_urls, target_all, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'USD'), $9, $10, $11, $12) RETURNING *`,
-      [skillSlug, title, instructions, totalQuantity,
-       maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
-       femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
-       price || null, currency,
+      `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, quantity_male, quantity_female,
+                           price_member, price_leader, currency, video_urls, audio_sample_urls, target_all, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'USD'), $10, $11, $12, $13) RETURNING *`,
+      [skillSlug, title, instructions, totalQuantity, qMale, qFemale, price_member || null, price_leader || null, currency,
        cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), isTargetAll, req.user.id]
     );
     const task = result.rows[0];
@@ -77,8 +79,7 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
 
 // GET /api/tasks/:id/claims  (head_leader only) — full breakdown of who has
 // claimed how much of this task (which group/leader) and every individual
-// submission made against it (which member, from which group). Also returns
-// genderBreakdown: how many males/females have submitted work on this task.
+// submission made against it (which member, from which group).
 router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
     const claims = await pool.query(`
@@ -97,7 +98,7 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
 
     const submissions = await pool.query(`
       SELECT s.id, s.status, s.file_url, s.created_at,
-             u.first_name AS member_name, u.gender AS member_gender, g.language, g.group_number
+             u.first_name AS member_name, g.language, g.group_number
       FROM submissions s
       JOIN task_claims tc ON tc.id = s.task_claim_id
       JOIN groups g ON g.id = tc.group_id
@@ -106,22 +107,7 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
       ORDER BY s.created_at DESC
     `, [req.params.id]);
 
-    const genderCounts = await pool.query(`
-      SELECT u.gender, COUNT(*) AS cnt
-      FROM submissions s
-      JOIN task_claims tc ON tc.id = s.task_claim_id
-      JOIN users u ON u.id = s.submitted_by
-      WHERE tc.task_id = $1
-      GROUP BY u.gender
-    `, [req.params.id]);
-    const genderBreakdown = { male: 0, female: 0, unspecified: 0 };
-    for (const row of genderCounts.rows) {
-      if (row.gender === "male") genderBreakdown.male = Number(row.cnt);
-      else if (row.gender === "female") genderBreakdown.female = Number(row.cnt);
-      else genderBreakdown.unspecified += Number(row.cnt);
-    }
-
-    res.json({ claims: claims.rows, submissions: submissions.rows, genderBreakdown });
+    res.json({ claims: claims.rows, submissions: submissions.rows });
   } catch (err) {
     console.error("[tasks:claims-breakdown]", err);
     res.status(500).json({ error: "Could not load claim breakdown" });
@@ -135,7 +121,15 @@ router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) 
     const result = await pool.query(`
       SELECT t.*, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
              COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS claimed_quantity,
-             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining,
+             COALESCE((SELECT COUNT(*) FROM submissions s2
+                         JOIN task_claims tc2 ON tc2.id = s2.task_claim_id
+                         JOIN users u2 ON u2.id = s2.submitted_by
+                        WHERE tc2.task_id = t.id AND u2.gender = 'male'), 0) AS male_done,
+             COALESCE((SELECT COUNT(*) FROM submissions s3
+                         JOIN task_claims tc3 ON tc3.id = s3.task_claim_id
+                         JOIN users u3 ON u3.id = s3.submitted_by
+                        WHERE tc3.task_id = t.id AND u3.gender = 'female'), 0) AS female_done
       FROM tasks t
       JOIN services s ON s.slug = t.skill_slug
       ORDER BY t.created_at DESC
@@ -151,30 +145,29 @@ router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) 
 // total_quantity can't drop below what's already been claimed by groups.
 router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
-    const {
-      title, instructions, totalQuantity, price, currency,
-      videoUrls, audioSampleUrls, maleQuantity, femaleQuantity,
-    } = req.body;
+    const { title, instructions, quantityMale, quantityFemale, price_member, price_leader, currency, videoUrls, audioSampleUrls } = req.body;
+    const qMale = Number(quantityMale) || 0;
+    const qFemale = Number(quantityFemale) || 0;
+    const totalQuantity = qMale + qFemale;
+    if (totalQuantity <= 0) {
+      return res.status(400).json({ error: "لازم تحط عدد للذكور أو للإناث أكبر من صفر." });
+    }
 
     const claimedResult = await pool.query(
       "SELECT COALESCE(SUM(quantity), 0) AS c FROM task_claims WHERE task_id = $1", [req.params.id]
     );
     const claimed = Number(claimedResult.rows[0].c);
-    if (totalQuantity != null && Number(totalQuantity) < claimed) {
+    if (totalQuantity < claimed) {
       return res.status(400).json({ error: `مينفعش الكمية الإجمالية تقل عن ${claimed} — ده اللي اتاستلم بالفعل من المهمة دي.` });
     }
 
     const result = await pool.query(
       `UPDATE tasks SET
-         title = $1, instructions = $2, total_quantity = $3, price = $4,
-         currency = $5, video_urls = $6, audio_sample_urls = $7,
-         male_quantity = $8, female_quantity = $9
-       WHERE id = $10 RETURNING *`,
-      [title, instructions, totalQuantity, price || null, currency,
-       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls),
-       maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
-       femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
-       req.params.id]
+         title = $1, instructions = $2, total_quantity = $3, quantity_male = $4, quantity_female = $5,
+         price_member = $6, price_leader = $7, currency = $8, video_urls = $9, audio_sample_urls = $10
+       WHERE id = $11 RETURNING *`,
+      [title, instructions, totalQuantity, qMale, qFemale, price_member || null, price_leader || null, currency,
+       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Task not found" });
     res.json(result.rows[0]);
@@ -327,7 +320,7 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
     const result = await pool.query(`
       SELECT tc.id AS claim_id, tc.quantity, tc.group_id,
              t.id AS task_id, t.title, t.instructions, t.video_urls, t.audio_sample_urls,
-             t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
+             t.price_member, t.price_leader, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
              g.leader_id, g.group_number, lu.first_name AS leader_name,
              tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
       FROM task_claims tc
@@ -451,8 +444,26 @@ router.post("/:id/claim", requireAuth, requireRole("leader"), async (req, res) =
     }
     if (!groupId) return res.status(400).json({ error: "Leader has no group assigned" });
 
-    const taskCheck = await pool.query("SELECT id FROM tasks WHERE id = $1", [req.params.id]);
+    // The task must actually be visible to THIS group — otherwise any leader
+    // who guesses/knows a task id could claim a task never meant for them.
+    const taskCheck = await pool.query(
+      `SELECT t.id, t.total_quantity,
+              t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+       FROM tasks t
+       WHERE t.id = $1 AND (
+         t.target_all = true OR EXISTS (SELECT 1 FROM task_targets tt WHERE tt.task_id = t.id AND tt.group_id = $2)
+       )`,
+      [req.params.id, groupId]
+    );
     if (!taskCheck.rows.length) return res.status(404).json({ error: "Task not found" });
+
+    // Can't claim more than what's actually still available — this is exactly
+    // the kind of over-allocation bug that hit the auto-claim path earlier,
+    // just triggered manually here instead.
+    const remaining = Number(taskCheck.rows[0].remaining);
+    if (quantity > remaining) {
+      return res.status(400).json({ error: `مينفعش تستلم أكتر من ${remaining} — ده كل اللي متبقي فعليًا من المهمة دي.` });
+    }
 
     const result = await pool.query(
       `INSERT INTO task_claims (task_id, group_id, claimed_by, quantity)
@@ -486,8 +497,8 @@ router.post("/claims/:claimId/submissions", requireAuth, requireRole("member", "
 // against a claim their own group holds — a leader can contribute work to
 // their own group's claims too, not just manage/review others' submissions)
 //
-// Drive filename convention: "<uploader name> - <uploader WhatsApp> - <ذكر/أنثى> - <original name>"
-// Applies the same way whether the uploader is a leader or a regular member.
+// Drive filename convention: "<uploader name> - <uploader WhatsApp> - <leader
+// name, or 'بدون ليدر' if the group has none> - timestamp-<original name>"
 router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leader"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file was attached" });
 
@@ -518,11 +529,8 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
 
     const me = await pool.query("SELECT first_name, whatsapp_number, gender FROM users WHERE id = $1", [req.user.id]);
     const uploaderName = me.rows[0]?.first_name || "member";
-    const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "بدون رقم";
-    const genderLabel = me.rows[0]?.gender === "male" ? "ذكر" : me.rows[0]?.gender === "female" ? "أنثى" : "غير محدد";
-    // Name - WhatsApp number - Gender - original filename (extension preserved).
-    // Drive is fine with two files sharing a name (each stays a distinct file),
-    // so we don't need to append a raw timestamp — Drive already tracks that.
+    const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "no-whatsapp";
+    const genderLabel = me.rows[0]?.gender === "female" ? "أنثى" : me.rows[0]?.gender === "male" ? "ذكر" : "غير محدد";
     const filename = `${uploaderName} - ${uploaderWhatsapp} - ${genderLabel} - ${req.file.originalname}`;
 
     const uploaded = await driveService.uploadSubmissionFile(
@@ -544,10 +552,23 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
   }
 });
 
-// POST /api/tasks/submissions/:id/review  (leader approves/rejects)
+// POST /api/tasks/submissions/:id/review  (leader approves/rejects — only for
+// a submission made against a claim held by a group THEY lead)
 router.post("/submissions/:id/review", requireAuth, requireRole("leader"), async (req, res) => {
   try {
     const { approve } = req.body;
+
+    const ownership = await pool.query(
+      `SELECT 1 FROM submissions s
+       JOIN task_claims tc ON tc.id = s.task_claim_id
+       JOIN groups g ON g.id = tc.group_id
+       WHERE s.id = $1 AND g.leader_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!ownership.rows.length) {
+      return res.status(403).json({ error: "This submission isn't from a group you lead" });
+    }
+
     const result = await pool.query(
       `UPDATE submissions SET status = $1, reviewed_by = $2, reviewed_at = now()
        WHERE id = $3 RETURNING *`,

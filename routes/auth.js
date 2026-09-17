@@ -1,32 +1,26 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const crypto = require("crypto");
 const { pool } = require("../db/pool");
 const { requireAuth, requireRole } = require("../config/auth");
 const driveService = require("../config/googleDrive");
 const firebaseAdmin = require("../config/firebaseAdmin");
-const mailer = require("../config/mailer");
-const { passwordResetEmail } = require("../config/emailTemplates");
 
 const router = express.Router();
 
 // POST /api/auth/signup
 // body: { firstName, email, password, whatsappNumber, country, gender,
-//         payoutIdentifier, languages: [..], skills: [..] }
+//         payoutMethod, payoutIdentifier, languages: [..], skills: [..] }
 // Creates the user, records the skills they offer, and auto-joins them into
 // a group (#1) for every language/dialect they picked — a member can end up
 // in several groups at once this way.
 router.post("/signup", async (req, res) => {
   const {
-    firstName, email, password, whatsappNumber, country,
-    gender, payoutIdentifier, languages, skills,
+    firstName, email, password, whatsappNumber, country, gender,
+    payoutMethod, payoutIdentifier, languages, skills,
   } = req.body;
   if (!firstName || !email || !password) {
     return res.status(400).json({ error: "firstName, email and password are required" });
-  }
-  if (gender && gender !== "male" && gender !== "female") {
-    return res.status(400).json({ error: "gender must be 'male' or 'female'" });
   }
 
   const client = await pool.connect();
@@ -35,10 +29,10 @@ router.post("/signup", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const userResult = await client.query(
-      `INSERT INTO users (first_name, email, password_hash, whatsapp_number, country, gender, payout_identifier)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, first_name, email, role, gender, payout_identifier`,
-      [firstName, email, passwordHash, whatsappNumber, country, gender || null, payoutIdentifier || null]
+      `INSERT INTO users (first_name, email, password_hash, whatsapp_number, country, gender, payout_method, payout_identifier)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, first_name, email, role`,
+      [firstName, email, passwordHash, whatsappNumber, country, gender || null, payoutMethod || null, payoutIdentifier || null]
     );
     const user = userResult.rows[0];
 
@@ -110,7 +104,8 @@ router.post("/login", async (req, res) => {
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, first_name, email, role, country, whatsapp_number, gender, payout_identifier, reputation_score FROM users WHERE id = $1`,
+      `SELECT id, first_name, email, role, country, whatsapp_number, gender,
+              payout_method, payout_identifier, reputation_score FROM users WHERE id = $1`,
       [req.user.id]
     );
     if (!userResult.rows.length) return res.status(404).json({ error: "User not found" });
@@ -222,82 +217,6 @@ router.get("/firebase-token", requireAuth, async (req, res) => {
       return res.status(503).json({ error: "الشات لسه مش متصل بالسيرفر — لازم تُضاف بيانات Firebase الأول." });
     }
     res.status(500).json({ error: "Could not start a chat session" });
-  }
-});
-
-// POST /api/auth/forgot-password
-// body: { email }
-// Always responds with the same generic success message whether or not that
-// email exists — so nobody can use this to check who has an account
-// (standard practice). If the email DOES belong to a real account, a
-// one-hour reset link is emailed to it.
-router.post("/forgot-password", async (req, res) => {
-  const { email } = req.body;
-  const genericOk = { message: "لو الإيميل ده مسجل عندنا، هيوصله رابط استرجاع كلمة المرور خلال دقايق." };
-  if (!email) return res.status(400).json({ error: "email is required" });
-
-  try {
-    const userResult = await pool.query("SELECT id, first_name, email FROM users WHERE email = $1", [email]);
-    if (!userResult.rows.length) return res.json(genericOk); // don't reveal whether the email exists
-
-    const user = userResult.rows[0];
-    const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    await pool.query(
-      "UPDATE users SET reset_token_hash = $1, reset_token_expires_at = $2 WHERE id = $3",
-      [tokenHash, expiresAt, user.id]
-    );
-
-    const frontendUrl = process.env.FRONTEND_URL || "https://nativoya.click";
-    const resetUrl = `${frontendUrl}/pages/reset-password.html?token=${rawToken}`;
-
-    await mailer.sendMail({
-      to: user.email,
-      subject: "استرجاع كلمة المرور — Nativoya",
-      html: passwordResetEmail({ firstName: user.first_name, resetUrl }),
-    });
-
-    res.json(genericOk);
-  } catch (err) {
-    console.error(err);
-    if (err.code === "EMAIL_NOT_CONFIGURED") {
-      return res.status(503).json({ error: "خدمة إرسال الإيميلات لسه مش متصلة بالسيرفر — لازم تُضاف بيانات SMTP الأول." });
-    }
-    res.status(500).json({ error: "تعذر إرسال رابط الاسترجاع، حاول تاني بعد شوية." });
-  }
-});
-
-// POST /api/auth/reset-password
-// body: { token, newPassword }
-// Looks the user up by the (hashed) token, checks it hasn't expired, sets
-// the new password, and invalidates the token so it can't be reused.
-router.post("/reset-password", async (req, res) => {
-  const { token, newPassword } = req.body;
-  if (!token || !newPassword) return res.status(400).json({ error: "token and newPassword are required" });
-  if (newPassword.length < 6) return res.status(400).json({ error: "كلمة المرور لازم تكون 6 أحرف على الأقل" });
-
-  try {
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-    const userResult = await pool.query(
-      "SELECT id FROM users WHERE reset_token_hash = $1 AND reset_token_expires_at > now()",
-      [tokenHash]
-    );
-    if (!userResult.rows.length) {
-      return res.status(400).json({ error: "رابط الاسترجاع ده غير صحيح أو منتهي الصلاحية. اطلب رابط جديد." });
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-    await pool.query(
-      "UPDATE users SET password_hash = $1, reset_token_hash = NULL, reset_token_expires_at = NULL WHERE id = $2",
-      [passwordHash, userResult.rows[0].id]
-    );
-
-    res.json({ message: "تم تغيير كلمة المرور بنجاح. تقدر تدخل بيها دلوقتي." });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "تعذر تغيير كلمة المرور، حاول تاني بعد شوية." });
   }
 });
 

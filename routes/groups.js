@@ -191,7 +191,8 @@ router.get("/roster", requireAuth, requireRole("leader"), async (req, res) => {
     const result = await pool.query(
       `SELECT u.id, u.first_name, u.reputation_score,
               (SELECT COUNT(*) FROM submissions s
-                 WHERE s.submitted_by = u.id AND s.status = 'completed') AS completed_count
+                 JOIN task_claims tc ON tc.id = s.task_claim_id
+                 WHERE s.submitted_by = u.id AND tc.group_id = ug.group_id AND s.status = 'completed') AS completed_count
        FROM user_groups ug
        JOIN users u ON u.id = ug.user_id
        WHERE ug.group_id = $1 AND u.id != $2
@@ -205,12 +206,11 @@ router.get("/roster", requireAuth, requireRole("leader"), async (req, res) => {
   }
 });
 
-// GET /api/groups  (head_leader overview + used to populate the "target
-// specific groups" picker when publishing a task)
-router.get("/", requireAuth, async (req, res) => {
+// GET /api/groups  (head_leader only) — full overview + used to populate the
+// "target specific groups" picker when publishing a task
+router.get("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   const result = await pool.query(`
     SELECT g.*, u.first_name AS leader_name,
-      u.whatsapp_number AS leader_whatsapp, u.payout_identifier AS leader_payout_identifier,
       (SELECT COUNT(*) FROM user_groups WHERE group_id = g.id) AS member_count
     FROM groups g LEFT JOIN users u ON u.id = g.leader_id
     ORDER BY g.language, g.group_number

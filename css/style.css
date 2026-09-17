@@ -376,37 +376,6 @@ tbody tr:not(:last-child) td { border-bottom: 1px solid var(--color-border); }
   background: #F1F3FD; padding: 10px 14px; border-radius: 14px; font-size: 0.9rem;
 }
 .msg-row.mine .msg-bubble { background: var(--gradient-primary); color: #fff; }
-.msg-col { display: flex; flex-direction: column; min-width: 0; }
-.msg-row.mine .msg-col { align-items: flex-end; }
-.msg-edited-tag { font-size: 0.7rem; opacity: 0.65; margin-inline-start: 6px; }
-.msg-meta-row {
-  display: flex; align-items: center; gap: 8px; margin-top: 3px; flex-wrap: wrap;
-}
-.msg-row.mine .msg-meta-row { flex-direction: row-reverse; }
-.msg-reactions { display: flex; gap: 4px; flex-wrap: wrap; }
-.reaction-pill {
-  background: var(--color-pill-bg); color: var(--color-pill-text); border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill); font-size: 0.72rem; padding: 1px 8px; cursor: pointer; user-select: none;
-}
-.reaction-pill.mine { background: var(--color-primary-blue); color: #fff; border-color: var(--color-primary-blue); }
-.msg-actions { display: flex; gap: 2px; opacity: 0.55; }
-.msg-actions:hover { opacity: 1; }
-.msg-action-btn {
-  background: none; border: none; cursor: pointer; font-size: 0.78rem; padding: 2px 4px; line-height: 1; border-radius: 6px;
-}
-.msg-action-btn:hover { background: var(--color-pill-bg); }
-.msg-emoji-picker {
-  display: flex; gap: 4px; background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-pill);
-  padding: 4px 8px; margin-top: 4px; box-shadow: var(--shadow-card); width: fit-content;
-}
-.msg-emoji-picker.hidden { display: none; }
-.msg-emoji-opt { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 2px; }
-.msg-emoji-opt:hover { transform: scale(1.2); }
-.edit-input {
-  border: none; background: rgba(255,255,255,0.9); border-radius: 8px; padding: 4px 8px;
-  font-size: 0.9rem; font-family: inherit; color: var(--color-text-dark); min-width: 160px;
-}
-.edit-actions { display: flex; gap: 6px; margin-top: 6px; }
 .chat-input-row {
   display: flex; gap: 10px; padding: 14px; border-top: 1px solid var(--color-border);
 }

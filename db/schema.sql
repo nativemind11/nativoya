@@ -10,7 +10,10 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- for gen_random_uuid()
 -- USERS
 -- --------------------------------------------------------------------------
 CREATE TYPE user_role AS ENUM ('member', 'leader', 'head_leader');
-CREATE TYPE user_gender AS ENUM ('male', 'female');
+CREATE TYPE gender_type AS ENUM ('male', 'female');
+CREATE TYPE payout_method AS ENUM (
+  'instapay', 'vodafone_cash', 'etisalat_cash', 'syriatel_cash', 'sham_cash', 'paypal'
+);
 
 CREATE TABLE users (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -19,10 +22,9 @@ CREATE TABLE users (
   password_hash     TEXT NOT NULL,
   whatsapp_number   TEXT,
   country           TEXT,                 -- selected from a fixed dropdown list
-  gender            user_gender,          -- selected at signup (ذكر / أنثى)
-  payout_identifier TEXT,                 -- default account/number for task payouts (InstaPay, Vodafone Cash, PayPal email...)
-  reset_token_hash       TEXT,            -- sha256 of the raw "forgot password" token (never store the raw token)
-  reset_token_expires_at TIMESTAMPTZ,     -- reset link expires 1 hour after it's requested
+  gender            gender_type,
+  payout_method     payout_method,        -- how this person gets paid
+  payout_identifier TEXT,                 -- their phone number / PayPal email for that method
   role              user_role NOT NULL DEFAULT 'member',
   reputation_score  INTEGER NOT NULL DEFAULT 100,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -112,11 +114,12 @@ CREATE TABLE tasks (
   instructions    TEXT,
   video_urls      TEXT[] NOT NULL DEFAULT '{}',        -- one or more walkthrough videos
   audio_sample_urls TEXT[] NOT NULL DEFAULT '{}',       -- one or more example audio samples
-  price           NUMERIC(10,2),
+  price_member    NUMERIC(10,2),                         -- price for regular members
+  price_leader    NUMERIC(10,2),                          -- price for leaders doing the work themselves
   currency        TEXT NOT NULL DEFAULT 'USD',
   total_quantity  INTEGER NOT NULL,
-  male_quantity   INTEGER,                                -- optional split: how many units should come from males
-  female_quantity INTEGER,                                -- optional split: how many units should come from females
+  quantity_male   INTEGER NOT NULL DEFAULT 0,  -- target slots for male members
+  quantity_female INTEGER NOT NULL DEFAULT 0,  -- target slots for female members
   target_all      BOOLEAN NOT NULL DEFAULT true,          -- true = every group sees it
   created_by      UUID NOT NULL REFERENCES users(id),     -- head_leader
   drive_folder_id TEXT,                                   -- this task's Google Drive folder
@@ -163,9 +166,6 @@ CREATE TABLE submissions (
 -- --------------------------------------------------------------------------
 -- PAYMENTS — MANUAL payout (InstaPay / Vodafone Cash / etc.), no gateway
 -- --------------------------------------------------------------------------
-CREATE TYPE payout_method AS ENUM (
-  'instapay', 'vodafone_cash', 'etisalat_cash', 'syriatel_cash', 'sham_cash', 'paypal'
-);
 CREATE TYPE payment_status AS ENUM ('pending', 'transferred');
 
 CREATE TABLE payments (

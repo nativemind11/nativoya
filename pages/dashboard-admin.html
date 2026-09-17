@@ -44,25 +44,25 @@
         <form id="task-form" class="grid-2" style="align-items:end;">
           <div class="field"><label>نوع المهمة (المهارة)</label><select id="t-service" required></select></div>
           <div class="field"><label>اسم المهمة</label><input type="text" id="t-name" placeholder="مثال: توسيم بيانات محادثة" required></div>
-          <div class="field"><label>الكمية الإجمالية</label><input type="number" id="t-qty" placeholder="100" required></div>
+          <div class="field"><label>عدد الذكور المطلوب</label><input type="number" id="t-qty-male" placeholder="50" min="0"></div>
+          <div class="field"><label>عدد الإناث المطلوب</label><input type="number" id="t-qty-female" placeholder="50" min="0"></div>
           <div class="field">
-            <label>عدد الذكور المطلوب (اختياري)</label>
-            <input type="number" id="t-qty-male" placeholder="مثال: 60">
+            <label>سعر الوحدة للعضو العادي</label>
+            <input type="number" step="0.01" id="t-price-member" placeholder="5.00">
           </div>
           <div class="field">
-            <label>عدد الإناث المطلوب (اختياري)</label>
-            <input type="number" id="t-qty-female" placeholder="مثال: 40">
-          </div>
-          <div class="field">
-            <label>السعر لكل وحدة</label>
+            <label>سعر الوحدة للّيدر</label>
             <div class="flex gap-8">
-              <input type="number" step="0.01" id="t-price" placeholder="5.00" style="flex:2;">
+              <input type="number" step="0.01" id="t-price-leader" placeholder="7.00" style="flex:2;">
               <select id="t-currency" style="flex:1;">
                 <option value="USD">USD</option>
                 <option value="EGP">EGP</option>
               </select>
             </div>
           </div>
+          <p class="text-muted" style="grid-column:1/-1; font-size:0.8rem; margin:-8px 0 0;">
+            سعر العضو بينطبق على أي عضو عادي، سواء في جروب الهيد ليدر الأساسي أو جروب دخل عليه من رابط دعوة ليدر. سعر الليدر بينطبق لما الليدر نفسه يرفع شغل على جروبه.
+          </p>
           <div class="field"><label>روابط فيديو الشرح</label><textarea id="t-video" rows="2" placeholder="رابط في كل سطر&#10;https://youtube.com/...&#10;https://youtube.com/..."></textarea></div>
           <div class="field"><label>روابط السامبل الصوتي</label><textarea id="t-audio" rows="2" placeholder="رابط في كل سطر&#10;https://.../sample1.mp3&#10;https://.../sample2.mp3"></textarea></div>
           <div class="field" style="grid-column:1/-1;"><label>التعليمات</label><textarea id="t-instructions" placeholder="اشرح المطلوب بالتفصيل..."></textarea></div>
@@ -98,15 +98,14 @@
         <p id="manage-tasks-error" class="hint" style="color:#e0245e; display:none;"></p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>المهمة</th><th>النوع</th><th>السعر</th><th>اتاستلم / الإجمالي</th><th></th></tr></thead>
-            <tbody id="manage-tasks-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
+            <thead><tr><th>المهمة</th><th>النوع</th><th>سعر العضو</th><th>سعر الليدر</th><th>ذكور</th><th>إناث</th><th></th></tr></thead>
+            <tbody id="manage-tasks-body"><tr><td colspan="7" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="card hidden" id="task-claims-panel" style="margin-top:20px;">
         <h3 id="task-claims-title">مين اخد ايه</h3>
-        <div id="task-gender-breakdown" class="flex gap-8" style="margin-bottom:16px;"></div>
         <p class="text-muted" style="font-size:0.85rem;">الجروبات اللي استلمت من المهمة دي:</p>
         <div class="table-wrap">
           <table>
@@ -226,7 +225,7 @@
       const leaderSelect = document.getElementById("p-leader");
       const leaders = groupsCache.filter(g => g.leader_id);
       leaderSelect.innerHTML = leaders.length
-        ? leaders.map(g => `<option value="${g.leader_id}" data-payout="${g.leader_payout_identifier || ""}">${g.leader_name} — ${g.language} #${g.group_number}</option>`).join("")
+        ? leaders.map(g => `<option value="${g.leader_id}">${g.leader_name} — ${g.language} #${g.group_number}</option>`).join("")
         : `<option value="">مفيش ليدرز لسه</option>`;
 
       // group checkboxes for the "publish to specific groups" picker
@@ -252,12 +251,12 @@
       document.getElementById("manage-tasks-body").innerHTML = tasks.length
         ? tasks.map(t => `
             <tr>
-              <td>${t.title}${(t.male_quantity != null || t.female_quantity != null)
-                  ? `<div class="hint">🎯 مطلوب: ${t.male_quantity != null ? `${t.male_quantity} ذكر` : "—"} / ${t.female_quantity != null ? `${t.female_quantity} أنثى` : "—"}</div>`
-                  : ""}</td>
+              <td>${t.title}</td>
               <td>${t.skill_icon || ""} ${t.skill_name_ar || t.skill_slug}</td>
-              <td>${t.price ? `${Number(t.price).toLocaleString("ar-EG")} ${t.currency}` : "—"}</td>
-              <td>${t.claimed_quantity} / ${t.total_quantity}</td>
+              <td>${t.price_member ? `${Number(t.price_member).toLocaleString("ar-EG")} ${t.currency}` : "—"}</td>
+              <td>${t.price_leader ? `${Number(t.price_leader).toLocaleString("ar-EG")} ${t.currency}` : "—"}</td>
+              <td>👨 ${t.male_done} / ${t.quantity_male}</td>
+              <td>👩 ${t.female_done} / ${t.quantity_female}</td>
               <td>
                 <button class="btn btn-secondary" style="padding:6px 12px;" onclick='startEditTask(${JSON.stringify(t).replace(/'/g, "&apos;")})'>✏️ تعديل</button>
                 <button class="btn btn-secondary" style="padding:6px 12px;" onclick="showTaskClaims('${t.id}', '${String(t.title).replace(/'/g, "&apos;")}')">👥 مين اخد ايه</button>
@@ -265,7 +264,7 @@
                 <button class="btn btn-secondary" style="padding:6px 12px; color:#e0245e;" onclick="deleteTask('${t.id}', this)">🗑️ حذف</button>
               </td>
             </tr>`).join("")
-        : `<tr><td colspan="5" class="text-muted">لسه مفيش مهام منشورة</td></tr>`;
+        : `<tr><td colspan="7" class="text-muted">لسه مفيش مهام منشورة</td></tr>`;
     } catch (err) {
       document.getElementById("manage-tasks-error").textContent = err.message;
       document.getElementById("manage-tasks-error").style.display = "block";
@@ -276,20 +275,12 @@
     const panel = document.getElementById("task-claims-panel");
     panel.classList.remove("hidden");
     document.getElementById("task-claims-title").textContent = `مين اخد ايه من: ${taskTitle}`;
-    document.getElementById("task-gender-breakdown").innerHTML = "";
     document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
     document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
     panel.scrollIntoView({ behavior: "smooth" });
 
     try {
-      const { claims, submissions, genderBreakdown } = await NM.apiGetTaskClaims(taskId);
-      if (genderBreakdown) {
-        document.getElementById("task-gender-breakdown").innerHTML = `
-          <span class="pill">👨 ذكور سلّموا شغل: ${genderBreakdown.male}</span>
-          <span class="pill">👩 إناث سلّموا شغل: ${genderBreakdown.female}</span>
-          ${genderBreakdown.unspecified ? `<span class="pill">❔ بدون نوع محدد: ${genderBreakdown.unspecified}</span>` : ""}
-        `;
-      }
+      const { claims, submissions } = await NM.apiGetTaskClaims(taskId);
       document.getElementById("task-claims-body").innerHTML = claims.length
         ? claims.map(c => `
             <tr>
@@ -318,10 +309,10 @@
     editingTaskId = t.id;
     document.getElementById("t-service").value = t.skill_slug;
     document.getElementById("t-name").value = t.title;
-    document.getElementById("t-qty").value = t.total_quantity;
-    document.getElementById("t-qty-male").value = t.male_quantity != null ? t.male_quantity : "";
-    document.getElementById("t-qty-female").value = t.female_quantity != null ? t.female_quantity : "";
-    document.getElementById("t-price").value = t.price || "";
+    document.getElementById("t-qty-male").value = t.quantity_male || 0;
+    document.getElementById("t-qty-female").value = t.quantity_female || 0;
+    document.getElementById("t-price-member").value = t.price_member || "";
+    document.getElementById("t-price-leader").value = t.price_leader || "";
     document.getElementById("t-currency").value = t.currency || "USD";
     document.getElementById("t-video").value = (t.video_urls || []).join("\n");
     document.getElementById("t-audio").value = (t.audio_sample_urls || []).join("\n");
@@ -356,14 +347,6 @@
       const specific = document.querySelector('input[name="t-target"]:checked').value === "specific";
       document.getElementById("t-groups-field").classList.toggle("hidden", !specific);
     });
-  });
-
-  // pre-fill the payout identifier with what the leader saved at signup —
-  // still fully editable in case this payout is going somewhere else.
-  document.getElementById("p-leader").addEventListener("change", (e) => {
-    const opt = e.target.selectedOptions[0];
-    const payout = opt ? opt.getAttribute("data-payout") : "";
-    if (payout) document.getElementById("p-identifier").value = payout;
   });
 
   async function loadPayments() {
@@ -423,10 +406,10 @@
         skillSlug: document.getElementById("t-service").value,
         title: document.getElementById("t-name").value,
         instructions: document.getElementById("t-instructions").value,
-        totalQuantity: Number(document.getElementById("t-qty").value),
-        maleQuantity: document.getElementById("t-qty-male").value ? Number(document.getElementById("t-qty-male").value) : null,
-        femaleQuantity: document.getElementById("t-qty-female").value ? Number(document.getElementById("t-qty-female").value) : null,
-        price: document.getElementById("t-price").value ? Number(document.getElementById("t-price").value) : null,
+        quantityMale: Number(document.getElementById("t-qty-male").value) || 0,
+        quantityFemale: Number(document.getElementById("t-qty-female").value) || 0,
+        price_member: document.getElementById("t-price-member").value ? Number(document.getElementById("t-price-member").value) : null,
+        price_leader: document.getElementById("t-price-leader").value ? Number(document.getElementById("t-price-leader").value) : null,
         currency: document.getElementById("t-currency").value,
         videoUrls: document.getElementById("t-video").value.split("\n").map(s => s.trim()).filter(Boolean),
         audioSampleUrls: document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean),
