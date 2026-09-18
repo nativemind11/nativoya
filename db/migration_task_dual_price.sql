@@ -13,15 +13,25 @@
 --     the extra review/coordination work).
 -- The head_leader always sets/sees both. Everyone else is shown only the
 -- one that matches their own account role.
-ALTER TABLE tasks ADD COLUMN member_price NUMERIC(10,2);
-ALTER TABLE tasks ADD COLUMN leader_price NUMERIC(10,2);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS member_price NUMERIC(10,2);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS leader_price NUMERIC(10,2);
 
--- Backfill: every task published before this migration only had one price —
--- apply it to both columns so nothing regresses for existing tasks.
-UPDATE tasks SET member_price = price, leader_price = price WHERE price IS NOT NULL;
+-- Backfill: on a database that already had an old single `price` column,
+-- carry it into both new columns so existing tasks don't regress. Guarded
+-- with a column-existence check so this stays safe to run even on a database
+-- that never had a `price` column at all.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'tasks' AND column_name = 'price'
+  ) THEN
+    UPDATE tasks SET member_price = price, leader_price = price WHERE price IS NOT NULL;
+  END IF;
+END $$;
 
--- The old single `price` column is left in place (harmless — nothing reads
--- or writes it anymore after this migration) so this stays a safe, reversible
--- change. Drop it later in a follow-up migration once you've confirmed
--- everything looks right:
+-- If an old `price` column exists, it's left in place (harmless — nothing
+-- reads or writes it anymore after this migration) so this stays a safe,
+-- reversible change. Drop it later in a follow-up migration once you've
+-- confirmed everything looks right:
 --   ALTER TABLE tasks DROP COLUMN price;
