@@ -109,7 +109,8 @@ const NM = (() => {
       // shared across all dashboards
       loading_text: "جاري التحميل...", col_task: "المهمة", col_type: "النوع", col_status: "الحالة",
       btn_details: "التفاصيل", btn_submit_work: "📎 تسليم عمل",
-      status_in_review: "بانتظار المراجعة", status_completed: "✅ اتقبلت",
+      status_in_review: "بانتظار المراجعة", status_completed: "✅ اتقبلت", status_rejected: "❌ اترفضت",
+      dm_rejection_reason_label: "سبب الرفض",
 
       dm_role: "عضو",
       nav_home: "🏠 الرئيسية", nav_my_group: "💬 جروبي", nav_tasks: "📋 المهام",
@@ -223,7 +224,8 @@ const NM = (() => {
       // shared across all dashboards
       loading_text: "Loading...", col_task: "Task", col_type: "Type", col_status: "Status",
       btn_details: "Details", btn_submit_work: "📎 Submit work",
-      status_in_review: "Awaiting review", status_completed: "✅ Accepted",
+      status_in_review: "Awaiting review", status_completed: "✅ Accepted", status_rejected: "❌ Rejected",
+      dm_rejection_reason_label: "Rejection reason",
 
       dm_role: "Member",
       nav_home: "🏠 Home", nav_my_group: "💬 My Group", nav_tasks: "📋 Tasks",
@@ -427,10 +429,10 @@ const NM = (() => {
   }
   function apiGetAllTasks() { return apiFetch("/api/tasks/manage"); }
   function apiGetTaskClaims(taskId) { return apiFetch(`/api/tasks/${taskId}/claims`); }
-  function apiReviewSubmission(submissionId, approve) {
+  function apiReviewSubmission(submissionId, approve, reason) {
     return apiFetch(`/api/tasks/submissions/${submissionId}/review`, {
       method: "POST",
-      body: JSON.stringify({ approve }),
+      body: JSON.stringify({ approve, reason }),
     });
   }
   function apiMySubmissions() { return apiFetch("/api/tasks/my-submissions"); }

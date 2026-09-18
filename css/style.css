@@ -245,6 +245,7 @@ textarea { resize: vertical; min-height: 100px; }
 }
 .badge-success { background: #E1F6EA; color: var(--color-success); }
 .badge-pending { background: #FDF3DC; color: #B8860B; }
+.badge-danger { background: #FCE4E4; color: #C0392B; }
 
 /* ==========================================================================
    Hero

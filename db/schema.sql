@@ -103,7 +103,7 @@ CREATE TABLE user_skills (
 -- groups only) — each task carries a walkthrough video, an audio sample,
 -- and a price so a member can decide before taking it.
 -- --------------------------------------------------------------------------
-CREATE TYPE task_status AS ENUM ('open', 'claimed', 'in_review', 'completed');
+CREATE TYPE task_status AS ENUM ('open', 'claimed', 'in_review', 'completed', 'rejected');
 
 CREATE TABLE tasks (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -156,6 +156,7 @@ CREATE TABLE submissions (
   submitted_by  UUID NOT NULL REFERENCES users(id), -- member
   file_url      TEXT,                                -- Google Drive file link
   status        task_status NOT NULL DEFAULT 'in_review',
+  rejection_reason TEXT,                              -- shown to the member when a leader/head_leader rejects their submission
   reviewed_by   UUID REFERENCES users(id),           -- leader who approved
   reviewed_at   TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()

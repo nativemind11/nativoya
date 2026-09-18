@@ -172,7 +172,7 @@
       : `<tr><td colspan="3" class="text-muted">${NM.t("dm_no_claims")}</td></tr>`;
   }
 
-  const STATUS_KEYS = { in_review: "status_in_review", completed: "status_completed" };
+  const STATUS_KEYS = { in_review: "status_in_review", completed: "status_completed", rejected: "status_rejected" };
 
   async function loadMySubmissions() {
     try {
@@ -187,7 +187,13 @@
       submissions.filter(s => s.status === "completed").length;
     document.getElementById("submissions-body").innerHTML = submissions.length
       ? submissions.map(s => `
-          <tr><td>${s.task_title}</td><td><span class="pill ${s.status === "completed" ? "badge-success" : "badge-pending"}">${NM.t(STATUS_KEYS[s.status]) || s.status}</span></td></tr>
+          <tr>
+            <td>${s.task_title}</td>
+            <td>
+              <span class="pill ${s.status === "completed" ? "badge-success" : s.status === "rejected" ? "badge-danger" : "badge-pending"}">${NM.t(STATUS_KEYS[s.status]) || s.status}</span>
+              ${s.status === "rejected" && s.rejection_reason ? `<div class="text-muted" style="font-size:0.8rem; margin-top:4px;">${NM.t("dm_rejection_reason_label")}: ${s.rejection_reason}</div>` : ""}
+            </td>
+          </tr>
         `).join("")
       : `<tr><td colspan="2" class="text-muted">${NM.t("dm_no_submissions")}</td></tr>`;
   }

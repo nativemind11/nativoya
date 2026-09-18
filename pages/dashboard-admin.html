@@ -123,7 +123,7 @@
         <p class="text-muted" style="font-size:0.85rem; margin-top:20px;">كل التسليمات الفردية على المهمة دي:</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>العضو</th><th>الجروب</th><th>الملف</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>العضو</th><th>الجروب</th><th>الملف</th><th>الحالة</th><th></th></tr></thead>
             <tbody id="task-submissions-body"></tbody>
           </table>
         </div>
@@ -289,7 +289,7 @@
     document.getElementById("task-claims-title").textContent = `مين اخد ايه من: ${taskTitle}`;
     document.getElementById("task-gender-breakdown").innerHTML = "";
     document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
-    document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr>`;
     panel.scrollIntoView({ behavior: "smooth" });
 
     try {
@@ -317,11 +317,39 @@
               <td>${s.member_name}</td>
               <td>${s.language} #${s.group_number}</td>
               <td>${s.file_url ? `<a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a>` : "—"}</td>
-              <td><span class="pill">${s.status === "completed" ? "✅ مقبول" : "بانتظار المراجعة"}</span></td>
+              <td>
+                <span class="pill ${s.status === "completed" ? "badge-success" : s.status === "rejected" ? "badge-danger" : "badge-pending"}">
+                  ${s.status === "completed" ? "✅ مقبول" : s.status === "rejected" ? "❌ مرفوض" : "بانتظار المراجعة"}
+                </span>
+                ${s.status === "rejected" && s.rejection_reason ? `<div class="text-muted" style="font-size:0.8rem; margin-top:4px;">سبب الرفض: ${s.rejection_reason}</div>` : ""}
+              </td>
+              <td>
+                ${s.status === "in_review" ? `
+                  <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmissionAdmin('${s.id}', true, this, '${taskId}')">✅ موافقة</button>
+                  <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmissionAdmin('${s.id}', false, this, '${taskId}')">❌ رفض</button>
+                ` : ""}
+              </td>
             </tr>`).join("")
-        : `<tr><td colspan="4" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
+        : `<tr><td colspan="5" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
     } catch (err) {
       document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">${err.message}</td></tr>`;
+    }
+  }
+
+  async function reviewSubmissionAdmin(submissionId, approve, btn, taskId) {
+    let reason = null;
+    if (!approve) {
+      reason = prompt("سبب الرفض؟ (هيظهر للعضو اللي رفع الشغل)");
+      if (reason === null) return; // cancelled
+      if (!reason.trim()) { alert("لازم تكتب سبب عشان تقدر ترفض."); return; }
+    }
+    btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = true);
+    try {
+      await NM.apiReviewSubmission(submissionId, approve, reason);
+      await showTaskClaims(taskId, document.getElementById("task-claims-title").textContent.replace("مين اخد ايه من: ", ""));
+    } catch (err) {
+      alert(err.message);
+      btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = false);
     }
   }
 

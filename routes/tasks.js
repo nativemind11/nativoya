@@ -96,7 +96,7 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
     `, [req.params.id]);
 
     const submissions = await pool.query(`
-      SELECT s.id, s.status, s.file_url, s.created_at,
+      SELECT s.id, s.status, s.file_url, s.rejection_reason, s.created_at,
              u.first_name AS member_name, u.gender AS member_gender, g.language, g.group_number
       FROM submissions s
       JOIN task_claims tc ON tc.id = s.task_claim_id
@@ -385,7 +385,7 @@ router.get("/review-queue", requireAuth, requireRole("leader"), async (req, res)
 router.get("/my-submissions", requireAuth, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT s.id, s.file_url, s.status, s.created_at, t.title AS task_title
+      SELECT s.id, s.file_url, s.status, s.rejection_reason, s.created_at, t.title AS task_title
       FROM submissions s
       JOIN task_claims tc ON tc.id = s.task_claim_id
       JOIN tasks t ON t.id = tc.task_id
@@ -570,14 +570,17 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
   }
 });
 
-// POST /api/tasks/submissions/:id/review  (leader approves/rejects)
-router.post("/submissions/:id/review", requireAuth, requireRole("leader"), async (req, res) => {
+// POST /api/tasks/submissions/:id/review  (leader OR head_leader approves/rejects)
+router.post("/submissions/:id/review", requireAuth, requireRole("leader", "head_leader"), async (req, res) => {
   try {
-    const { approve } = req.body;
+    const { approve, reason } = req.body;
+    if (!approve && !String(reason || "").trim()) {
+      return res.status(400).json({ error: "لازم تكتب سبب الرفض عشان يظهر للعضو." });
+    }
     const result = await pool.query(
-      `UPDATE submissions SET status = $1, reviewed_by = $2, reviewed_at = now()
-       WHERE id = $3 RETURNING *`,
-      [approve ? "completed" : "in_review", req.user.id, req.params.id]
+      `UPDATE submissions SET status = $1, rejection_reason = $2, reviewed_by = $3, reviewed_at = now()
+       WHERE id = $4 RETURNING *`,
+      [approve ? "completed" : "rejected", approve ? null : reason.trim(), req.user.id, req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Submission not found" });
     res.json(result.rows[0]);
