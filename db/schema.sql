@@ -112,7 +112,8 @@ CREATE TABLE tasks (
   instructions    TEXT,
   video_urls      TEXT[] NOT NULL DEFAULT '{}',        -- one or more walkthrough videos
   audio_sample_urls TEXT[] NOT NULL DEFAULT '{}',       -- one or more example audio samples
-  price           NUMERIC(10,2),
+  member_price    NUMERIC(10,2),                          -- per-unit price for regular members (base groups AND leader-invite groups alike)
+  leader_price    NUMERIC(10,2),                          -- per-unit price for leaders — usually higher; head_leader sets/sees both
   currency        TEXT NOT NULL DEFAULT 'USD',
   total_quantity  INTEGER NOT NULL,
   male_quantity   INTEGER,                                -- optional split: how many units should come from males

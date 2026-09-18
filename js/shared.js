@@ -94,6 +94,7 @@ const NM = (() => {
       task_instructions_title: "📋 التعليمات",
       task_no_instructions: "لا توجد تعليمات إضافية.",
       task_price_label: "السعر", task_price_unset: "غير محدد",
+      task_member_price_label: "سعر الميمبر", task_leader_price_label: "سعر الليدر",
       task_remaining_label: "المتبقي على المنصة",
       task_submit_title: "📎 تسليم شغلك على المهمة دي",
       task_submit_hint_default: "لو جروبك استلم كمية من المهمة دي، هتقدر ترفع شغلك من هنا.",
@@ -207,6 +208,7 @@ const NM = (() => {
       task_instructions_title: "📋 Instructions",
       task_no_instructions: "No extra instructions.",
       task_price_label: "Price", task_price_unset: "Not set",
+      task_member_price_label: "Member price", task_leader_price_label: "Leader price",
       task_remaining_label: "Remaining on the platform",
       task_submit_title: "📎 Submit your work on this task",
       task_submit_hint_default: "If your group has claimed some of this task, you'll be able to upload your work here.",
@@ -396,10 +398,10 @@ const NM = (() => {
   // ---- tasks ----
   function apiGetOpenTasks() { return apiFetch("/api/tasks/open"); }
   function apiGetTask(id) { return apiFetch(`/api/tasks/${id}`); }
-  function apiCreateTask({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls, targetAll, groupIds }) {
+  function apiCreateTask({ skillSlug, title, instructions, totalQuantity, memberPrice, leaderPrice, currency, videoUrls, audioSampleUrls, targetAll, groupIds }) {
     return apiFetch("/api/tasks", {
       method: "POST",
-      body: JSON.stringify({ skillSlug, title, instructions, totalQuantity, price, currency, videoUrls, audioSampleUrls, targetAll, groupIds }),
+      body: JSON.stringify({ skillSlug, title, instructions, totalQuantity, memberPrice, leaderPrice, currency, videoUrls, audioSampleUrls, targetAll, groupIds }),
     });
   }
   function apiClaimTask(taskId, quantity, groupId) {

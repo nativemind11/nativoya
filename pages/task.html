@@ -93,6 +93,21 @@
     }
   }
 
+  // Which price to show depends on the viewer's OWN account role — a member
+  // (whether in a base group or a leader's invite-link group) always sees
+  // member_price, a leader always sees leader_price. The head_leader set
+  // both when publishing the task, so they see both at a glance here.
+  function myPriceLabel(task, isEn) {
+    const fmt = (v) => `${Number(v).toLocaleString(isEn ? "en-US" : "ar-EG")} ${task.currency || "USD"}`;
+    if (user.role === "head_leader") {
+      const memberPart = task.member_price ? `${NM.t("task_member_price_label")}: ${fmt(task.member_price)}` : null;
+      const leaderPart = task.leader_price ? `${NM.t("task_leader_price_label")}: ${fmt(task.leader_price)}` : null;
+      return [memberPart, leaderPart].filter(Boolean).join(" · ") || NM.t("task_price_unset");
+    }
+    const mine = user.role === "leader" ? task.leader_price : task.member_price;
+    return mine ? fmt(mine) : NM.t("task_price_unset");
+  }
+
   function renderTask() {
     const task = currentTask;
     const isEn = NM.getLang() === "en";
@@ -102,9 +117,7 @@
     document.getElementById("task-title").textContent = task.title;
     document.getElementById("task-instructions").textContent = task.instructions || NM.t("task_no_instructions");
     document.getElementById("task-remaining").textContent = task.remaining ?? "—";
-    document.getElementById("task-price").textContent = task.price
-      ? `${Number(task.price).toLocaleString(isEn ? "en-US" : "ar-EG")} ${task.currency || "USD"}`
-      : NM.t("task_price_unset");
+    document.getElementById("task-price").textContent = myPriceLabel(task, isEn);
 
     // video(s): just a clean "open video" link — embedding iframes has
     // been unreliable across browsers/networks, so we link out instead

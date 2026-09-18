@@ -54,14 +54,20 @@
             <input type="number" id="t-qty-female" placeholder="مثال: 40">
           </div>
           <div class="field">
-            <label>السعر لكل وحدة</label>
+            <label>سعر الميمبر لكل وحدة</label>
             <div class="flex gap-8">
-              <input type="number" step="0.01" id="t-price" placeholder="5.00" style="flex:2;">
+              <input type="number" step="0.01" id="t-price-member" placeholder="5.00" style="flex:2;">
               <select id="t-currency" style="flex:1;">
                 <option value="USD">USD</option>
                 <option value="EGP">EGP</option>
               </select>
             </div>
+            <p class="hint">للعضو العادي، سواء في جروب أساسي أو جروب ليدر داخل من لينك.</p>
+          </div>
+          <div class="field">
+            <label>سعر الليدر لكل وحدة</label>
+            <input type="number" step="0.01" id="t-price-leader" placeholder="7.00">
+            <p class="hint">نفس العملة المختارة فوق. كل واحد بيشوف السعر بتاعه بس حسب حسابه.</p>
           </div>
           <div class="field"><label>روابط فيديو الشرح</label><textarea id="t-video" rows="2" placeholder="رابط في كل سطر&#10;https://youtube.com/...&#10;https://youtube.com/..."></textarea></div>
           <div class="field"><label>روابط السامبل الصوتي</label><textarea id="t-audio" rows="2" placeholder="رابط في كل سطر&#10;https://.../sample1.mp3&#10;https://.../sample2.mp3"></textarea></div>
@@ -256,7 +262,12 @@
                   ? `<div class="hint">🎯 مطلوب: ${t.male_quantity != null ? `${t.male_quantity} ذكر` : "—"} / ${t.female_quantity != null ? `${t.female_quantity} أنثى` : "—"}</div>`
                   : ""}</td>
               <td>${t.skill_icon || ""} ${t.skill_name_ar || t.skill_slug}</td>
-              <td>${t.price ? `${Number(t.price).toLocaleString("ar-EG")} ${t.currency}` : "—"}</td>
+              <td>
+                ${t.member_price ? `👤 ${Number(t.member_price).toLocaleString("ar-EG")}` : "👤 —"}
+                <br>
+                ${t.leader_price ? `⭐ ${Number(t.leader_price).toLocaleString("ar-EG")}` : "⭐ —"}
+                ${t.member_price || t.leader_price ? ` ${t.currency}` : ""}
+              </td>
               <td>${t.claimed_quantity} / ${t.total_quantity}</td>
               <td>
                 <button class="btn btn-secondary" style="padding:6px 12px;" onclick='startEditTask(${JSON.stringify(t).replace(/'/g, "&apos;")})'>✏️ تعديل</button>
@@ -321,7 +332,8 @@
     document.getElementById("t-qty").value = t.total_quantity;
     document.getElementById("t-qty-male").value = t.male_quantity != null ? t.male_quantity : "";
     document.getElementById("t-qty-female").value = t.female_quantity != null ? t.female_quantity : "";
-    document.getElementById("t-price").value = t.price || "";
+    document.getElementById("t-price-member").value = t.member_price || "";
+    document.getElementById("t-price-leader").value = t.leader_price || "";
     document.getElementById("t-currency").value = t.currency || "USD";
     document.getElementById("t-video").value = (t.video_urls || []).join("\n");
     document.getElementById("t-audio").value = (t.audio_sample_urls || []).join("\n");
@@ -426,7 +438,8 @@
         totalQuantity: Number(document.getElementById("t-qty").value),
         maleQuantity: document.getElementById("t-qty-male").value ? Number(document.getElementById("t-qty-male").value) : null,
         femaleQuantity: document.getElementById("t-qty-female").value ? Number(document.getElementById("t-qty-female").value) : null,
-        price: document.getElementById("t-price").value ? Number(document.getElementById("t-price").value) : null,
+        memberPrice: document.getElementById("t-price-member").value ? Number(document.getElementById("t-price-member").value) : null,
+        leaderPrice: document.getElementById("t-price-leader").value ? Number(document.getElementById("t-price-leader").value) : null,
         currency: document.getElementById("t-currency").value,
         videoUrls: document.getElementById("t-video").value.split("\n").map(s => s.trim()).filter(Boolean),
         audioSampleUrls: document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean),

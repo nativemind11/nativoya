@@ -20,7 +20,7 @@ function cleanUrlList(list) {
 router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   const {
     skillSlug, title, instructions, totalQuantity,
-    price, currency, videoUrls, audioSampleUrls,
+    memberPrice, leaderPrice, currency, videoUrls, audioSampleUrls,
     targetAll, groupIds, maleQuantity, femaleQuantity,
   } = req.body;
 
@@ -34,12 +34,12 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
     await client.query("BEGIN");
     const result = await client.query(
       `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, male_quantity, female_quantity,
-                           price, currency, video_urls, audio_sample_urls, target_all, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'USD'), $9, $10, $11, $12) RETURNING *`,
+                           member_price, leader_price, currency, video_urls, audio_sample_urls, target_all, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'USD'), $10, $11, $12, $13) RETURNING *`,
       [skillSlug, title, instructions, totalQuantity,
        maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
        femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
-       price || null, currency,
+       memberPrice || null, leaderPrice || null, currency,
        cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), isTargetAll, req.user.id]
     );
     const task = result.rows[0];
@@ -152,7 +152,7 @@ router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) 
 router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
     const {
-      title, instructions, totalQuantity, price, currency,
+      title, instructions, totalQuantity, memberPrice, leaderPrice, currency,
       videoUrls, audioSampleUrls, maleQuantity, femaleQuantity,
     } = req.body;
 
@@ -166,11 +166,11 @@ router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => 
 
     const result = await pool.query(
       `UPDATE tasks SET
-         title = $1, instructions = $2, total_quantity = $3, price = $4,
-         currency = $5, video_urls = $6, audio_sample_urls = $7,
-         male_quantity = $8, female_quantity = $9
-       WHERE id = $10 RETURNING *`,
-      [title, instructions, totalQuantity, price || null, currency,
+         title = $1, instructions = $2, total_quantity = $3, member_price = $4, leader_price = $5,
+         currency = $6, video_urls = $7, audio_sample_urls = $8,
+         male_quantity = $9, female_quantity = $10
+       WHERE id = $11 RETURNING *`,
+      [title, instructions, totalQuantity, memberPrice || null, leaderPrice || null, currency,
        cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls),
        maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
        femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
@@ -327,7 +327,7 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
     const result = await pool.query(`
       SELECT tc.id AS claim_id, tc.quantity, tc.group_id,
              t.id AS task_id, t.title, t.instructions, t.video_urls, t.audio_sample_urls,
-             t.price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
+             t.member_price, t.leader_price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
              g.leader_id, g.group_number, lu.first_name AS leader_name,
              tc.quantity - COALESCE(sc.submitted_count, 0) AS remaining_in_claim
       FROM task_claims tc
