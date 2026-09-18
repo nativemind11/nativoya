@@ -32,6 +32,7 @@
     <div class="card" style="margin-top:16px;">
       <h3 data-i18n="task_instructions_title">📋 التعليمات</h3>
       <p id="task-instructions" class="mb-0" style="white-space:pre-wrap;">—</p>
+      <p id="task-instructions-file" class="mb-0 hidden" style="margin-top:10px;"></p>
     </div>
 
     <div class="grid-2" style="margin-top:16px; align-items:stretch;">
@@ -116,6 +117,13 @@
     document.getElementById("task-skill-pill").textContent = `${task.skill_icon || "🧩"} ${skillName}`;
     document.getElementById("task-title").textContent = task.title;
     document.getElementById("task-instructions").textContent = task.instructions || NM.t("task_no_instructions");
+    const fileBox = document.getElementById("task-instructions-file");
+    if (task.instructions_file_url) {
+      fileBox.innerHTML = `<a href="${task.instructions_file_url}" target="_blank" rel="noopener">📎 ${NM.t("task_instructions_file_label")}${task.instructions_file_name ? ` (${task.instructions_file_name})` : ""}</a>`;
+      fileBox.classList.remove("hidden");
+    } else {
+      fileBox.classList.add("hidden");
+    }
     document.getElementById("task-remaining").textContent = task.remaining ?? "—";
     document.getElementById("task-price").textContent = myPriceLabel(task, isEn);
 

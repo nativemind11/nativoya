@@ -121,6 +121,8 @@ CREATE TABLE tasks (
   target_all      BOOLEAN NOT NULL DEFAULT true,          -- true = every group sees it
   created_by      UUID NOT NULL REFERENCES users(id),     -- head_leader
   drive_folder_id TEXT,                                   -- this task's Google Drive folder
+  instructions_file_url  TEXT,                            -- link to an uploaded PDF/TXT instructions file
+  instructions_file_name TEXT,                            -- its original filename, shown to members/leaders
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

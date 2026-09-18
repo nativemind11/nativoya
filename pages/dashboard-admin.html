@@ -72,6 +72,11 @@
           <div class="field"><label>روابط فيديو الشرح</label><textarea id="t-video" rows="2" placeholder="رابط في كل سطر&#10;https://youtube.com/...&#10;https://youtube.com/..."></textarea></div>
           <div class="field"><label>روابط السامبل الصوتي</label><textarea id="t-audio" rows="2" placeholder="رابط في كل سطر&#10;https://.../sample1.mp3&#10;https://.../sample2.mp3"></textarea></div>
           <div class="field" style="grid-column:1/-1;"><label>التعليمات</label><textarea id="t-instructions" placeholder="اشرح المطلوب بالتفصيل..."></textarea></div>
+          <div class="field" style="grid-column:1/-1;">
+            <label>ملف تعليمات (PDF أو TXT) — اختياري</label>
+            <input type="file" id="t-instructions-file" accept=".pdf,.txt,application/pdf,text/plain">
+            <p class="hint" id="t-instructions-file-current"></p>
+          </div>
 
           <div class="field" style="grid-column:1/-1;">
             <label>هتنزل المهمة لـ:</label>
@@ -366,6 +371,9 @@
     document.getElementById("t-video").value = (t.video_urls || []).join("\n");
     document.getElementById("t-audio").value = (t.audio_sample_urls || []).join("\n");
     document.getElementById("t-instructions").value = t.instructions || "";
+    document.getElementById("t-instructions-file-current").textContent = t.instructions_file_name
+      ? `📎 الملف الحالي: ${t.instructions_file_name} — اختار ملف جديد تحت لو عايز تستبدله`
+      : "";
     document.getElementById("task-submit").textContent = "حفظ التعديلات";
     document.getElementById("task-cancel-edit").classList.remove("hidden");
     document.getElementById("tasks").scrollIntoView({ behavior: "smooth" });
@@ -374,6 +382,7 @@
   document.getElementById("task-cancel-edit").addEventListener("click", () => {
     editingTaskId = null;
     document.getElementById("task-form").reset();
+    document.getElementById("t-instructions-file-current").textContent = "";
     document.getElementById("task-submit").textContent = "نشر المهمة";
     document.getElementById("task-cancel-edit").classList.add("hidden");
     document.getElementById("t-groups-field").classList.add("hidden");
@@ -473,18 +482,34 @@
         audioSampleUrls: document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean),
       };
 
+      let taskId = editingTaskId;
       if (editingTaskId) {
         await NM.apiUpdateTask(editingTaskId, payload);
+      } else {
+        const created = await NM.apiCreateTask({ ...payload, targetAll, groupIds });
+        taskId = created.id;
+      }
+
+      const fileInput = document.getElementById("t-instructions-file");
+      if (fileInput.files[0]) {
+        try {
+          await NM.apiUploadTaskInstructionsFile(taskId, fileInput.files[0]);
+        } catch (fileErr) {
+          alert("✅ اتحفظت المهمة، لكن رفع ملف التعليمات فشل: " + fileErr.message);
+        }
+      }
+
+      if (editingTaskId) {
         alert("✅ اتحفظت التعديلات!");
         editingTaskId = null;
         document.getElementById("task-cancel-edit").classList.add("hidden");
       } else {
-        await NM.apiCreateTask({ ...payload, targetAll, groupIds });
         alert(targetAll
           ? "✅ اتنشرت المهمة لكل الجروبات!"
           : `✅ اتنشرت المهمة لـ ${groupIds.length} جروب محدد!`);
       }
       e.target.reset();
+      document.getElementById("t-instructions-file-current").textContent = "";
       document.getElementById("t-groups-field").classList.add("hidden");
       document.getElementById("task-submit").textContent = "نشر المهمة";
       await loadManageTasks();

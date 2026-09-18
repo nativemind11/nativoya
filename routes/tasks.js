@@ -75,6 +75,41 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   }
 });
 
+// POST /api/tasks/:id/instructions-file  (head_leader only) — attach or
+// replace the task's uploaded PDF/TXT instructions file. Kept as its own
+// endpoint (multipart) so the main create/update routes above can stay
+// plain JSON.
+router.post("/:id/instructions-file", requireAuth, requireRole("head_leader"), upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "مفيش ملف اتبعت." });
+
+    const taskResult = await pool.query("SELECT id, title, drive_folder_id FROM tasks WHERE id = $1", [req.params.id]);
+    const task = taskResult.rows[0];
+    if (!task) return res.status(404).json({ error: "Task not found" });
+
+    let folderId = task.drive_folder_id;
+    if (!folderId) {
+      // The task's own folder is normally created at publish time — this is
+      // just a fallback for a task published before Drive was connected.
+      folderId = await driveService.createTaskFolder(task.title, task.id);
+      await pool.query("UPDATE tasks SET drive_folder_id = $1 WHERE id = $2", [folderId, task.id]);
+    }
+
+    const uploaded = await driveService.uploadSubmissionFile(
+      folderId, req.file.originalname, req.file.mimetype, req.file.buffer
+    );
+
+    const result = await pool.query(
+      `UPDATE tasks SET instructions_file_url = $1, instructions_file_name = $2 WHERE id = $3 RETURNING *`,
+      [uploaded.webViewLink, req.file.originalname, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("[tasks:instructions-file]", err);
+    res.status(503).json({ error: "تعذّر رفع الملف — تأكد إن جوجل درايف متصل." });
+  }
+});
+
 // GET /api/tasks/:id/claims  (head_leader only) — full breakdown of who has
 // claimed how much of this task (which group/leader) and every individual
 // submission made against it (which member, from which group). Also returns

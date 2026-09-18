@@ -93,6 +93,7 @@ const NM = (() => {
       task_audio_title: "🔊 سامبل صوتي",
       task_instructions_title: "📋 التعليمات",
       task_no_instructions: "لا توجد تعليمات إضافية.",
+      task_instructions_file_label: "الملف",
       task_price_label: "السعر", task_price_unset: "غير محدد",
       task_member_price_label: "سعر الميمبر", task_leader_price_label: "سعر الليدر",
       task_remaining_label: "المتبقي على المنصة",
@@ -208,6 +209,7 @@ const NM = (() => {
       task_audio_title: "🔊 Audio sample",
       task_instructions_title: "📋 Instructions",
       task_no_instructions: "No extra instructions.",
+      task_instructions_file_label: "File",
       task_price_label: "Price", task_price_unset: "Not set",
       task_member_price_label: "Member price", task_leader_price_label: "Leader price",
       task_remaining_label: "Remaining on the platform",
@@ -423,6 +425,26 @@ const NM = (() => {
   function apiReviewQueue(groupId) { return apiFetch(`/api/tasks/review-queue${groupId ? `?groupId=${groupId}` : ""}`); }
   function apiUpdateTask(taskId, payload) {
     return apiFetch(`/api/tasks/${taskId}`, { method: "PUT", body: JSON.stringify(payload) });
+  }
+  async function apiUploadTaskInstructionsFile(taskId, file) {
+    const token = authToken();
+    const formData = new FormData();
+    formData.append("file", file);
+    let res;
+    try {
+      res = await fetch(`${API_BASE_URL}/api/tasks/${taskId}/instructions-file`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+    } catch (err) {
+      console.error("[Nativoya] Network/CORS error uploading instructions file", err);
+      throw new Error("تعذر رفع الملف. تأكد من اتصالك بالإنترنت وحاول تاني.");
+    }
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* empty body */ }
+    if (!res.ok) throw new Error(friendlyErrorMessage(data && data.error));
+    return data;
   }
   function apiDeleteTask(taskId) {
     return apiFetch(`/api/tasks/${taskId}`, { method: "DELETE" });
@@ -783,7 +805,7 @@ const NM = (() => {
     generateInviteCode, resolveInviteCode, inviteUrl,
     // real API
     apiSignup, apiLogin, apiForgotPassword, apiResetPassword, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
-    apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiDeleteTask, apiGetAllTasks, apiGetTaskClaims,
+    apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiUploadTaskInstructionsFile, apiDeleteTask, apiGetAllTasks, apiGetTaskClaims,
     apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
     apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
     apiGetGroups, apiGetRoster,
