@@ -34,24 +34,12 @@
       </div>
 
       <div class="card" id="tasks">
-        <h3 data-i18n="dm_tasks_title">مهام متاحة ليك</h3>
-        <p class="text-muted" style="font-size:0.85rem;" data-i18n="dm_tasks_subtitle">افتح أي مهمة عشان تشوف فيديو الشرح، السامبل الصوتي، والسعر قبل ما تبدأ.</p>
-        <p id="tasks-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <h3 data-i18n="dm_claims_title">مهام متاحة ليك</h3>
+        <p class="text-muted" style="font-size:0.85rem;" data-i18n="dm_claims_subtitle">افتح أي مهمة عشان تشوف فيديو الشرح، السامبل الصوتي، والسعر — وسلّم شغلك عليها من هنا.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th data-i18n="col_task">المهمة</th><th data-i18n="col_type">النوع</th><th></th></tr></thead>
-            <tbody id="tasks-body"><tr><td colspan="3" class="text-muted" data-i18n="loading_text">جاري التحميل...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card" id="my-tasks" style="margin-top:20px;">
-        <h3 data-i18n="dm_claims_title">مهام متاحة لتسليم شغل عليها</h3>
-        <p class="text-muted" style="font-size:0.85rem;" data-i18n="dm_claims_subtitle">مهام استلمها جروبك (أو الهيد ليدر) وتقدر ترفع شغلك عليها.</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th data-i18n="col_task">المهمة</th><th data-i18n="col_remaining_for_group">المتبقي لجروبي</th><th></th><th></th></tr></thead>
-            <tbody id="claims-body"><tr><td colspan="4" class="text-muted" data-i18n="loading_text">جاري التحميل...</td></tr></tbody>
+            <thead><tr><th data-i18n="col_task">المهمة</th><th></th><th></th></tr></thead>
+            <tbody id="claims-body"><tr><td colspan="3" class="text-muted" data-i18n="loading_text">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -158,33 +146,8 @@
     }
   });
 
-  let cachedTasks = [];
   let cachedClaims = [];
   let cachedSubmissions = [];
-
-  async function loadAvailableTasks() {
-    try {
-      cachedTasks = await NM.apiGetOpenTasks();
-      renderAvailableTasks();
-    } catch (err) {
-      document.getElementById("tasks-error").textContent = err.message;
-      document.getElementById("tasks-error").style.display = "block";
-    }
-  }
-
-  function renderAvailableTasks() {
-    const isEn = NM.getLang() === "en";
-    const tasks = cachedTasks;
-    document.getElementById("stat-available").textContent = tasks.length;
-    document.getElementById("tasks-body").innerHTML = tasks.length
-      ? tasks.map(t => `
-          <tr>
-            <td>${t.title}</td>
-            <td>${t.skill_icon || ""} ${(isEn ? t.skill_name_en : t.skill_name_ar) || t.skill_slug}</td>
-            <td><a class="btn btn-secondary" style="padding:6px 14px;" href="task.html?id=${t.id}">${NM.t("btn_details")}</a></td>
-          </tr>`).join("")
-      : `<tr><td colspan="3" class="text-muted">${NM.t("dm_no_tasks")}</td></tr>`;
-  }
 
   async function loadClaims() {
     try {
@@ -195,18 +158,18 @@
 
   function renderClaims() {
     const claims = cachedClaims;
+    document.getElementById("stat-available").textContent = claims.length;
     document.getElementById("claims-body").innerHTML = claims.length
       ? claims.map(c => `
           <tr>
             <td>${c.title}</td>
-            <td>${c.remaining_in_claim}</td>
             <td><a class="btn btn-secondary" style="padding:6px 14px;" href="task.html?id=${c.task_id}">${NM.t("btn_details")}</a></td>
             <td>
               <input type="file" id="file-${c.claim_id}" class="hidden" onchange="submitWork('${c.claim_id}', this)">
-              <button class="btn btn-secondary" style="padding:6px 14px;" onclick="document.getElementById('file-${c.claim_id}').click()">${NM.t("btn_submit_work")}</button>
+              <button class="btn btn-primary" style="padding:6px 14px;" onclick="document.getElementById('file-${c.claim_id}').click()">${NM.t("btn_submit_work")}</button>
             </td>
           </tr>`).join("")
-      : `<tr><td colspan="4" class="text-muted">${NM.t("dm_no_claims")}</td></tr>`;
+      : `<tr><td colspan="3" class="text-muted">${NM.t("dm_no_claims")}</td></tr>`;
   }
 
   const STATUS_KEYS = { in_review: "status_in_review", completed: "status_completed" };
@@ -248,7 +211,6 @@
   }
 
   refreshHeader();
-  loadAvailableTasks();
   loadClaims();
   loadMySubmissions();
 
@@ -268,7 +230,6 @@
   renderCerts();
 
   document.addEventListener("nm:langchange", () => {
-    renderAvailableTasks();
     renderClaims();
     renderSubmissions();
     renderCerts();

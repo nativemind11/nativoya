@@ -325,7 +325,8 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(`
-      SELECT tc.id AS claim_id, tc.quantity, tc.group_id,
+      SELECT DISTINCT ON (t.id)
+             tc.id AS claim_id, tc.quantity, tc.group_id,
              t.id AS task_id, t.title, t.instructions, t.video_urls, t.audio_sample_urls,
              t.member_price, t.leader_price, t.currency, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
              g.leader_id, g.group_number, lu.first_name AS leader_name,
@@ -339,7 +340,7 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
         ON sc.task_claim_id = tc.id
       WHERE tc.group_id IN (SELECT group_id FROM user_groups WHERE user_id = $1)
         AND (tc.quantity - COALESCE(sc.submitted_count, 0)) > 0
-      ORDER BY tc.claimed_at DESC
+      ORDER BY t.id, remaining_in_claim DESC, tc.claimed_at DESC
     `, [req.user.id]);
     res.json(result.rows);
   } catch (err) {
@@ -516,6 +517,31 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
 
+    // Member's own base (leaderless) group → straight into the task's root
+    // folder. Member inside a leader's group → into a subfolder named for
+    // that leader, so the leader can find exactly their group's work.
+    let targetFolderId = claim.drive_folder_id;
+    if (claim.leader_id) {
+      const leaderLabel = `ليدر ${claim.leader_first_name || "؟"} — جروب #${claim.group_number}`;
+      // Advisory lock keyed to this exact (task, group) pair — so if two
+      // members of the same leader upload in the same instant, they can't
+      // both "look, not found, create" at once and end up with two
+      // duplicate folders. Whoever gets the lock first creates it; the
+      // other just finds it already there once it's their turn.
+      const lockClient = await pool.connect();
+      try {
+        await lockClient.query("BEGIN");
+        await lockClient.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`leader-folder:${claim.task_id}:${claim.group_id}`]);
+        targetFolderId = await driveService.getOrCreateLeaderFolder(claim.drive_folder_id, leaderLabel);
+        await lockClient.query("COMMIT");
+      } catch (lockErr) {
+        await lockClient.query("ROLLBACK").catch(() => {});
+        throw lockErr;
+      } finally {
+        lockClient.release();
+      }
+    }
+
     const me = await pool.query("SELECT first_name, whatsapp_number, gender FROM users WHERE id = $1", [req.user.id]);
     const uploaderName = me.rows[0]?.first_name || "member";
     const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "بدون رقم";
@@ -526,7 +552,7 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
     const filename = `${uploaderName} - ${uploaderWhatsapp} - ${genderLabel} - ${req.file.originalname}`;
 
     const uploaded = await driveService.uploadSubmissionFile(
-      claim.drive_folder_id, filename, req.file.mimetype, req.file.buffer
+      targetFolderId, filename, req.file.mimetype, req.file.buffer
     );
 
     const result = await pool.query(

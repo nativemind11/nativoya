@@ -135,6 +135,35 @@ async function uploadSubmissionFile(folderId, filename, mimeType, buffer) {
   return { id: file.data.id, webViewLink: file.data.webViewLink };
 }
 
+// A member in a LEADER's group has their work reviewed by that leader before
+// it counts — so inside the task's folder, we give each leader their own
+// clearly-named subfolder (created once, reused after) instead of dumping
+// every group's files together. Members in a base (leaderless) group upload
+// straight into the task's root folder, same as before.
+async function getOrCreateLeaderFolder(taskFolderId, leaderLabel) {
+  const client = await getAuthorizedClient();
+  const drive = google.drive({ version: "v3", auth: client });
+
+  const safeLabel = leaderLabel.replace(/'/g, "\\'");
+  const existing = await drive.files.list({
+    q: `'${taskFolderId}' in parents and name = '${safeLabel}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: "files(id)",
+  });
+  if (existing.data.files && existing.data.files.length) {
+    return existing.data.files[0].id;
+  }
+
+  const folder = await drive.files.create({
+    requestBody: {
+      name: leaderLabel,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [taskFolderId],
+    },
+    fields: "id",
+  });
+  return folder.data.id;
+}
+
 async function isConnected() {
   const result = await pool.query("SELECT account_email FROM google_auth LIMIT 1");
   return result.rows[0]?.account_email || null;
@@ -145,5 +174,6 @@ module.exports = {
   saveTokensFromCode,
   createTaskFolder,
   uploadSubmissionFile,
+  getOrCreateLeaderFolder,
   isConnected,
 };
