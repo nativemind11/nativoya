@@ -39,7 +39,22 @@ function getAdminApp() {
 // every future token (including silent refreshes) keeps carrying them.
 async function mintCustomToken(uid, claims) {
   const adminApp = getAdminApp();
-  await adminApp.auth().setCustomUserClaims(uid, claims);
+  try {
+    await adminApp.auth().setCustomUserClaims(uid, claims);
+  } catch (err) {
+    // setCustomUserClaims needs a Firebase Auth record to already exist for
+    // this uid — but that record is normally only created automatically the
+    // FIRST time someone signs in with a custom token. So a brand-new
+    // account opening chat for the very first time hits a chicken-and-egg
+    // gap: we're trying to set claims before that first sign-in has ever
+    // happened. Create the bare Auth record ourselves, then set the claims.
+    if (err.code === "auth/user-not-found") {
+      await adminApp.auth().createUser({ uid });
+      await adminApp.auth().setCustomUserClaims(uid, claims);
+    } else {
+      throw err;
+    }
+  }
   return adminApp.auth().createCustomToken(uid);
 }
 
