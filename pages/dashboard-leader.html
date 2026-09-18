@@ -27,6 +27,10 @@
 
       <div id="led-group-tabs" class="flex gap-8 hidden" style="flex-wrap:wrap; margin-bottom:16px;"></div>
 
+      <div class="card hidden" id="no-led-group-notice">
+        <p class="mb-0 text-muted">لسه مش بتقود أي جروب، فمفيش رابط دعوة يظهرلك دلوقتي. لو طلبت قيادة لغة قبل كده، استنى موافقة الهيد ليدر — أو ابعت طلب من "قود لغة تانية" تحت.</p>
+      </div>
+
       <div class="card" id="claim">
         <h3>مهام متاحة للاستلام (من الهيد ليدر)</h3>
         <p id="claim-error" class="hint" style="color:#e0245e; display:none;"></p>
@@ -113,7 +117,12 @@
       : "لسه مش بتقود أي جروب";
 
     renderGroupTabs();
-    if (ledGroups.length) selectGroup(ledGroups[0].id);
+    const hasLedGroup = ledGroups.length > 0;
+    document.getElementById("no-led-group-notice").classList.toggle("hidden", hasLedGroup);
+    ["claim", "my-claims", "roster", "review"].forEach(id => {
+      document.getElementById(id).classList.toggle("hidden", !hasLedGroup);
+    });
+    if (hasLedGroup) selectGroup(ledGroups[0].id);
 
     populateLeadMoreSelect();
     checkPendingLeaderRequest();
