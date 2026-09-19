@@ -423,6 +423,7 @@ const NM = (() => {
     });
   }
   function apiReviewQueue(groupId) { return apiFetch(`/api/tasks/review-queue${groupId ? `?groupId=${groupId}` : ""}`); }
+  function apiReviewQueueAll() { return apiFetch("/api/tasks/review-queue/all"); }
   function apiUpdateTask(taskId, payload) {
     return apiFetch(`/api/tasks/${taskId}`, { method: "PUT", body: JSON.stringify(payload) });
   }
@@ -844,7 +845,7 @@ const NM = (() => {
     apiSignup, apiLogin, apiForgotPassword, apiResetPassword, apiJoinGroup, apiRefreshMe, authToken, apiFetch,
     apiGetOpenTasks, apiGetTask, apiCreateTask, apiUpdateTask, apiUploadTaskInstructionsFile, apiDeleteTask, apiGetAllTasks, apiGetTaskClaims,
     apiClaimTask, apiMyClaims, apiClaimsForMyGroup,
-    apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewSubmission, apiMySubmissions,
+    apiSubmitFile, apiUploadSubmission, apiReviewQueue, apiReviewQueueAll, apiReviewSubmission, apiMySubmissions,
     apiGetGroups, apiGetRoster,
     apiRequestLeadership, apiMyLeaderRequest, apiPendingLeaderRequests,
     apiApproveLeaderRequest, apiRejectLeaderRequest,

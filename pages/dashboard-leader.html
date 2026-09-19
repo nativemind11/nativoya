@@ -73,10 +73,11 @@
 
       <div class="card" id="review" style="margin-top:20px;">
         <h3>تسليمات بانتظار المراجعة (الجروب المختار)</h3>
+        <p class="text-muted" style="font-size:0.85rem;">دي شغل أعضاء جروبك اللي لسه محتاج مراجعة — الموافقة أو الرفض بقى مسؤولية الهيد ليدر بس.</p>
         <p id="review-error" class="hint" style="color:#e0245e; display:none;"></p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>العضو</th><th>المهمة</th><th>الملف</th><th></th></tr></thead>
+            <thead><tr><th>العضو</th><th>المهمة</th><th>الملف</th><th>الحالة</th></tr></thead>
             <tbody id="review-body"><tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
@@ -276,32 +277,12 @@
             <tr>
               <td>${s.member_name}</td><td>${s.task_title}</td>
               <td><a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a></td>
-              <td>
-                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmission('${s.submission_id}', true, this)">✅ موافقة</button>
-                <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmission('${s.submission_id}', false, this)">❌ رفض</button>
-              </td>
+              <td><span class="pill">بانتظار مراجعة الهيد ليدر</span></td>
             </tr>`).join("")
         : `<tr><td colspan="4" class="text-muted">مفيش تسليمات محتاجة مراجعة</td></tr>`;
     } catch (err) {
       document.getElementById("review-error").textContent = err.message;
       document.getElementById("review-error").style.display = "block";
-    }
-  }
-
-  async function reviewSubmission(id, approve, btn) {
-    let reason = null;
-    if (!approve) {
-      reason = prompt("سبب الرفض؟ (هيظهر للعضو اللي رفع الشغل)");
-      if (reason === null) return; // user cancelled
-      if (!reason.trim()) { alert("لازم تكتب سبب عشان تقدر ترفض."); return; }
-    }
-    btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = true);
-    try {
-      await NM.apiReviewSubmission(id, approve, reason);
-      await Promise.all([loadReviewQueue(), loadRoster()]);
-    } catch (err) {
-      alert(err.message);
-      btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = false);
     }
   }
 

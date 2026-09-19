@@ -421,6 +421,31 @@ router.get("/review-queue", requireAuth, requireRole("leader"), async (req, res)
   }
 });
 
+// GET /api/tasks/review-queue/all  (head_leader only) — every submission on
+// the platform still waiting for a decision, across every group/leader —
+// since approving/rejecting is now a head_leader-only action.
+router.get("/review-queue/all", requireAuth, requireRole("head_leader"), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT s.id AS submission_id, s.file_url, s.created_at,
+             t.title AS task_title, u.first_name AS member_name,
+             g.language, g.group_number, lu.first_name AS leader_name
+      FROM submissions s
+      JOIN task_claims tc ON tc.id = s.task_claim_id
+      JOIN tasks t ON t.id = tc.task_id
+      JOIN users u ON u.id = s.submitted_by
+      JOIN groups g ON g.id = tc.group_id
+      LEFT JOIN users lu ON lu.id = g.leader_id
+      WHERE s.status = 'in_review'
+      ORDER BY s.created_at ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("[tasks:review-queue-all]", err);
+    res.status(500).json({ error: "Could not load the review queue" });
+  }
+});
+
 // GET /api/tasks/my-submissions — everything the current member has sent in,
 // with its review status
 router.get("/my-submissions", requireAuth, async (req, res) => {
@@ -683,8 +708,11 @@ router.post("/claims/:claimId/upload-finalize", requireAuth, requireRole("member
   }
 });
 
-// POST /api/tasks/submissions/:id/review  (leader OR head_leader approves/rejects)
-router.post("/submissions/:id/review", requireAuth, requireRole("leader", "head_leader"), async (req, res) => {
+// POST /api/tasks/submissions/:id/review  (head_leader only — approving or
+// rejecting a submission is now a head_leader-only action; leaders can see
+// their group's pending submissions but the decision itself belongs to the
+// head_leader alone)
+router.post("/submissions/:id/review", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
     const { approve, reason } = req.body;
     if (!approve && !String(reason || "").trim()) {

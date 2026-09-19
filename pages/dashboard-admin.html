@@ -17,6 +17,7 @@
       <a href="groups.html">💬 مراقبة الشات</a>
       <a href="#tasks">📋 نشر مهمة</a>
       <a href="#manage-tasks">🗂️ إدارة المهام</a>
+      <a href="#review-all">✅ مراجعة التسليمات</a>
       <a href="#payments">💸 المدفوعات</a>
       <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
     </aside>
@@ -130,6 +131,18 @@
           <table>
             <thead><tr><th>العضو</th><th>الجروب</th><th>الملف</th><th>الحالة</th><th></th></tr></thead>
             <tbody id="task-submissions-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="review-all" style="margin-top:20px;">
+        <h3>مراجعة التسليمات</h3>
+        <p class="text-muted" style="font-size:0.85rem;">كل شغل اترفع من أي عضو أو ليدر في أي جروب، وبانتظار قرارك.</p>
+        <p id="review-all-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>العضو</th><th>المهمة</th><th>الجروب</th><th>الملف</th><th></th></tr></thead>
+            <tbody id="review-all-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -593,11 +606,51 @@
     }
   }
 
+  async function loadReviewQueueAll() {
+    try {
+      const queue = await NM.apiReviewQueueAll();
+      document.getElementById("review-all-body").innerHTML = queue.length
+        ? queue.map(s => `
+            <tr>
+              <td>${s.member_name}</td>
+              <td>${s.task_title}</td>
+              <td>${s.language} #${s.group_number}${s.leader_name ? ` — ${s.leader_name}` : " — بدون ليدر"}</td>
+              <td><a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a></td>
+              <td>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmissionAll('${s.submission_id}', true, this)">✅ موافقة</button>
+                <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmissionAll('${s.submission_id}', false, this)">❌ رفض</button>
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="5" class="text-muted">مفيش تسليمات محتاجة مراجعة دلوقتي</td></tr>`;
+    } catch (err) {
+      document.getElementById("review-all-error").textContent = err.message;
+      document.getElementById("review-all-error").style.display = "block";
+    }
+  }
+
+  async function reviewSubmissionAll(id, approve, btn) {
+    let reason = null;
+    if (!approve) {
+      reason = prompt("سبب الرفض؟ (هيظهر للشخص اللي رفع الشغل)");
+      if (reason === null) return; // cancelled
+      if (!reason.trim()) { alert("لازم تكتب سبب عشان تقدر ترفض."); return; }
+    }
+    btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = true);
+    try {
+      await NM.apiReviewSubmission(id, approve, reason);
+      await loadReviewQueueAll();
+    } catch (err) {
+      alert(err.message);
+      btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = false);
+    }
+  }
+
   loadGroups();
   loadPayments();
   loadLeaderRequests();
   loadDriveStatus();
   loadManageTasks();
+  loadReviewQueueAll();
 </script>
 </body>
 </html>
