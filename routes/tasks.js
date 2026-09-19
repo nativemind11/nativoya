@@ -5,6 +5,7 @@ const { requireAuth, requireRole } = require("../config/auth");
 const driveService = require("../config/googleDrive");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const rawChunk = express.raw({ type: "*/*", limit: "4mb" });
 const router = express.Router();
 
 function cleanUrlList(list) {
@@ -595,6 +596,50 @@ router.post("/claims/:claimId/upload-init", requireAuth, requireRole("member", "
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
     res.status(500).json({ error: "Could not start the upload" });
+  }
+});
+
+// POST /api/tasks/upload-chunk — relays one piece of the file to the Drive
+// resumable session from upload-init. Google's upload endpoint doesn't
+// allow the browser to PUT to it directly (no CORS support), so the browser
+// sends the file in small pieces to OUR server instead — each comfortably
+// under our host's per-request size limit — and we forward each one
+// straight through to Drive, server-to-server, where no such limit applies.
+router.post("/upload-chunk", requireAuth, requireRole("member", "leader"), rawChunk, async (req, res) => {
+  try {
+    const uploadUrl = req.headers["x-upload-url"];
+    const contentRange = req.headers["x-content-range"];
+    if (!uploadUrl || !contentRange) {
+      return res.status(400).json({ error: "Missing upload metadata" });
+    }
+    // Only ever relay to a genuine Drive resumable session we ourselves
+    // opened — never let this become an open relay to an arbitrary URL.
+    if (!/^https:\/\/www\.googleapis\.com\/upload\/drive\/v3\/files\?/.test(uploadUrl)) {
+      return res.status(400).json({ error: "Invalid upload target" });
+    }
+
+    const driveRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Range": contentRange,
+        "Content-Length": String(req.body.length),
+      },
+      body: req.body,
+    });
+
+    if (driveRes.status === 308) {
+      // Drive's own "keep going, send the next chunk" response.
+      return res.status(308).end();
+    }
+    const data = await driveRes.json().catch(() => null);
+    if (!driveRes.ok) {
+      console.error("[tasks:upload-chunk] Drive rejected chunk", driveRes.status, data);
+      return res.status(502).json({ error: "تعذر رفع الملف على جوجل درايف. حاول تاني." });
+    }
+    res.json({ id: data && data.id });
+  } catch (err) {
+    console.error("[tasks:upload-chunk]", err);
+    res.status(500).json({ error: "Could not relay upload to Drive" });
   }
 });
 

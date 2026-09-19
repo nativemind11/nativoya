@@ -480,32 +480,61 @@ const NM = (() => {
   function apiGetRoster(groupId) { return apiFetch(`/api/groups/roster${groupId ? `?groupId=${groupId}` : ""}`); }
 
   // FormData upload — can't reuse apiFetch since it always forces JSON headers
-  // Uploads go straight from the browser to Google Drive (not through our
-  // own server) so large recordings aren't limited by our host's request
-  // body size. Our server just opens the destination (step 1) and records
-  // the submission once the file is actually on Drive (step 3).
+  // Google Drive doesn't allow browsers to upload directly to it (no CORS
+  // support on its upload endpoint), so the file goes to OUR server in
+  // small pieces instead — each safely under our host's per-request size
+  // limit — and our server relays each piece straight through to the Drive
+  // upload session opened in step 1. This is what lets large recordings
+  // upload successfully even though our host caps any single request.
   async function apiUploadSubmission(claimId, file) {
     const init = await apiFetch(`/api/tasks/claims/${claimId}/upload-init`, {
       method: "POST",
       body: JSON.stringify({ filename: file.name, mimeType: file.type || "application/octet-stream" }),
     });
+    const uploadUrl = init.uploadUrl;
 
-    let driveRes;
-    try {
-      driveRes = await fetch(init.uploadUrl, { method: "PUT", body: file });
-    } catch (err) {
-      console.error("[Nativoya] Network error uploading to Drive", err);
-      throw new Error("تعذر رفع الملف. تأكد من اتصالك بالإنترنت وحاول تاني.");
+    const CHUNK_SIZE = 3 * 1024 * 1024; // 3MiB — a multiple of 256KiB (Drive's requirement) with comfortable headroom under the host's ~4.5MB request-size cap
+    const total = file.size;
+    const token = authToken();
+    let offset = 0;
+    let driveFileId = null;
+
+    while (offset < total) {
+      const end = Math.min(offset + CHUNK_SIZE, total);
+      const chunk = file.slice(offset, end);
+      let res;
+      try {
+        res = await fetch(`${API_BASE_URL}/api/tasks/upload-chunk`, {
+          method: "POST",
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            "X-Upload-Url": uploadUrl,
+            "X-Content-Range": `bytes ${offset}-${end - 1}/${total}`,
+            "Content-Type": "application/octet-stream",
+          },
+          body: chunk,
+        });
+      } catch (err) {
+        console.error("[Nativoya] Network error uploading chunk", err);
+        throw new Error("تعذر رفع الملف. تأكد من اتصالك بالإنترنت وحاول تاني.");
+      }
+      if (res.status === 308) {
+        offset = end;
+        continue;
+      }
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        driveFileId = data.id;
+        offset = end;
+        break;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(friendlyErrorMessage(errData.error) || "حصل خطأ أثناء رفع الملف، حاول تاني.");
     }
-    if (!driveRes.ok) {
-      console.error("[Nativoya] Drive upload failed", driveRes.status);
-      throw new Error("تعذر رفع الملف على جوجل درايف. حاول تاني.");
-    }
-    const driveFile = await driveRes.json();
 
     return apiFetch(`/api/tasks/claims/${claimId}/upload-finalize`, {
       method: "POST",
-      body: JSON.stringify({ fileId: driveFile.id }),
+      body: JSON.stringify({ fileId: driveFileId }),
     });
   }
 
