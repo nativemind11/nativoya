@@ -171,7 +171,9 @@ router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) 
     const result = await pool.query(`
       SELECT t.*, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
              COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS claimed_quantity,
-             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+             t.total_quantity - COALESCE((SELECT COUNT(*) FROM submissions s2
+                                             JOIN task_claims tc2 ON tc2.id = s2.task_claim_id
+                                            WHERE tc2.task_id = t.id), 0) AS remaining
       FROM tasks t
       JOIN services s ON s.slug = t.skill_slug
       ORDER BY t.created_at DESC
@@ -255,17 +257,20 @@ router.get("/open", requireAuth, async (req, res) => {
       `
       SELECT t.id, t.title, t.skill_slug, s.name_ar AS skill_name_ar, s.name_en AS skill_name_en,
              s.icon AS skill_icon, t.total_quantity, t.target_all, t.created_at,
-             t.total_quantity - COALESCE(SUM(c.quantity), 0) AS remaining
+             t.total_quantity - COALESCE(sub.submitted_count, 0) AS remaining
       FROM tasks t
       JOIN services s ON s.slug = t.skill_slug
-      LEFT JOIN task_claims c ON c.task_id = t.id
-      WHERE ($1 = true) OR t.target_all = true OR EXISTS (
+      LEFT JOIN (
+        SELECT tc.task_id, COUNT(*) AS submitted_count
+        FROM submissions s2 JOIN task_claims tc ON tc.id = s2.task_claim_id
+        GROUP BY tc.task_id
+      ) sub ON sub.task_id = t.id
+      WHERE (($1 = true) OR t.target_all = true OR EXISTS (
         SELECT 1 FROM task_targets tt
         JOIN user_groups ug ON ug.group_id = tt.group_id
         WHERE tt.task_id = t.id AND ug.user_id = $2
-      )
-      GROUP BY t.id, s.name_ar, s.name_en, s.icon
-      HAVING t.total_quantity - COALESCE(SUM(c.quantity), 0) > 0
+      ))
+      AND t.total_quantity - COALESCE(sub.submitted_count, 0) > 0
       ORDER BY t.created_at DESC
       `,
       [isHeadLeader, req.user.id]
@@ -448,7 +453,9 @@ router.get("/:id", requireAuth, async (req, res) => {
     const result = await pool.query(
       `
       SELECT t.*, s.name_ar AS skill_name_ar, s.name_en AS skill_name_en, s.icon AS skill_icon,
-             t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+             t.total_quantity - COALESCE((SELECT COUNT(*) FROM submissions s2
+                                             JOIN task_claims tc2 ON tc2.id = s2.task_claim_id
+                                            WHERE tc2.task_id = t.id), 0) AS remaining
       FROM tasks t
       JOIN services s ON s.slug = t.skill_slug
       WHERE t.id = $1 AND (

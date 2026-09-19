@@ -17,6 +17,7 @@
       <a href="#claim">📥 استلام مهام</a>
       <a href="#roster">👥 أعضاء الجروب</a>
       <a href="#review">✅ مراجعة التسليمات</a>
+      <a href="#my-submissions">📄 تسليماتي</a>
       <a href="#lead-more">➕ قود لغة تانية</a>
       <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
     </aside>
@@ -77,6 +78,17 @@
           <table>
             <thead><tr><th>العضو</th><th>المهمة</th><th>الملف</th><th></th></tr></thead>
             <tbody id="review-body"><tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="my-submissions" style="margin-top:20px;">
+        <h3>تسليماتي الشخصية</h3>
+        <p class="text-muted" style="font-size:0.85rem;">أي شغل رفعته بنفسك — سواء من وقت ما كنت عضو عادي، أو دلوقتي كليدر.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>المهمة</th><th>الحالة</th></tr></thead>
+            <tbody id="my-submissions-body"><tr><td colspan="2" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -339,8 +351,27 @@
     }
   });
 
+  async function loadMySubmissions() {
+    try {
+      const submissions = await NM.apiMySubmissions();
+      document.getElementById("my-submissions-body").innerHTML = submissions.length
+        ? submissions.map(s => `
+            <tr>
+              <td>${s.task_title}</td>
+              <td>
+                <span class="pill">${s.status === "completed" ? "✅ مقبول" : s.status === "rejected" ? "❌ مرفوض" : "بانتظار المراجعة"}</span>
+                ${s.status === "rejected" && s.rejection_reason ? `<div class="text-muted" style="font-size:0.8rem; margin-top:4px;">السبب: ${s.rejection_reason}</div>` : ""}
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="2" class="text-muted">لسه ما سلّمتش أي شغل بنفسك</td></tr>`;
+    } catch (err) {
+      document.getElementById("my-submissions-body").innerHTML = `<tr><td colspan="2" class="text-muted">${err.message}</td></tr>`;
+    }
+  }
+
   refreshHeader();
   loadOpenTasks();
+  loadMySubmissions();
 </script>
 </body>
 </html>
