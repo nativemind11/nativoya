@@ -192,15 +192,22 @@ async function getOrCreateLeaderFolder(taskFolderId, leaderLabel) {
 // that URL straight from the browser — never relayed through our own
 // server — which is what lets recordings bigger than our host's request
 // body limit (a few MB on Vercel) upload successfully.
-async function initResumableUpload(folderId, filename, mimeType) {
+//
+// Google only allows a browser to PUT to the resulting session URL from an
+// origin that was declared on THIS initiating request — so we pass the
+// browser's actual Origin header through here (it must match exactly what
+// the browser sends on the follow-up PUT, or Drive blocks it as CORS).
+async function initResumableUpload(folderId, filename, mimeType, origin) {
   const client = await getAuthorizedClient();
+  const headers = {
+    "Content-Type": "application/json; charset=UTF-8",
+    "X-Upload-Content-Type": mimeType || "application/octet-stream",
+  };
+  if (origin) headers["Origin"] = origin;
   const response = await client.request({
     url: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
     method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=UTF-8",
-      "X-Upload-Content-Type": mimeType || "application/octet-stream",
-    },
+    headers,
     data: { name: filename, parents: [folderId] },
   });
   const uploadUrl = response.headers["location"] || response.headers["Location"];

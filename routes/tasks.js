@@ -587,7 +587,7 @@ router.post("/claims/:claimId/upload-init", requireAuth, requireRole("member", "
     // Name - WhatsApp number - Gender - original filename (extension preserved).
     const finalFilename = `${uploaderName} - ${uploaderWhatsapp} - ${genderLabel} - ${filename}`;
 
-    const uploadUrl = await driveService.initResumableUpload(targetFolderId, finalFilename, mimeType);
+    const uploadUrl = await driveService.initResumableUpload(targetFolderId, finalFilename, mimeType, req.headers.origin);
     res.json({ uploadUrl });
   } catch (err) {
     console.error("[tasks:upload-init]", err);
