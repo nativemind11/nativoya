@@ -83,6 +83,25 @@ async function getAuthorizedClient() {
   return client;
 }
 
+// Files/folders created via the Drive API are private to the connected
+// account by default — anyone else opening the link gets Google's "request
+// access" wall. Everything here is meant to be openable by any member or
+// leader who has the link, so we explicitly grant "anyone with the link can
+// view" right after creating it. Folder-level sharing normally covers files
+// added to it later too, but we set it at every level (root, task folder,
+// leader subfolder, and each uploaded file) so nothing slips through
+// regardless of Drive's inheritance timing.
+async function shareWithAnyone(drive, fileId) {
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+  } catch (err) {
+    console.error("[googleDrive] Could not set link-sharing on", fileId, err.message);
+  }
+}
+
 async function getOrCreateRootFolder(drive) {
   const existing = await pool.query("SELECT root_folder_id FROM google_auth LIMIT 1");
   const cached = existing.rows[0]?.root_folder_id;
@@ -95,6 +114,7 @@ async function getOrCreateRootFolder(drive) {
     },
     fields: "id",
   });
+  await shareWithAnyone(drive, folder.data.id);
 
   await pool.query("UPDATE google_auth SET root_folder_id = $1", [folder.data.id]);
   return folder.data.id;
@@ -115,6 +135,7 @@ async function createTaskFolder(taskTitle, taskId) {
     },
     fields: "id",
   });
+  await shareWithAnyone(drive, folder.data.id);
 
   return folder.data.id;
 }
@@ -131,6 +152,7 @@ async function uploadSubmissionFile(folderId, filename, mimeType, buffer) {
     media: { mimeType, body: Readable.from(buffer) },
     fields: "id, webViewLink",
   });
+  await shareWithAnyone(drive, file.data.id);
 
   return { id: file.data.id, webViewLink: file.data.webViewLink };
 }
@@ -161,6 +183,7 @@ async function getOrCreateLeaderFolder(taskFolderId, leaderLabel) {
     },
     fields: "id",
   });
+  await shareWithAnyone(drive, folder.data.id);
   return folder.data.id;
 }
 
