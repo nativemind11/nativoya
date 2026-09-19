@@ -187,6 +187,37 @@ async function getOrCreateLeaderFolder(taskFolderId, leaderLabel) {
   return folder.data.id;
 }
 
+// Step 1 of a direct-to-Drive upload: ask Drive to open a resumable upload
+// session and hand back its one-time URL. The actual file bytes are PUT to
+// that URL straight from the browser — never relayed through our own
+// server — which is what lets recordings bigger than our host's request
+// body limit (a few MB on Vercel) upload successfully.
+async function initResumableUpload(folderId, filename, mimeType) {
+  const client = await getAuthorizedClient();
+  const response = await client.request({
+    url: "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      "X-Upload-Content-Type": mimeType || "application/octet-stream",
+    },
+    data: { name: filename, parents: [folderId] },
+  });
+  const uploadUrl = response.headers["location"] || response.headers["Location"];
+  if (!uploadUrl) throw new Error("Drive did not return a resumable upload URL");
+  return uploadUrl;
+}
+
+// Step 2, after the browser's own PUT to that URL finished: make the newly
+// created file link-viewable and return its link to store on the submission.
+async function shareFileWithAnyone(fileId) {
+  const client = await getAuthorizedClient();
+  const drive = google.drive({ version: "v3", auth: client });
+  await shareWithAnyone(drive, fileId);
+  const meta = await drive.files.get({ fileId, fields: "webViewLink" });
+  return meta.data.webViewLink;
+}
+
 async function isConnected() {
   const result = await pool.query("SELECT account_email FROM google_auth LIMIT 1");
   return result.rows[0]?.account_email || null;
@@ -198,5 +229,7 @@ module.exports = {
   createTaskFolder,
   uploadSubmissionFile,
   getOrCreateLeaderFolder,
+  initResumableUpload,
+  shareFileWithAnyone,
   isConnected,
 };

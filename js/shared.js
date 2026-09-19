@@ -480,25 +480,33 @@ const NM = (() => {
   function apiGetRoster(groupId) { return apiFetch(`/api/groups/roster${groupId ? `?groupId=${groupId}` : ""}`); }
 
   // FormData upload — can't reuse apiFetch since it always forces JSON headers
+  // Uploads go straight from the browser to Google Drive (not through our
+  // own server) so large recordings aren't limited by our host's request
+  // body size. Our server just opens the destination (step 1) and records
+  // the submission once the file is actually on Drive (step 3).
   async function apiUploadSubmission(claimId, file) {
-    const token = authToken();
-    const formData = new FormData();
-    formData.append("file", file);
-    let res;
+    const init = await apiFetch(`/api/tasks/claims/${claimId}/upload-init`, {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, mimeType: file.type || "application/octet-stream" }),
+    });
+
+    let driveRes;
     try {
-      res = await fetch(`${API_BASE_URL}/api/tasks/claims/${claimId}/upload`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
+      driveRes = await fetch(init.uploadUrl, { method: "PUT", body: file });
     } catch (err) {
-      console.error("[Nativoya] Network/CORS error uploading file", err);
+      console.error("[Nativoya] Network error uploading to Drive", err);
       throw new Error("تعذر رفع الملف. تأكد من اتصالك بالإنترنت وحاول تاني.");
     }
-    let data = null;
-    try { data = await res.json(); } catch (_) {}
-    if (!res.ok) throw new Error(friendlyErrorMessage(data && data.error) || "حصل خطأ أثناء رفع الملف، حاول تاني.");
-    return data;
+    if (!driveRes.ok) {
+      console.error("[Nativoya] Drive upload failed", driveRes.status);
+      throw new Error("تعذر رفع الملف على جوجل درايف. حاول تاني.");
+    }
+    const driveFile = await driveRes.json();
+
+    return apiFetch(`/api/tasks/claims/${claimId}/upload-finalize`, {
+      method: "POST",
+      body: JSON.stringify({ fileId: driveFile.id }),
+    });
   }
 
   function apiGetGoogleStatus() { return apiFetch("/api/auth/google/status"); }

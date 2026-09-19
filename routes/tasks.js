@@ -518,16 +518,19 @@ router.post("/claims/:claimId/submissions", requireAuth, requireRole("member", "
   }
 });
 
-// POST /api/tasks/claims/:claimId/upload  (member OR leader submits a file
-// against a claim their own group holds — a leader can contribute work to
-// their own group's claims too, not just manage/review others' submissions)
+// POST /api/tasks/claims/:claimId/upload-init — step 1 of a direct-to-Drive
+// upload (member OR leader submitting against a claim their own group
+// holds). Large recordings can exceed our host's request-body limit if
+// relayed through our own server, so the file bytes go straight from the
+// browser to Google Drive; our server only resolves the right destination
+// folder and hands back a one-time upload URL.
 //
 // Drive filename convention: "<uploader name> - <uploader WhatsApp> - <ذكر/أنثى> - <original name>"
-// Applies the same way whether the uploader is a leader or a regular member.
-router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leader"), upload.single("file"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file was attached" });
-
+router.post("/claims/:claimId/upload-init", requireAuth, requireRole("member", "leader"), async (req, res) => {
   try {
+    const { filename, mimeType } = req.body;
+    if (!filename) return res.status(400).json({ error: "filename is required" });
+
     const claimResult = await pool.query(
       `SELECT tc.id, tc.group_id, t.id AS task_id, t.title, t.drive_folder_id,
               g.leader_id, g.group_number, lu.first_name AS leader_first_name
@@ -582,26 +585,49 @@ router.post("/claims/:claimId/upload", requireAuth, requireRole("member", "leade
     const uploaderWhatsapp = me.rows[0]?.whatsapp_number || "بدون رقم";
     const genderLabel = me.rows[0]?.gender === "male" ? "ذكر" : me.rows[0]?.gender === "female" ? "أنثى" : "غير محدد";
     // Name - WhatsApp number - Gender - original filename (extension preserved).
-    // Drive is fine with two files sharing a name (each stays a distinct file),
-    // so we don't need to append a raw timestamp — Drive already tracks that.
-    const filename = `${uploaderName} - ${uploaderWhatsapp} - ${genderLabel} - ${req.file.originalname}`;
+    const finalFilename = `${uploaderName} - ${uploaderWhatsapp} - ${genderLabel} - ${filename}`;
 
-    const uploaded = await driveService.uploadSubmissionFile(
-      targetFolderId, filename, req.file.mimetype, req.file.buffer
+    const uploadUrl = await driveService.initResumableUpload(targetFolderId, finalFilename, mimeType);
+    res.json({ uploadUrl });
+  } catch (err) {
+    console.error("[tasks:upload-init]", err);
+    if (err.code === "DRIVE_NOT_CONNECTED") {
+      return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
+    }
+    res.status(500).json({ error: "Could not start the upload" });
+  }
+});
+
+// POST /api/tasks/claims/:claimId/upload-finalize — step 2, called by the
+// browser once its own direct PUT of the file bytes to the upload-init URL
+// has finished. We just verify the claim is still theirs and record the
+// submission — the file itself is already on Drive by this point.
+router.post("/claims/:claimId/upload-finalize", requireAuth, requireRole("member", "leader"), async (req, res) => {
+  try {
+    const { fileId } = req.body;
+    if (!fileId) return res.status(400).json({ error: "fileId is required" });
+
+    const membership = await pool.query(
+      `SELECT 1 FROM task_claims tc
+       JOIN user_groups ug ON ug.group_id = tc.group_id
+       WHERE tc.id = $1 AND ug.user_id = $2`,
+      [req.params.claimId, req.user.id]
     );
+    if (!membership.rows.length) {
+      return res.status(403).json({ error: "This claim doesn't belong to your group" });
+    }
+
+    const webViewLink = await driveService.shareFileWithAnyone(fileId);
 
     const result = await pool.query(
       `INSERT INTO submissions (task_claim_id, submitted_by, file_url)
        VALUES ($1, $2, $3) RETURNING *`,
-      [req.params.claimId, req.user.id, uploaded.webViewLink]
+      [req.params.claimId, req.user.id, webViewLink]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error("[tasks:upload]", err);
-    if (err.code === "DRIVE_NOT_CONNECTED") {
-      return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
-    }
-    res.status(500).json({ error: "Upload failed" });
+    console.error("[tasks:upload-finalize]", err);
+    res.status(500).json({ error: "Could not save the submission" });
   }
 });
 
