@@ -122,11 +122,12 @@
         <p class="text-muted" style="font-size:0.85rem;">الجروبات اللي استلمت من المهمة دي:</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>الجروب</th><th>الليدر</th><th>الكمية المستلمة</th><th>اتسلّم / المستلم</th></tr></thead>
+            <thead><tr><th>الجروب</th><th>الليدر</th><th>الكمية المستلمة</th><th>اتسلّم / المستلم</th><th>فولدر الدرايف</th></tr></thead>
             <tbody id="task-claims-body"></tbody>
           </table>
         </div>
         <p class="text-muted" style="font-size:0.85rem; margin-top:20px;">كل التسليمات الفردية على المهمة دي:</p>
+        <div id="task-submissions-day-tabs" class="flex gap-8" style="flex-wrap:wrap; margin-bottom:12px;"></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>العضو</th><th>الجروب</th><th>الملف</th><th>الحالة</th><th></th></tr></thead>
@@ -306,7 +307,8 @@
     panel.classList.remove("hidden");
     document.getElementById("task-claims-title").textContent = `مين اخد ايه من: ${taskTitle}`;
     document.getElementById("task-gender-breakdown").innerHTML = "";
-    document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-submissions-day-tabs").innerHTML = "";
     document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr>`;
     panel.scrollIntoView({ behavior: "smooth" });
 
@@ -326,32 +328,70 @@
               <td>${c.leader_name || "بدون ليدر (تحت الهيد ليدر)"}</td>
               <td>${c.quantity}</td>
               <td>${c.submitted_count} / ${c.quantity}</td>
+              <td>${c.drive_folder_id ? `<a class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" href="https://drive.google.com/drive/folders/${c.drive_folder_id}" target="_blank" rel="noopener">📁 فتح</a>` : "—"}</td>
             </tr>`).join("")
-        : `<tr><td colspan="4" class="text-muted">مفيش أي جروب استلم من المهمة دي لسه</td></tr>`;
+        : `<tr><td colspan="5" class="text-muted">مفيش أي جروب استلم من المهمة دي لسه</td></tr>`;
 
-      document.getElementById("task-submissions-body").innerHTML = submissions.length
-        ? submissions.map(s => `
-            <tr>
-              <td>${s.member_name}</td>
-              <td>${s.language} #${s.group_number}</td>
-              <td>${s.file_url ? `<a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a>` : "—"}</td>
-              <td>
-                <span class="pill ${s.status === "completed" ? "badge-success" : s.status === "rejected" ? "badge-danger" : "badge-pending"}">
-                  ${s.status === "completed" ? "✅ مقبول" : s.status === "rejected" ? "❌ مرفوض" : "بانتظار المراجعة"}
-                </span>
-                ${s.status === "rejected" && s.rejection_reason ? `<div class="text-muted" style="font-size:0.8rem; margin-top:4px;">سبب الرفض: ${s.rejection_reason}</div>` : ""}
-              </td>
-              <td>
-                ${s.status === "in_review" ? `
-                  <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmissionAdmin('${s.id}', true, this, '${taskId}')">✅ موافقة</button>
-                  <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmissionAdmin('${s.id}', false, this, '${taskId}')">❌ رفض</button>
-                ` : ""}
-              </td>
-            </tr>`).join("")
-        : `<tr><td colspan="5" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
+      renderSubmissionsByDay(submissions, taskId);
     } catch (err) {
-      document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="4" class="text-muted">${err.message}</td></tr>`;
+      document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="5" class="text-muted">${err.message}</td></tr>`;
     }
+  }
+
+  // Groups this task's submissions by the day they were uploaded, and shows
+  // one day at a time behind tabs — instead of every submission from every
+  // day dumped into one long table.
+  function renderSubmissionsByDay(submissions, taskId) {
+    const byDay = {};
+    submissions.forEach(s => {
+      const day = new Date(s.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" });
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(s);
+    });
+    const days = Object.keys(byDay); // already newest-first since submissions arrived sorted DESC
+
+    const tabsWrap = document.getElementById("task-submissions-day-tabs");
+    if (!days.length) {
+      tabsWrap.innerHTML = "";
+      document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="5" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
+      return;
+    }
+
+    tabsWrap.innerHTML = days.map((day, i) => `
+      <button class="btn ${i === 0 ? "btn-primary" : "btn-secondary"}" style="padding:6px 14px; font-size:0.85rem;" data-day="${day}" onclick="selectSubmissionDay('${taskId}', this)">${day} (${byDay[day].length})</button>
+    `).join("");
+
+    window.__submissionsByDay = byDay; // scratch state for the tab click handler below
+    renderSubmissionDayTable(byDay[days[0]], taskId);
+  }
+
+  function selectSubmissionDay(taskId, btn) {
+    document.querySelectorAll("#task-submissions-day-tabs button").forEach(b => {
+      b.classList.toggle("btn-primary", b === btn);
+      b.classList.toggle("btn-secondary", b !== btn);
+    });
+    renderSubmissionDayTable(window.__submissionsByDay[btn.dataset.day], taskId);
+  }
+
+  function renderSubmissionDayTable(submissions, taskId) {
+    document.getElementById("task-submissions-body").innerHTML = (submissions || []).map(s => `
+        <tr>
+          <td>${s.member_name}</td>
+          <td>${s.language} #${s.group_number}</td>
+          <td>${s.file_url ? `<a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a>` : "—"}</td>
+          <td>
+            <span class="pill ${s.status === "completed" ? "badge-success" : s.status === "rejected" ? "badge-danger" : "badge-pending"}">
+              ${s.status === "completed" ? "✅ مقبول" : s.status === "rejected" ? "❌ مرفوض" : "بانتظار المراجعة"}
+            </span>
+            ${s.status === "rejected" && s.rejection_reason ? `<div class="text-muted" style="font-size:0.8rem; margin-top:4px;">سبب الرفض: ${s.rejection_reason}</div>` : ""}
+          </td>
+          <td>
+            ${s.status === "in_review" ? `
+              <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmissionAdmin('${s.id}', true, this, '${taskId}')">✅ موافقة</button>
+              <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmissionAdmin('${s.id}', false, this, '${taskId}')">❌ رفض</button>
+            ` : ""}
+          </td>
+        </tr>`).join("");
   }
 
   async function reviewSubmissionAdmin(submissionId, approve, btn, taskId) {

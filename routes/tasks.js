@@ -121,15 +121,33 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
       SELECT tc.id AS claim_id, tc.quantity, tc.claimed_at,
              g.language, g.group_number, g.leader_id,
              lu.first_name AS leader_name,
+             t.drive_folder_id AS task_drive_folder_id,
              COALESCE(sc.submitted_count, 0) AS submitted_count
       FROM task_claims tc
       JOIN groups g ON g.id = tc.group_id
+      JOIN tasks t ON t.id = tc.task_id
       LEFT JOIN users lu ON lu.id = g.leader_id
       LEFT JOIN (SELECT task_claim_id, COUNT(*) AS submitted_count FROM submissions GROUP BY task_claim_id) sc
         ON sc.task_claim_id = tc.id
       WHERE tc.task_id = $1
       ORDER BY tc.claimed_at ASC
     `, [req.params.id]);
+
+    // Each row gets a Drive folder link to open directly: a leader-led group
+    // has its own subfolder (same one uploads actually land in — created
+    // lazily here too, harmless if it already exists); a leaderless group's
+    // work sits straight in the task's own root folder, shared by all of them.
+    for (const row of claims.rows) {
+      if (!row.task_drive_folder_id) { row.drive_folder_id = null; continue; }
+      if (!row.leader_id) { row.drive_folder_id = row.task_drive_folder_id; continue; }
+      try {
+        const label = `ليدر ${row.leader_name || "؟"} — جروب #${row.group_number}`;
+        row.drive_folder_id = await driveService.getOrCreateLeaderFolder(row.task_drive_folder_id, label);
+      } catch (err) {
+        console.warn("[tasks:claims-breakdown] couldn't resolve leader folder:", err.message);
+        row.drive_folder_id = null;
+      }
+    }
 
     const submissions = await pool.query(`
       SELECT s.id, s.status, s.file_url, s.rejection_reason, s.created_at,
