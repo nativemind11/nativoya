@@ -151,11 +151,13 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
 
     const submissions = await pool.query(`
       SELECT s.id, s.status, s.file_url, s.rejection_reason, s.created_at,
-             u.first_name AS member_name, u.gender AS member_gender, g.language, g.group_number
+             u.first_name AS member_name, u.gender AS member_gender, g.language, g.group_number,
+             lu.first_name AS leader_name
       FROM submissions s
       JOIN task_claims tc ON tc.id = s.task_claim_id
       JOIN groups g ON g.id = tc.group_id
       JOIN users u ON u.id = s.submitted_by
+      LEFT JOIN users lu ON lu.id = g.leader_id
       WHERE tc.task_id = $1
       ORDER BY s.created_at DESC
     `, [req.params.id]);

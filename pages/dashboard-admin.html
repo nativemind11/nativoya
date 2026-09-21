@@ -130,7 +130,7 @@
         <div id="task-submissions-day-tabs" class="flex gap-8" style="flex-wrap:wrap; margin-bottom:12px;"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>العضو</th><th>الجروب</th><th>الملف</th><th>الحالة</th><th></th></tr></thead>
+            <thead><tr><th>العضو</th><th>الجروب</th><th>الليدر</th><th>الوقت</th><th>الملف</th><th>الحالة</th><th></th></tr></thead>
             <tbody id="task-submissions-body"></tbody>
           </table>
         </div>
@@ -142,8 +142,8 @@
         <p id="review-all-error" class="hint" style="color:#e0245e; display:none;"></p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>العضو</th><th>المهمة</th><th>الجروب</th><th>الملف</th><th></th></tr></thead>
-            <tbody id="review-all-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
+            <thead><tr><th>العضو</th><th>المهمة</th><th>الجروب</th><th>الليدر</th><th>الوقت</th><th>الملف</th><th></th></tr></thead>
+            <tbody id="review-all-body"><tr><td colspan="7" class="text-muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -309,7 +309,7 @@
     document.getElementById("task-gender-breakdown").innerHTML = "";
     document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr>`;
     document.getElementById("task-submissions-day-tabs").innerHTML = "";
-    document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">جاري التحميل...</td></tr>`;
     panel.scrollIntoView({ behavior: "smooth" });
 
     try {
@@ -353,7 +353,7 @@
     const tabsWrap = document.getElementById("task-submissions-day-tabs");
     if (!days.length) {
       tabsWrap.innerHTML = "";
-      document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="5" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
+      document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
       return;
     }
 
@@ -378,6 +378,8 @@
         <tr>
           <td>${s.member_name}</td>
           <td>${s.language} #${s.group_number}</td>
+          <td>${s.leader_name || "بدون ليدر"}</td>
+          <td>${new Date(s.created_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</td>
           <td>${s.file_url ? `<a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a>` : "—"}</td>
           <td>
             <span class="pill ${s.status === "completed" ? "badge-success" : s.status === "rejected" ? "badge-danger" : "badge-pending"}">
@@ -654,14 +656,16 @@
             <tr>
               <td>${s.member_name}</td>
               <td>${s.task_title}</td>
-              <td>${s.language} #${s.group_number}${s.leader_name ? ` — ${s.leader_name}` : " — بدون ليدر"}</td>
+              <td>${s.language} #${s.group_number}</td>
+              <td>${s.leader_name || "بدون ليدر"}</td>
+              <td>${new Date(s.created_at).toLocaleString("ar-EG", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</td>
               <td><a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a></td>
               <td>
                 <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmissionAll('${s.submission_id}', true, this)">✅ موافقة</button>
                 <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmissionAll('${s.submission_id}', false, this)">❌ رفض</button>
               </td>
             </tr>`).join("")
-        : `<tr><td colspan="5" class="text-muted">مفيش تسليمات محتاجة مراجعة دلوقتي</td></tr>`;
+        : `<tr><td colspan="7" class="text-muted">مفيش تسليمات محتاجة مراجعة دلوقتي</td></tr>`;
     } catch (err) {
       document.getElementById("review-all-error").textContent = err.message;
       document.getElementById("review-all-error").style.display = "block";
