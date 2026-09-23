@@ -210,7 +210,12 @@
       alert(NM.t("task_upload_success"));
       await Promise.all([loadClaims(), loadMySubmissions()]);
     } catch (err) {
-      alert(err.message);
+      // err.detail, when present, is the raw technical reason from Google's
+      // API (permission denied, invalid folder, quota, etc.) — showing it
+      // alongside the friendly message means whoever hits this can screenshot
+      // it and send it straight over, instead of someone having to dig
+      // through server logs to find out what actually failed.
+      alert(err.detail ? `${err.message}\n\n(تفاصيل تقنية: ${err.detail})` : err.message);
       inputEl.disabled = false;
       inputEl.value = "";
     }

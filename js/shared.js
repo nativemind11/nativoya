@@ -344,7 +344,13 @@ const NM = (() => {
     let data = null;
     try { data = await res.json(); } catch (_) { /* empty body */ }
     if (!res.ok) {
-      throw new Error(friendlyErrorMessage(data && data.error));
+      const err = new Error(friendlyErrorMessage(data && data.error));
+      // Some backend errors (Drive API failures) attach a technical "detail"
+      // string alongside the friendly Arabic message — carry it through so
+      // the caller can show it too, for cases where the friendly message
+      // alone isn't enough to diagnose what actually went wrong.
+      if (data && data.detail) err.detail = data.detail;
+      throw err;
     }
     return data;
   }
@@ -541,7 +547,9 @@ const NM = (() => {
         break;
       }
       const errData = await res.json().catch(() => ({}));
-      throw new Error(friendlyErrorMessage(errData.error) || "حصل خطأ أثناء رفع الملف، حاول تاني.");
+      const chunkErr = new Error(friendlyErrorMessage(errData.error) || "حصل خطأ أثناء رفع الملف، حاول تاني.");
+      if (errData.detail) chunkErr.detail = errData.detail;
+      throw chunkErr;
     }
 
     return apiFetch(`/api/tasks/claims/${claimId}/upload-finalize`, {

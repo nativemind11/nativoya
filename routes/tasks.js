@@ -12,6 +12,21 @@ function cleanUrlList(list) {
   return Array.isArray(list) ? list.map((u) => String(u || "").trim()).filter(Boolean) : [];
 }
 
+// googleapis errors nest the actual reason from Google deep inside the
+// response body (err.response.data.error.message), not in err.message
+// itself — so a generic "Could not start the upload" response was hiding
+// exactly which Drive API call failed and why (bad folder id, permission
+// denied, quota, etc.). This pulls out the most specific string available
+// so it can be surfaced in the response instead of only in server logs.
+function driveErrorDetail(err) {
+  return (
+    err?.response?.data?.error?.message ||
+    err?.errors?.[0]?.message ||
+    err?.message ||
+    String(err)
+  );
+}
+
 // POST /api/tasks  (head_leader only) — publish a new task, either to every
 // group (targetAll: true) or to a specific list of groupIds. videoUrls and
 // audioSampleUrls each accept an ARRAY of links (a task can have several).
@@ -654,7 +669,11 @@ router.post("/claims/:claimId/upload-init", requireAuth, requireRole("member", "
     if (err.code === "DRIVE_NOT_CONNECTED") {
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل — لازم الهيد ليدر يوصله الأول من لوحة الأدمن." });
     }
-    res.status(500).json({ error: "Could not start the upload" });
+    // Surface Google's own reason (permission denied, invalid folder, quota,
+    // etc.) instead of the old opaque "Could not start the upload" — that
+    // message wasn't mapped to anything specific client-side, so every
+    // distinct failure here looked identical and undiagnosable from the UI.
+    res.status(500).json({ error: "Could not start the upload", detail: driveErrorDetail(err) });
   }
 });
 
@@ -698,7 +717,7 @@ router.post("/upload-chunk", requireAuth, requireRole("member", "leader"), rawCh
     res.json({ id: data && data.id });
   } catch (err) {
     console.error("[tasks:upload-chunk]", err);
-    res.status(500).json({ error: "Could not relay upload to Drive" });
+    res.status(500).json({ error: "Could not relay upload to Drive", detail: driveErrorDetail(err) });
   }
 });
 
@@ -731,7 +750,7 @@ router.post("/claims/:claimId/upload-finalize", requireAuth, requireRole("member
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error("[tasks:upload-finalize]", err);
-    res.status(500).json({ error: "Could not save the submission" });
+    res.status(500).json({ error: "Could not save the submission", detail: driveErrorDetail(err) });
   }
 });
 

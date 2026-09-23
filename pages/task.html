@@ -202,7 +202,7 @@
       successBox.style.display = "block";
       await loadMatchingClaim(taskId);
     } catch (err) {
-      errorBox.textContent = err.message;
+      errorBox.textContent = err.detail ? `${err.message} (تفاصيل تقنية: ${err.detail})` : err.message;
       errorBox.style.display = "block";
     } finally {
       this.disabled = false;

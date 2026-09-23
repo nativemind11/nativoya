@@ -234,7 +234,7 @@
       alert("✅ اترفع شغلك بنجاح!");
       await loadMyClaims();
     } catch (err) {
-      alert(err.message);
+      alert(err.detail ? `${err.message}\n\n(تفاصيل تقنية: ${err.detail})` : err.message);
       inputEl.disabled = false;
       inputEl.value = "";
     }
