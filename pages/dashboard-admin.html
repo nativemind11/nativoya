@@ -127,6 +127,7 @@
           </table>
         </div>
         <p class="text-muted" style="font-size:0.85rem; margin-top:20px;">كل التسليمات الفردية على المهمة دي:</p>
+        <input type="text" id="task-submissions-search" placeholder="🔍 ابحث باسم العضو اللي سلّم..." oninput="filterTaskSubmissions()" style="width:100%; max-width:320px; margin-bottom:12px;">
         <div id="task-submissions-day-tabs" class="flex gap-8" style="flex-wrap:wrap; margin-bottom:12px;"></div>
         <div class="table-wrap">
           <table>
@@ -310,6 +311,7 @@
     document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr>`;
     document.getElementById("task-submissions-day-tabs").innerHTML = "";
     document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-submissions-search").value = "";
     panel.scrollIntoView({ behavior: "smooth" });
 
     try {
@@ -351,6 +353,9 @@
     const days = Object.keys(byDay); // already newest-first since submissions arrived sorted DESC
 
     const tabsWrap = document.getElementById("task-submissions-day-tabs");
+    window.__submissionsByDay = byDay; // scratch state for the tab click handler below
+    window.__submissionsAll = submissions; // flat list (all days) — used by the name search below
+    window.__submissionsTaskId = taskId;
     if (!days.length) {
       tabsWrap.innerHTML = "";
       document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
@@ -361,7 +366,6 @@
       <button class="btn ${i === 0 ? "btn-primary" : "btn-secondary"}" style="padding:6px 14px; font-size:0.85rem;" data-day="${day}" onclick="selectSubmissionDay('${taskId}', this)">${day} (${byDay[day].length})</button>
     `).join("");
 
-    window.__submissionsByDay = byDay; // scratch state for the tab click handler below
     renderSubmissionDayTable(byDay[days[0]], taskId);
   }
 
@@ -371,6 +375,28 @@
       b.classList.toggle("btn-secondary", b !== btn);
     });
     renderSubmissionDayTable(window.__submissionsByDay[btn.dataset.day], taskId);
+  }
+
+  // Filters submissions by member name as the head_leader types. Searches
+  // across ALL days at once (not just the currently open tab) — the whole
+  // point is finding someone's delivery without knowing which day it landed
+  // on. Clearing the box goes back to the normal per-day tab view.
+  function filterTaskSubmissions() {
+    const query = document.getElementById("task-submissions-search").value.trim().toLowerCase();
+    const tabsWrap = document.getElementById("task-submissions-day-tabs");
+    if (!query) {
+      tabsWrap.style.display = "";
+      const activeTab = tabsWrap.querySelector("button.btn-primary") || tabsWrap.querySelector("button");
+      if (activeTab) renderSubmissionDayTable(window.__submissionsByDay[activeTab.dataset.day], window.__submissionsTaskId);
+      return;
+    }
+    tabsWrap.style.display = "none";
+    const matches = (window.__submissionsAll || []).filter(s => (s.member_name || "").toLowerCase().includes(query));
+    if (!matches.length) {
+      document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">مفيش تسليمات لعضو اسمه "${query}"</td></tr>`;
+      return;
+    }
+    renderSubmissionDayTable(matches, window.__submissionsTaskId);
   }
 
   function renderSubmissionDayTable(submissions, taskId) {

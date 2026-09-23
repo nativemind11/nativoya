@@ -298,6 +298,17 @@ const NM = (() => {
     "Enter a valid quantity greater than zero": "من فضلك اكتب عدد صحيح أكبر من صفر.",
     "Could not claim this task": "تعذّر استلام المهمة. حاول تاني بعد شوية.",
     "Could not submit your work": "تعذّر إرسال شغلك. حاول تاني بعد شوية.",
+    // The 3-step direct-to-Drive upload (init/chunk/finalize) previously fell
+    // through to the generic "unexpected error" message on ANY failure at
+    // any of these three steps, which hid which step actually failed. Each
+    // one now has its own message so the real cause is visible.
+    "filename is required": "حصل خطأ في اسم الملف. حاول تاني.",
+    "Could not start the upload": "تعذّر بدء رفع الملف على جوجل درايف. ممكن يكون فيه مشكلة في اتصال الدرايف — لو استمرت المشكلة قول للهيد ليدر يتأكد إن جوجل درايف متصل من لوحة الأدمن.",
+    "Missing upload metadata": "حصل خطأ أثناء رفع الملف. حاول تاني.",
+    "Invalid upload target": "حصل خطأ أثناء رفع الملف. حاول تاني.",
+    "Could not relay upload to Drive": "تعذّر رفع الملف على جوجل درايف أثناء الرفع. تأكد من اتصالك بالإنترنت وحاول تاني.",
+    "fileId is required": "حصل خطأ بعد رفع الملف. حاول تاني.",
+    "Could not save the submission": "الملف اترفع على جوجل درايف، بس حصلت مشكلة في حفظ التسليم عندنا. حاول تاني، ولو اتكررت قول للهيد ليدر.",
     "Submission not found": "التسليم ده مش موجود.",
     "Could not review this submission": "تعذّر مراجعة التسليم ده. حاول تاني.",
     "groupIds is required when targetAll is false": "اختار جروب واحد على الأقل، أو اختار \"كل الجروبات\".",

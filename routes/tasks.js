@@ -188,9 +188,16 @@ router.get("/:id/claims", requireAuth, requireRole("head_leader"), async (req, r
 // with full details + how much has been claimed, for the admin management table
 router.get("/manage", requireAuth, requireRole("head_leader"), async (req, res) => {
   try {
+    // claimed_quantity here means "genuinely claimed by a leader to work on"
+    // — it excludes auto_claimed rows on purpose. Auto-claims are just an
+    // internal availability pool handed to leaderless groups the moment a
+    // member opens their dashboard (see /claims/for-my-group), not real
+    // work assigned by anyone; counting them here made this column jump to
+    // the full total_quantity as soon as any leaderless member loaded their
+    // dashboard, even with zero actual submissions.
     const result = await pool.query(`
       SELECT t.*, s.name_ar AS skill_name_ar, s.icon AS skill_icon,
-             COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS claimed_quantity,
+             COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id AND NOT auto_claimed), 0) AS claimed_quantity,
              t.total_quantity - COALESCE((SELECT COUNT(*) FROM submissions s2
                                              JOIN task_claims tc2 ON tc2.id = s2.task_claim_id
                                             WHERE tc2.task_id = t.id), 0) AS remaining
