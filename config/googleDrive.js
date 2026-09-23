@@ -225,9 +225,27 @@ async function shareFileWithAnyone(fileId) {
   return meta.data.webViewLink;
 }
 
+// Checks the saved account is still ACTUALLY usable, not just present in the
+// DB. Before this, a saved row was reported as "connected" forever even
+// after Google revoked or expired the refresh token (very common while the
+// OAuth consent screen is still in "Testing" mode — Google auto-expires
+// those refresh tokens after 7 days) — so the admin page showed a permanent
+// green "متصل" badge, hid the reconnect button, and every real upload kept
+// failing with no way to fix it from the UI.
 async function isConnected() {
   const result = await pool.query("SELECT account_email FROM google_auth LIMIT 1");
-  return result.rows[0]?.account_email || null;
+  const email = result.rows[0]?.account_email;
+  if (!email) return null;
+
+  try {
+    const client = await getAuthorizedClient();
+    const drive = google.drive({ version: "v3", auth: client });
+    await drive.about.get({ fields: "user" }); // cheapest possible authenticated call
+    return email;
+  } catch (err) {
+    console.warn("[googleDrive] saved account failed a live check (likely expired/revoked token):", err.message);
+    return null;
+  }
 }
 
 module.exports = {
