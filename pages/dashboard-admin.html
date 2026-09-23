@@ -661,13 +661,19 @@
       const status = await NM.apiGetGoogleStatus();
       const statusEl = document.getElementById("drive-status");
       const btn = document.getElementById("drive-connect-btn");
+      // The button stays visible either way now — even when "connected",
+      // since a saved account can still lose the specific scope uploads
+      // need (see isConnected in googleDrive.js) without this endpoint
+      // necessarily catching every case immediately. Re-authorizing is
+      // cheap and safe, so there's no reason to hide the escape hatch.
+      btn.href = NM.apiGoogleConnectUrl();
+      btn.classList.remove("hidden");
       if (status.connected) {
         statusEl.innerHTML = `<span class="pill badge-success">✅ متصل بحساب: ${status.email}</span>`;
-        btn.classList.add("hidden");
+        btn.textContent = "أعد الاتصال بجوجل درايف";
       } else {
-        statusEl.innerHTML = `<span class="pill badge-pending">⚠️ مش متصل لسه</span>`;
-        btn.href = NM.apiGoogleConnectUrl();
-        btn.classList.remove("hidden");
+        statusEl.innerHTML = `<span class="pill badge-pending">⚠️ مش متصل لسه (أو محتاج صلاحيات جديدة)</span>`;
+        btn.textContent = "وصّل جوجل درايف";
       }
     } catch (err) {
       document.getElementById("drive-status").textContent = err.message;

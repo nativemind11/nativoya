@@ -232,6 +232,13 @@ async function shareFileWithAnyone(fileId) {
 // those refresh tokens after 7 days) — so the admin page showed a permanent
 // green "متصل" badge, hid the reconnect button, and every real upload kept
 // failing with no way to fix it from the UI.
+// Checks the saved account is still ACTUALLY usable for uploads, not just
+// present in the DB and able to answer read-only calls. A token can pass a
+// basic "am I authenticated" check (e.g. about.get) while still lacking the
+// write scope drive.file grants — Google then rejects the actual upload
+// with "insufficient authentication scopes", and until this check looked at
+// scopes specifically, the admin page kept showing a green "متصل" badge
+// through that entire failure.
 async function isConnected() {
   const result = await pool.query("SELECT account_email FROM google_auth LIMIT 1");
   const email = result.rows[0]?.account_email;
@@ -239,11 +246,16 @@ async function isConnected() {
 
   try {
     const client = await getAuthorizedClient();
-    const drive = google.drive({ version: "v3", auth: client });
-    await drive.about.get({ fields: "user" }); // cheapest possible authenticated call
+    const { token: accessToken } = await client.getAccessToken(); // forces a refresh if the cached one is stale
+    if (!accessToken) throw new Error("no access token available");
+    const info = await client.getTokenInfo(accessToken);
+    const grantedScopes = info.scopes || [];
+    if (!grantedScopes.includes("https://www.googleapis.com/auth/drive.file")) {
+      throw new Error("token is missing the drive.file scope needed for uploads");
+    }
     return email;
   } catch (err) {
-    console.warn("[googleDrive] saved account failed a live check (likely expired/revoked token):", err.message);
+    console.warn("[googleDrive] saved account failed a live check (expired/revoked token, or missing scopes):", err.message);
     return null;
   }
 }
