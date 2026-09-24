@@ -142,8 +142,13 @@
 
     const audioWrap = document.getElementById("task-audio-wrap");
     const audioUrls = task.audio_sample_urls || [];
+    const audioTitles = task.audio_sample_titles || [];
     if (audioUrls.length) {
-      audioWrap.innerHTML = audioUrls.map(url => `<audio controls style="width:100%;" src="${url}"></audio>`).join("");
+      audioWrap.innerHTML = audioUrls.map((url, i) => {
+        const title = audioTitles[i];
+        const titleHtml = title ? `<p class="text-muted mb-0" style="font-size:0.85rem;">${title}</p>` : "";
+        return `${titleHtml}<audio controls style="width:100%;" src="${url}"></audio>`;
+      }).join("");
     } else {
       document.getElementById("task-audio-card").classList.add("hidden");
     }

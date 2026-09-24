@@ -71,7 +71,7 @@
             <p class="hint">نفس العملة المختارة فوق. كل واحد بيشوف السعر بتاعه بس حسب حسابه.</p>
           </div>
           <div class="field"><label>روابط فيديو الشرح</label><textarea id="t-video" rows="2" placeholder="رابط في كل سطر&#10;https://youtube.com/...&#10;https://youtube.com/..."></textarea></div>
-          <div class="field"><label>روابط السامبل الصوتي</label><textarea id="t-audio" rows="2" placeholder="رابط في كل سطر&#10;https://.../sample1.mp3&#10;https://.../sample2.mp3"></textarea></div>
+          <div class="field"><label>روابط السامبل الصوتي</label><textarea id="t-audio" rows="2" placeholder="عنوان السامبل | الرابط — واحد في كل سطر&#10;مثال ١ - نبرة هادئة | https://.../sample1.mp3&#10;مثال ٢ - نبرة حماسية | https://.../sample2.mp3&#10;(العنوان اختياري: ممكن تسيب رابط لوحده من غير عنوان)"></textarea></div>
           <div class="field" style="grid-column:1/-1;"><label>التعليمات</label><textarea id="t-instructions" placeholder="اشرح المطلوب بالتفصيل..."></textarea></div>
           <div class="field" style="grid-column:1/-1;">
             <label>ملف تعليمات (PDF أو TXT) — اختياري</label>
@@ -450,7 +450,12 @@
     document.getElementById("t-price-leader").value = t.leader_price || "";
     document.getElementById("t-currency").value = t.currency || "USD";
     document.getElementById("t-video").value = (t.video_urls || []).join("\n");
-    document.getElementById("t-audio").value = (t.audio_sample_urls || []).join("\n");
+    // Each line is "عنوان | رابط", matching audio_sample_urls[i] with
+    // audio_sample_titles[i] by index. A sample with no title just shows
+    // its bare URL (so old data with no titles yet still round-trips fine).
+    document.getElementById("t-audio").value = (t.audio_sample_urls || [])
+      .map((url, i) => { const title = (t.audio_sample_titles || [])[i]; return title ? `${title} | ${url}` : url; })
+      .join("\n");
     document.getElementById("t-instructions").value = t.instructions || "";
     document.getElementById("t-instructions-file-current").textContent = t.instructions_file_name
       ? `📎 الملف الحالي: ${t.instructions_file_name} — اختار ملف جديد تحت لو عايز تستبدله`
@@ -560,7 +565,19 @@
         leaderPrice: document.getElementById("t-price-leader").value ? Number(document.getElementById("t-price-leader").value) : null,
         currency: document.getElementById("t-currency").value,
         videoUrls: document.getElementById("t-video").value.split("\n").map(s => s.trim()).filter(Boolean),
-        audioSampleUrls: document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean),
+        // Each non-empty line is either "عنوان | رابط" or just a bare رابط.
+        // Split on the FIRST "|" only, so a URL that happens to contain one
+        // (unlikely, but query strings can) doesn't get mangled.
+        ...(() => {
+          const lines = document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean);
+          const audioSampleUrls = [], audioSampleTitles = [];
+          lines.forEach(line => {
+            const sep = line.indexOf("|");
+            if (sep === -1) { audioSampleUrls.push(line); audioSampleTitles.push(""); }
+            else { audioSampleTitles.push(line.slice(0, sep).trim()); audioSampleUrls.push(line.slice(sep + 1).trim()); }
+          });
+          return { audioSampleUrls, audioSampleTitles };
+        })(),
       };
 
       let taskId = editingTaskId;

@@ -112,6 +112,7 @@ CREATE TABLE tasks (
   instructions    TEXT,
   video_urls      TEXT[] NOT NULL DEFAULT '{}',        -- one or more walkthrough videos
   audio_sample_urls TEXT[] NOT NULL DEFAULT '{}',       -- one or more example audio samples
+  audio_sample_titles TEXT[] NOT NULL DEFAULT '{}',     -- matching title for each audio_sample_urls entry, by index (may be shorter than audio_sample_urls — a missing/blank entry just means that sample has no title)
   member_price    NUMERIC(10,2),                          -- per-unit price for regular members (base groups AND leader-invite groups alike)
   leader_price    NUMERIC(10,2),                          -- per-unit price for leaders — usually higher; head_leader sets/sees both
   currency        TEXT NOT NULL DEFAULT 'USD',

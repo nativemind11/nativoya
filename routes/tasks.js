@@ -36,7 +36,7 @@ function driveErrorDetail(err) {
 router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
   const {
     skillSlug, title, instructions, totalQuantity,
-    memberPrice, leaderPrice, currency, videoUrls, audioSampleUrls,
+    memberPrice, leaderPrice, currency, videoUrls, audioSampleUrls, audioSampleTitles,
     targetAll, groupIds, maleQuantity, femaleQuantity,
   } = req.body;
 
@@ -50,13 +50,13 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
     await client.query("BEGIN");
     const result = await client.query(
       `INSERT INTO tasks (skill_slug, title, instructions, total_quantity, male_quantity, female_quantity,
-                           member_price, leader_price, currency, video_urls, audio_sample_urls, target_all, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'USD'), $10, $11, $12, $13) RETURNING *`,
+                           member_price, leader_price, currency, video_urls, audio_sample_urls, audio_sample_titles, target_all, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'USD'), $10, $11, $12, $13, $14) RETURNING *`,
       [skillSlug, title, instructions, totalQuantity,
        maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
        femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
        memberPrice || null, leaderPrice || null, currency,
-       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), isTargetAll, req.user.id]
+       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), cleanUrlList(audioSampleTitles), isTargetAll, req.user.id]
     );
     const task = result.rows[0];
 
@@ -233,7 +233,7 @@ router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => 
   try {
     const {
       title, instructions, totalQuantity, memberPrice, leaderPrice, currency,
-      videoUrls, audioSampleUrls, maleQuantity, femaleQuantity,
+      videoUrls, audioSampleUrls, audioSampleTitles, maleQuantity, femaleQuantity,
     } = req.body;
 
     const claimedResult = await pool.query(
@@ -247,11 +247,11 @@ router.put("/:id", requireAuth, requireRole("head_leader"), async (req, res) => 
     const result = await pool.query(
       `UPDATE tasks SET
          title = $1, instructions = $2, total_quantity = $3, member_price = $4, leader_price = $5,
-         currency = $6, video_urls = $7, audio_sample_urls = $8,
-         male_quantity = $9, female_quantity = $10
-       WHERE id = $11 RETURNING *`,
+         currency = $6, video_urls = $7, audio_sample_urls = $8, audio_sample_titles = $9,
+         male_quantity = $10, female_quantity = $11
+       WHERE id = $12 RETURNING *`,
       [title, instructions, totalQuantity, memberPrice || null, leaderPrice || null, currency,
-       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls),
+       cleanUrlList(videoUrls), cleanUrlList(audioSampleUrls), cleanUrlList(audioSampleTitles),
        maleQuantity != null && maleQuantity !== "" ? Number(maleQuantity) : null,
        femaleQuantity != null && femaleQuantity !== "" ? Number(femaleQuantity) : null,
        req.params.id]
