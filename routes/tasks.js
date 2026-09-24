@@ -606,6 +606,15 @@ router.post("/claims/:claimId/upload-init", requireAuth, requireRole("member", "
     const { filename, mimeType } = req.body;
     if (!filename) return res.status(400).json({ error: "filename is required" });
 
+    // Only .zip and .pdf are accepted deliverables — no text files, audio
+    // files, or anything else. Checked here (not just client-side in the
+    // <input accept> attribute) because that's only a UI hint and anyone
+    // calling the API directly could send whatever they want otherwise.
+    const ext = (filename.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+    if (ext !== ".zip" && ext !== ".pdf") {
+      return res.status(400).json({ error: "مسموح بس برفع ملفات ZIP أو PDF — أي نوع ملف تاني (نصوص، صوت، إلخ) مش مقبول." });
+    }
+
     const claimResult = await pool.query(
       `SELECT tc.id, tc.group_id, t.id AS task_id, t.title, t.drive_folder_id,
               g.leader_id, g.group_number, lu.first_name AS leader_first_name

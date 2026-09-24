@@ -212,7 +212,7 @@
               <td>${c.remaining_in_claim}</td>
               <td>
                 ${c.remaining_in_claim > 0 ? `
-                  <input type="file" id="file-${c.claim_id}" class="hidden" onchange="submitWork('${c.claim_id}', this)">
+                  <input type="file" id="file-${c.claim_id}" class="hidden" accept=".zip,.pdf,application/zip,application/pdf" onchange="submitWork('${c.claim_id}', this)">
                   <button class="btn btn-secondary" style="padding:6px 14px;" onclick="document.getElementById('file-${c.claim_id}').click()">📎 تسليم عمل</button>
                 ` : `<span class="text-muted">اتسلّم بالكامل</span>`}
               </td>

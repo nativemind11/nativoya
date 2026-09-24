@@ -505,6 +505,13 @@ const NM = (() => {
   // upload session opened in step 1. This is what lets large recordings
   // upload successfully even though our host caps any single request.
   async function apiUploadSubmission(claimId, file) {
+    // Same restriction the server enforces (see upload-init) — checked here
+    // too so a wrong file type gets rejected instantly instead of only
+    // after a round trip to the server.
+    const ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+    if (ext !== ".zip" && ext !== ".pdf") {
+      throw new Error("مسموح بس برفع ملفات ZIP أو PDF — أي نوع ملف تاني (نصوص، صوت، إلخ) مش مقبول.");
+    }
     const init = await apiFetch(`/api/tasks/claims/${claimId}/upload-init`, {
       method: "POST",
       body: JSON.stringify({ filename: file.name, mimeType: file.type || "application/octet-stream" }),

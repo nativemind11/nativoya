@@ -165,7 +165,7 @@
             <td>${c.title}</td>
             <td><a class="btn btn-secondary" style="padding:6px 14px;" href="task.html?id=${c.task_id}">${NM.t("btn_details")}</a></td>
             <td>
-              <input type="file" id="file-${c.claim_id}" class="hidden" onchange="submitWork('${c.claim_id}', this)">
+              <input type="file" id="file-${c.claim_id}" class="hidden" accept=".zip,.pdf,application/zip,application/pdf" onchange="submitWork('${c.claim_id}', this)">
               <button class="btn btn-primary" style="padding:6px 14px;" onclick="document.getElementById('file-${c.claim_id}').click()">${NM.t("btn_submit_work")}</button>
             </td>
           </tr>`).join("")
