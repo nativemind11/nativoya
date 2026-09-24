@@ -384,20 +384,33 @@ router.get("/claims/for-my-group", requireAuth, async (req, res) => {
       [req.user.id]
     );
 
-    // Auto-claim them ONE AT A TIME, each as its own statement. This matters:
-    // a single INSERT...SELECT that matches several groups at once would have
-    // every one of those rows compute "how much is left" against the SAME
-    // starting snapshot — so a member in 5 different leaderless groups would
-    // get the task's FULL quantity auto-claimed 5 times over, instead of
-    // splitting a fixed pool. Doing it in a loop makes each claim see the
-    // ones before it actually committed, so the task can never be over-claimed.
+    // Auto-claim them ONE AT A TIME, each as its own statement, and — this is
+    // the fix — each leaderless group's share is based on how much has
+    // actually been SUBMITTED so far (real, delivered work), not on how much
+    // OTHER leaderless groups have merely been auto-claimed. Before this,
+    // "remaining" was total_quantity minus the SUM of every existing claim
+    // (including other groups' auto-claims), so the very first leaderless
+    // group to load its dashboard after a task went live would auto-claim
+    // the task's ENTIRE quantity for itself, leaving 0 "remaining" for every
+    // other leaderless group (i.e. every other language) from that point on
+    // — new members joining any of those other groups, or anyone whose group
+    // just hadn't had its turn yet, would never get an auto-claim and the
+    // task would silently never appear for them at all, even though nobody
+    // had actually delivered any real work yet. Each eligible group now gets
+    // its own full share independent of the others; genuine over-delivery
+    // across many groups on one task is a separate, much rarer concern than
+    // a task being invisible to whole languages' worth of members.
     for (const c of candidates.rows) {
       await pool.query(
         `
         INSERT INTO task_claims (task_id, group_id, claimed_by, quantity, auto_claimed)
         SELECT $1, $2, $3, remaining, true
         FROM (
-          SELECT t.total_quantity - COALESCE((SELECT SUM(quantity) FROM task_claims WHERE task_id = t.id), 0) AS remaining
+          SELECT t.total_quantity - COALESCE((
+            SELECT COUNT(*) FROM submissions s2
+            JOIN task_claims tc2 ON tc2.id = s2.task_claim_id
+            WHERE tc2.task_id = t.id
+          ), 0) AS remaining
           FROM tasks t WHERE t.id = $1
         ) x
         WHERE remaining > 0
