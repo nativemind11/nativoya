@@ -38,7 +38,6 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
     skillSlug, title, instructions, totalQuantity,
     memberPrice, leaderPrice, currency, videoUrls, audioSampleUrls, audioSampleTitles,
     targetAll, groupIds, maleQuantity, femaleQuantity,
-    recordingSettings, instructionsScriptUrl, instructionsScriptName,
   } = req.body;
 
   const isTargetAll = targetAll !== false; // default true
@@ -69,24 +68,6 @@ router.post("/", requireAuth, requireRole("head_leader"), async (req, res) => {
         );
       }
     }
-
-    // Add recording settings if this is a voice recording task
-    if (skillSlug === "voice_recording" && recordingSettings) {
-      await client.query(
-        `UPDATE tasks SET recording_settings = $1 WHERE id = $2`,
-        [JSON.stringify(recordingSettings), task.id]
-      );
-    }
-
-    // Add script URL if provided
-    if (skillSlug === "voice_recording" && instructionsScriptUrl && instructionsScriptName) {
-      await client.query(
-        `INSERT INTO recording_scripts (task_id, script_url, script_name, uploaded_by)
-         VALUES ($1, $2, $3, $4) ON CONFLICT(task_id) DO UPDATE SET script_url = $2, script_name = $3`,
-        [task.id, instructionsScriptUrl, instructionsScriptName, req.user.id]
-      );
-    }
-
     await client.query("COMMIT");
 
     // Best-effort: give this task its own Drive folder. If Drive isn't
@@ -142,48 +123,6 @@ router.post("/:id/instructions-file", requireAuth, requireRole("head_leader"), u
   } catch (err) {
     console.error("[tasks:instructions-file]", err);
     res.status(503).json({ error: "تعذّر رفع الملف — تأكد إن جوجل درايف متصل." });
-  }
-});
-
-// POST /api/tasks/:id/recording-script  (head_leader only) — upload script text
-// for voice recording tasks. This is the text that members will record.
-router.post("/:id/recording-script", requireAuth, requireRole("head_leader"), upload.single("script"), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: "لا يوجد ملف مرفوع" });
-
-    const taskResult = await pool.query("SELECT id, title, drive_folder_id FROM tasks WHERE id = $1", [req.params.id]);
-    const task = taskResult.rows[0];
-    if (!task) return res.status(404).json({ error: "Task not found" });
-
-    let folderId = task.drive_folder_id;
-    if (!folderId) {
-      folderId = await driveService.createTaskFolder(task.title, task.id);
-      await pool.query("UPDATE tasks SET drive_folder_id = $1 WHERE id = $2", [folderId, task.id]);
-    }
-
-    const uploaded = await driveService.uploadSubmissionFile(
-      folderId, req.file.originalname, req.file.mimetype, req.file.buffer
-    );
-
-    // Save script reference in recording_scripts table
-    const result = await pool.query(
-      `INSERT INTO recording_scripts (task_id, script_url, script_name, uploaded_by)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT(task_id) DO UPDATE SET script_url = $2, script_name = $3, uploaded_by = $4
-       RETURNING *`,
-      [req.params.id, uploaded.webViewLink, req.file.originalname, req.user.id]
-    );
-
-    // Also update task with script URLs
-    await pool.query(
-      `UPDATE tasks SET instructions_script_url = $1, instructions_script_name = $2 WHERE id = $3`,
-      [uploaded.webViewLink, req.file.originalname, req.params.id]
-    );
-
-    res.json({ success: true, script: result.rows[0] });
-  } catch (err) {
-    console.error("[tasks:recording-script]", err);
-    res.status(503).json({ error: "تعذّر رفع ملف النص — تأكد إن جوجل درايف متصل." });
   }
 });
 
