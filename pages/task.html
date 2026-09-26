@@ -54,6 +54,7 @@
       <p id="submit-success" class="hint" style="color:#16a34a; display:none; font-weight:700;"></p>
       <input type="file" id="submit-file" class="hidden" accept=".zip,.pdf,application/zip,application/pdf">
       <button class="btn btn-primary" id="submit-btn" onclick="document.getElementById('submit-file').click()" data-i18n="task_upload_btn">📎 رفع الشغل</button>
+      <button class="btn btn-primary" id="enter-studio-btn" style="display:none; margin-top:10px;" onclick="enterRecordingStudio()">🎤 ادخل الاستوديو</button>
     </div>
   </div>
 
@@ -168,15 +169,23 @@
       const ledGroupIds = new Set((user.ledGroups || []).map(g => g.id));
       matchingClaim = taskClaims.find(c => ledGroupIds.has(c.group_id)) || taskClaims[0] || null;
       const namingNotice = document.getElementById("naming-notice");
+      
+      // Check if this is a voice recording task
+      const isVoiceRecording = currentTask && currentTask.skill_slug === "voice_recording";
+      const studioBtn = document.getElementById("enter-studio-btn");
+      const submitBtn = document.getElementById("submit-btn");
+      
       if (!matchingClaim) {
         document.getElementById("submit-hint").removeAttribute("data-i18n");
         document.getElementById("submit-hint").textContent = NM.t("task_submit_hint_no_claim");
-        document.getElementById("submit-btn").disabled = true;
+        submitBtn.disabled = true;
+        studioBtn.disabled = true;
         namingNotice.classList.add("hidden");
       } else {
         document.getElementById("submit-hint").removeAttribute("data-i18n");
         document.getElementById("submit-hint").textContent = NM.t("task_submit_hint_available").replace("{n}", matchingClaim.remaining_in_claim);
-        document.getElementById("submit-btn").disabled = false;
+        submitBtn.disabled = false;
+        studioBtn.disabled = false;
         const genderLabel = user.gender === "male" ? NM.t("gender_male") : user.gender === "female" ? NM.t("gender_female") : "—";
         namingNotice.textContent = NM.t("task_naming_notice")
           .replace("{name}", user.firstName || "—")
@@ -184,9 +193,26 @@
           .replace("{gender}", genderLabel);
         namingNotice.classList.remove("hidden");
       }
+      
+      // Show/hide buttons based on task type
+      if (isVoiceRecording) {
+        studioBtn.style.display = "block";
+        submitBtn.style.display = "none";
+      } else {
+        studioBtn.style.display = "none";
+        submitBtn.style.display = "block";
+      }
     } catch (_) {
       submitCard.classList.add("hidden");
     }
+  }
+
+  function enterRecordingStudio() {
+    if (!matchingClaim) {
+      alert("لم تسجل مجموعتك على هذه المهمة بعد");
+      return;
+    }
+    window.location.href = `/pages/recording-studio.html?taskId=${currentTask.id}&claimId=${matchingClaim.claim_id}`;
   }
 
   document.getElementById("submit-file").addEventListener("change", async function () {

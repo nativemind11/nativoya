@@ -6,6 +6,8 @@ const authRoutes = require("./routes/auth");
 const groupsRoutes = require("./routes/groups");
 const tasksRoutes = require("./routes/tasks");
 const paymentsRoutes = require("./routes/payments");
+const recordingRoutes = require("./routes/recording");
+const qaRoutes = require("./routes/qa");
 
 const app = express();
 
@@ -19,6 +21,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/groups", groupsRoutes);
 app.use("/api/tasks", tasksRoutes);
 app.use("/api/payments", paymentsRoutes);
+app.use("/api/recording", recordingRoutes);
+app.use("/api/qa", qaRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
