@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>جروباتي — Nativoya</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" id="page-main">
+  <div class="section-head">
+    <h1>جروباتي</h1>
+    <p class="text-muted">انت ممكن تكون عضو في أكتر من جروب لغة في نفس الوقت — اختار الجروب اللي عايز تفتحه.</p>
+  </div>
+
+  <div id="group-tabs" class="flex gap-8" style="flex-wrap:wrap; margin-bottom:10px;"></div>
+
+  <div class="card card-compact" style="margin-bottom:18px;">
+    <div class="flex gap-8" style="align-items:center; flex-wrap:wrap;">
+      <select id="add-lang-select" style="flex:1; min-width:180px;"></select>
+      <button class="btn btn-secondary" id="add-lang-btn">+ اضف لغة جديدة</button>
+    </div>
+    <p id="add-lang-error" class="hint" style="color:#e0245e; display:none; margin-top:8px;"></p>
+  </div>
+
+  <div class="chat-shell card" style="padding:0; grid-template-columns: 1fr;" id="chat-shell">
+    <section class="chat-main">
+      <div class="chat-head" id="chat-head">—</div>
+      <div id="chat-locked-banner" class="hidden" style="padding:8px 18px; background:#FFF4E5; color:#8a5a00; font-size:0.82rem; border-bottom:1px solid var(--color-border);">
+        🔒 الشات مقفول مؤقتًا من الهيد ليدر — هتقدر تبعت تاني لما يفتحه.
+      </div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-row" id="chat-input-row">
+        <input type="text" id="chat-input" placeholder="اكتب رسالتك...">
+        <button class="btn btn-secondary" id="mic-btn" title="رسالة صوتية">🎤</button>
+        <button class="btn btn-secondary" id="attach-btn" title="إرفاق ملف">📎</button>
+        <button class="btn btn-primary" id="send-btn">إرسال</button>
+      </div>
+    </section>
+  </div>
+
+  <p class="text-muted text-center" style="margin-top:16px; font-size:0.85rem;">
+    💬 شات حقيقي متصل بـ Firebase — الرسايل بتوصل لحظيًا لكل أعضاء الجروب.
+  </p>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/shared.js"></script>
+<script src="../js/chat.js"></script>
+<script>
+  let user = NM.currentUser();
+  if (!user) { location.href = "login.html"; }
+  else { init(); }
+
+  let activeGroup = null;
+  let unsubscribe = null;
+  let lockUnsubscribe = null;
+  let isChatCurrentlyLocked = false;
+
+  async function init() {
+    try { user = await NM.apiRefreshMe(); } catch (_) {}
+    populateAddLangSelect(user.groups || []);
+    const groups = user.groups || [];
+    if (!groups.length) {
+      document.getElementById("page-main").innerHTML = `
+        <div class="card text-center" style="max-width:480px; margin:40px auto;">
+          <div style="font-size:2rem;">🌍</div>
+          <h2 style="font-size:1.3rem;">لسه مش منضم لأي جروب</h2>
+          <p class="text-muted">تواصل مع الهيد ليدر عشان يضمّك لجروب لغتك.</p>
+        </div>`;
+      return;
+    }
+    renderTabs(groups);
+    openGroup(groups[0]);
+  }
+
+  function populateAddLangSelect(myGroups) {
+    const myLanguages = new Set(myGroups.map(g => g.language));
+    const select = document.getElementById("add-lang-select");
+    const available = NM.LANGUAGES.filter(l => !myLanguages.has(l.name));
+    select.innerHTML = available.length
+      ? available.map(l => `<option value="${l.name}">${l.name}</option>`).join("")
+      : `<option value="">انضممت لكل اللغات المتاحة بالفعل</option>`;
+    document.getElementById("add-lang-btn").disabled = available.length === 0;
+  }
+
+  document.getElementById("add-lang-btn").addEventListener("click", async () => {
+    const language = document.getElementById("add-lang-select").value;
+    const errorBox = document.getElementById("add-lang-error");
+    errorBox.style.display = "none";
+    if (!language) return;
+    const btn = document.getElementById("add-lang-btn");
+    btn.disabled = true;
+    try {
+      await NM.apiJoinGroup(language);
+      user = await NM.apiRefreshMe();
+      populateAddLangSelect(user.groups || []);
+      renderTabs(user.groups || []);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function renderTabs(groups) {
+    const wrap = document.getElementById("group-tabs");
+    wrap.innerHTML = "";
+    groups.forEach(g => {
+      const isLeaderHere = user.role === "leader" && user.ledGroup && user.ledGroup.id === g.id;
+      const btn = document.createElement("button");
+      btn.className = "btn btn-secondary";
+      btn.dataset.id = g.id;
+      btn.textContent = `${g.language} — جروب #${g.group_number}${isLeaderHere ? " (بتقوده)" : ""}`;
+      btn.addEventListener("click", () => openGroup(g));
+      wrap.appendChild(btn);
+    });
+  }
+
+  function markActiveTab(groupId) {
+    document.querySelectorAll("#group-tabs button").forEach(b => {
+      b.classList.toggle("btn-primary", b.dataset.id === groupId);
+      b.classList.toggle("btn-secondary", b.dataset.id !== groupId);
+    });
+  }
+
+  async function openGroup(g) {
+    activeGroup = g;
+    markActiveTab(g.id);
+    document.getElementById("chat-head").textContent = `${g.language} — جروب #${g.group_number}`;
+    connectChat(g);
+  }
+
+  async function connectChat(g) {
+    const wrap = document.getElementById("chat-messages");
+    wrap.innerHTML = `<p class="text-muted" style="padding:16px;">جاري الاتصال بالشات...</p>`;
+    if (unsubscribe) unsubscribe();
+    if (lockUnsubscribe) lockUnsubscribe();
+    try {
+      await NMChat.ensureFirebaseAuth();
+      unsubscribe = NMChat.listenToGroup(g.id, renderMessages, (err) => {
+        wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر تحميل الرسايل: ${err.message}</p>`;
+      });
+      lockUnsubscribe = NMChat.listenToGroupLock(g.id, updateLockUi);
+    } catch (err) {
+      wrap.innerHTML = `<p class="text-muted" style="padding:16px;">تعذر الاتصال بالشات: ${err.message}</p>`;
+    }
+  }
+
+  function updateLockUi(locked) {
+    isChatCurrentlyLocked = locked;
+    document.getElementById("chat-locked-banner").classList.toggle("hidden", !locked);
+    document.getElementById("chat-input").disabled = locked;
+    document.getElementById("send-btn").disabled = locked;
+    document.getElementById("mic-btn").disabled = locked;
+    document.getElementById("attach-btn").disabled = locked;
+  }
+
+  const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+  let lastMessages = [];
+
+  function renderMessages(messages) {
+    lastMessages = messages;
+    const wrap = document.getElementById("chat-messages");
+    const myUid = NMChat.currentUid();
+    wrap.innerHTML = messages.length
+      ? messages.map(m => renderMessageRow(m, myUid)).join("")
+      : `<p class="text-muted" style="padding:16px;">لسه مفيش رسايل — ابدأ المحادثة!</p>`;
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function renderMessageRow(m, myUid) {
+    const isMine = m.senderId === myUid;
+    return `
+      <div class="msg-row${isMine ? " mine" : ""}" data-mid="${m.id}">
+        <div class="msg-avatar">${(m.senderName || "?")[0]}</div>
+        <div class="msg-col">
+          <div class="msg-bubble">
+            ${renderMessageBody(m)}
+            ${m.editedAt ? `<span class="msg-edited-tag">(معدّلة)</span>` : ""}
+          </div>
+          <div class="msg-meta-row">
+            <div class="msg-reactions">${renderReactions(m, myUid)}</div>
+            <div class="msg-actions">
+              <button type="button" class="msg-action-btn" data-action="react-toggle" data-mid="${m.id}" title="رياكت">😊</button>
+              ${isMine && m.type === "text" ? `<button type="button" class="msg-action-btn" data-action="edit" data-mid="${m.id}" title="تعديل">✏️</button>` : ""}
+              ${isMine ? `<button type="button" class="msg-action-btn" data-action="delete" data-mid="${m.id}" title="حذف">🗑️</button>` : ""}
+            </div>
+          </div>
+          <div class="msg-emoji-picker hidden" data-picker-for="${m.id}">
+            ${REACTION_EMOJIS.map(e => `<button type="button" class="msg-emoji-opt" data-action="react" data-mid="${m.id}" data-emoji="${e}">${e}</button>`).join("")}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderReactions(m, myUid) {
+    const reactions = m.reactions || {};
+    const counts = {};
+    let mine = null;
+    Object.entries(reactions).forEach(([uid, emoji]) => {
+      counts[emoji] = (counts[emoji] || 0) + 1;
+      if (uid === myUid) mine = emoji;
+    });
+    return Object.entries(counts).map(([emoji, count]) => `
+      <span class="reaction-pill${emoji === mine ? " mine" : ""}" data-action="react" data-mid="${m.id}" data-emoji="${emoji}">${emoji} ${count}</span>
+    `).join("");
+  }
+
+  function renderMessageBody(m) {
+    if (m.type === "audio" && m.audioData) {
+      return `<audio controls style="max-width:220px;" src="data:${m.mimeType};base64,${m.audioData}"></audio>`;
+    }
+    return escapeHtml(m.text || "");
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function escapeAttr(s) {
+    return String(s || "").replace(/"/g, "&quot;");
+  }
+
+  function startEdit(mid) {
+    const m = lastMessages.find(x => x.id === mid);
+    if (!m) return;
+    document.querySelectorAll(".msg-emoji-picker").forEach(p => p.classList.add("hidden"));
+    const bubble = document.querySelector(`.msg-row[data-mid="${mid}"] .msg-bubble`);
+    if (!bubble) return;
+    bubble.innerHTML = `
+      <input type="text" class="edit-input" value="${escapeAttr(m.text || "")}">
+      <div class="edit-actions">
+        <button type="button" class="btn btn-primary" style="padding:4px 10px; font-size:0.8rem;" data-action="save-edit" data-mid="${mid}">حفظ</button>
+        <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" data-action="cancel-edit" data-mid="${mid}">إلغاء</button>
+      </div>`;
+    const input = bubble.querySelector(".edit-input");
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") saveEdit(mid, input.value);
+      if (e.key === "Escape") renderMessages(lastMessages);
+    });
+  }
+
+  async function saveEdit(mid, newText) {
+    newText = newText.trim();
+    if (!newText || !activeGroup) { renderMessages(lastMessages); return; }
+    try {
+      await NMChat.editMessage(activeGroup.id, mid, newText);
+    } catch (err) {
+      alert(err.message);
+      renderMessages(lastMessages);
+    }
+  }
+
+  // One delegated listener handles every message's buttons, even after the
+  // list is fully re-rendered on every realtime update (it's attached to the
+  // container, not to the buttons themselves).
+  document.getElementById("chat-messages").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn || !activeGroup) return;
+    const action = btn.dataset.action;
+    const mid = btn.dataset.mid;
+
+    if (action === "react-toggle") {
+      const picker = document.querySelector(`.msg-emoji-picker[data-picker-for="${mid}"]`);
+      const wasOpen = picker && !picker.classList.contains("hidden");
+      document.querySelectorAll(".msg-emoji-picker").forEach(p => p.classList.add("hidden"));
+      if (picker && !wasOpen) picker.classList.remove("hidden");
+      return;
+    }
+    if (action === "react") {
+      const emoji = btn.dataset.emoji;
+      const m = lastMessages.find(x => x.id === mid);
+      const myUid = NMChat.currentUid();
+      const current = m && m.reactions ? m.reactions[myUid] : null;
+      document.querySelectorAll(".msg-emoji-picker").forEach(p => p.classList.add("hidden"));
+      try { await NMChat.toggleReaction(activeGroup.id, mid, emoji, current); }
+      catch (err) { alert(err.message); }
+      return;
+    }
+    if (action === "edit") { startEdit(mid); return; }
+    if (action === "cancel-edit") { renderMessages(lastMessages); return; }
+    if (action === "save-edit") {
+      const input = document.querySelector(`.msg-row[data-mid="${mid}"] .edit-input`);
+      if (input) saveEdit(mid, input.value);
+      return;
+    }
+    if (action === "delete") {
+      if (!confirm("متأكد إنك عايز تمسح الرسالة دي؟")) return;
+      try { await NMChat.deleteMessage(activeGroup.id, mid); }
+      catch (err) { alert(err.message); }
+      return;
+    }
+  });
+
+  function sendMsg() {
+    if (!activeGroup || isChatCurrentlyLocked) return;
+    const input = document.getElementById("chat-input");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    NMChat.sendMessage(activeGroup.id, text, user.firstName || "عضو").catch(err => alert(err.message));
+  }
+  document.getElementById("send-btn").addEventListener("click", sendMsg);
+  document.getElementById("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMsg(); });
+  document.getElementById("attach-btn").addEventListener("click", () => {
+    alert("رفع الملفات في الشات هيتفعّل قريب — لحد دلوقتي تقدر ترفع ملفات المهام من لوحة التحكم بتاعتك.");
+  });
+
+  // --- voice messages ---
+  let activeRecording = null;
+  const micBtn = document.getElementById("mic-btn");
+  micBtn.addEventListener("click", async () => {
+    if (!activeGroup || isChatCurrentlyLocked) return;
+    if (activeRecording) { activeRecording.stop(); return; }
+    try {
+      activeRecording = await NMChat.startVoiceRecording(60);
+      micBtn.textContent = "⏹";
+      micBtn.classList.add("btn-primary");
+      micBtn.classList.remove("btn-secondary");
+      const { base64, mimeType } = await activeRecording.result;
+      await NMChat.sendVoiceMessage(activeGroup.id, base64, mimeType, user.firstName || "عضو");
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      activeRecording = null;
+      micBtn.textContent = "🎤";
+      micBtn.classList.remove("btn-primary");
+      micBtn.classList.add("btn-secondary");
+    }
+  });
+</script>
+</body>
+</html>

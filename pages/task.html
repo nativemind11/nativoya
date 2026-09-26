@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="page-title">تفاصيل المهمة — Nativoya</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section" id="page-main" style="max-width:720px;">
+  <a href="#" id="back-link" class="text-muted" style="display:inline-block; margin-bottom:16px;" data-i18n="task_back_link">→ رجوع للوحة التحكم</a>
+
+  <div id="task-loading" class="card text-center">
+    <p class="text-muted mb-0" data-i18n="task_loading">جاري تحميل تفاصيل المهمة...</p>
+  </div>
+
+  <div id="task-content" class="hidden">
+    <span class="pill" id="task-skill-pill">—</span>
+    <h1 id="task-title" style="margin-top:14px;">—</h1>
+
+    <div class="card" style="margin-top:16px;" id="task-video-card">
+      <h3 data-i18n="task_video_title">🎬 فيديو الشرح</h3>
+      <div id="task-video-wrap" style="display:grid; gap:10px;"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px;" id="task-audio-card">
+      <h3 data-i18n="task_audio_title">🔊 سامبل صوتي</h3>
+      <div id="task-audio-wrap" style="display:grid; gap:10px;"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3 data-i18n="task_instructions_title">📋 التعليمات</h3>
+      <p id="task-instructions" class="mb-0" style="white-space:pre-wrap;">—</p>
+      <p id="task-instructions-file" class="mb-0 hidden" style="margin-top:10px;"></p>
+    </div>
+
+    <div class="grid-2" style="margin-top:16px; align-items:stretch;">
+      <div class="card card-compact text-center">
+        <div class="text-muted" style="font-size:0.85rem;" data-i18n="task_price_label">السعر</div>
+        <div class="heading-font" style="font-size:1.6rem; color:var(--color-primary-blue);" id="task-price">—</div>
+      </div>
+      <div class="card card-compact text-center">
+        <div class="text-muted" style="font-size:0.85rem;" data-i18n="task_remaining_label">المتبقي على المنصة</div>
+        <div class="heading-font" style="font-size:1.6rem; color:var(--color-primary-blue);" id="task-remaining">—</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;" id="submit-card">
+      <h3 data-i18n="task_submit_title">📎 تسليم شغلك على المهمة دي</h3>
+      <p class="text-muted" id="submit-hint" data-i18n="task_submit_hint_default">لو جروبك استلم كمية من المهمة دي، هتقدر ترفع شغلك من هنا.</p>
+      <p id="naming-notice" class="card card-compact hidden" style="background:var(--color-pill-bg); border:none; font-size:0.85rem; color:var(--color-pill-text); font-weight:600;"></p>
+      <p id="submit-error" class="hint" style="color:#e0245e; display:none;"></p>
+      <p id="submit-success" class="hint" style="color:#16a34a; display:none; font-weight:700;"></p>
+      <input type="file" id="submit-file" class="hidden" accept=".zip,.pdf,application/zip,application/pdf">
+      <button class="btn btn-primary" id="submit-btn" onclick="document.getElementById('submit-file').click()" data-i18n="task_upload_btn">📎 رفع الشغل</button>
+      <button class="btn btn-primary" id="enter-studio-btn" style="display:none; margin-top:10px;" onclick="enterRecordingStudio()">🎤 ادخل الاستوديو</button>
+    </div>
+  </div>
+
+  <div id="task-error" class="card text-center hidden">
+    <p class="text-muted mb-0" id="task-error-text">تعذّر تحميل المهمة.</p>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  let user = NM.currentUser();
+  if (!user) { location.href = "login.html"; }
+
+  const taskId = new URLSearchParams(location.search).get("id");
+  if (!taskId) { location.href = "dashboard-member.html"; }
+
+  let matchingClaim = null;
+  let currentTask = null;
+
+  async function loadTask() {
+    try {
+      user = await NM.apiRefreshMe(); // make sure role + whatsapp are fresh, not a stale cached copy
+    } catch (_) { /* fall back to the cached copy if this fails */ }
+
+    document.getElementById("back-link").href = user.role === "head_leader" ? "dashboard-admin.html"
+      : user.role === "leader" ? "dashboard-leader.html" : "dashboard-member.html";
+
+    try {
+      currentTask = await NM.apiGetTask(taskId);
+      renderTask();
+      document.getElementById("task-loading").classList.add("hidden");
+      document.getElementById("task-content").classList.remove("hidden");
+      await loadMatchingClaim(currentTask.id);
+    } catch (err) {
+      document.getElementById("task-loading").classList.add("hidden");
+      document.getElementById("task-error").classList.remove("hidden");
+      document.getElementById("task-error-text").textContent = err.message;
+    }
+  }
+
+  // Which price to show depends on the viewer's OWN account role — a member
+  // (whether in a base group or a leader's invite-link group) always sees
+  // member_price, a leader always sees leader_price. The head_leader set
+  // both when publishing the task, so they see both at a glance here.
+  function myPriceLabel(task, isEn) {
+    const fmt = (v) => `${Number(v).toLocaleString(isEn ? "en-US" : "ar-EG")} ${task.currency || "USD"}`;
+    if (user.role === "head_leader") {
+      const memberPart = task.member_price ? `${NM.t("task_member_price_label")}: ${fmt(task.member_price)}` : null;
+      const leaderPart = task.leader_price ? `${NM.t("task_leader_price_label")}: ${fmt(task.leader_price)}` : null;
+      return [memberPart, leaderPart].filter(Boolean).join(" · ") || NM.t("task_price_unset");
+    }
+    const mine = user.role === "leader" ? task.leader_price : task.member_price;
+    return mine ? fmt(mine) : NM.t("task_price_unset");
+  }
+
+  function renderTask() {
+    const task = currentTask;
+    const isEn = NM.getLang() === "en";
+    document.getElementById("page-title").textContent = `${task.title} — Nativoya`;
+    const skillName = (isEn ? task.skill_name_en : task.skill_name_ar) || task.skill_slug;
+    document.getElementById("task-skill-pill").textContent = `${task.skill_icon || "🧩"} ${skillName}`;
+    document.getElementById("task-title").textContent = task.title;
+    document.getElementById("task-instructions").textContent = task.instructions || NM.t("task_no_instructions");
+    const fileBox = document.getElementById("task-instructions-file");
+    if (task.instructions_file_url) {
+      fileBox.innerHTML = `<a href="${task.instructions_file_url}" target="_blank" rel="noopener">📎 ${NM.t("task_instructions_file_label")}${task.instructions_file_name ? ` (${task.instructions_file_name})` : ""}</a>`;
+      fileBox.classList.remove("hidden");
+    } else {
+      fileBox.classList.add("hidden");
+    }
+    document.getElementById("task-remaining").textContent = task.remaining ?? "—";
+    document.getElementById("task-price").textContent = myPriceLabel(task, isEn);
+
+    // video(s): just a clean "open video" link — embedding iframes has
+    // been unreliable across browsers/networks, so we link out instead
+    const videoWrap = document.getElementById("task-video-wrap");
+    const videoUrls = task.video_urls || [];
+    if (videoUrls.length) {
+      videoWrap.innerHTML = videoUrls.map((url, i) => `
+        <a href="${url}" target="_blank" rel="noopener" class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:8px; width:fit-content;">
+          ▶️ ${videoUrls.length > 1 ? NM.t("task_video_n").replace("{n}", i + 1) : NM.t("task_video_single")}
+        </a>`).join("");
+    } else {
+      document.getElementById("task-video-card").classList.add("hidden");
+    }
+
+    const audioWrap = document.getElementById("task-audio-wrap");
+    const audioUrls = task.audio_sample_urls || [];
+    const audioTitles = task.audio_sample_titles || [];
+    if (audioUrls.length) {
+      audioWrap.innerHTML = audioUrls.map((url, i) => {
+        const title = audioTitles[i];
+        const titleHtml = title ? `<p class="text-muted mb-0" style="font-size:0.85rem;">${title}</p>` : "";
+        return `${titleHtml}<audio controls style="width:100%;" src="${url}"></audio>`;
+      }).join("");
+    } else {
+      document.getElementById("task-audio-card").classList.add("hidden");
+    }
+  }
+
+  // Members AND leaders can submit against a claim their own group holds —
+  // a leader may also personally contribute work, not just manage others'.
+  async function loadMatchingClaim(taskId) {
+    const submitCard = document.getElementById("submit-card");
+    if (user.role !== "member" && user.role !== "leader") { submitCard.classList.add("hidden"); return; }
+    try {
+      const claims = await NM.apiClaimsForMyGroup();
+      const taskClaims = claims.filter(c => c.task_id === taskId);
+      // I might be a leader of one group AND just a member of another — when
+      // both hold a claim for the same task, always prefer the group I
+      // actually LEAD, so the naming notice and upload target are correct.
+      const ledGroupIds = new Set((user.ledGroups || []).map(g => g.id));
+      matchingClaim = taskClaims.find(c => ledGroupIds.has(c.group_id)) || taskClaims[0] || null;
+      const namingNotice = document.getElementById("naming-notice");
+      
+      // Check if this is a voice recording task
+      const isVoiceRecording = currentTask && currentTask.skill_slug === "voice_recording";
+      const studioBtn = document.getElementById("enter-studio-btn");
+      const submitBtn = document.getElementById("submit-btn");
+      
+      if (!matchingClaim) {
+        document.getElementById("submit-hint").removeAttribute("data-i18n");
+        document.getElementById("submit-hint").textContent = NM.t("task_submit_hint_no_claim");
+        submitBtn.disabled = true;
+        studioBtn.disabled = true;
+        namingNotice.classList.add("hidden");
+      } else {
+        document.getElementById("submit-hint").removeAttribute("data-i18n");
+        document.getElementById("submit-hint").textContent = NM.t("task_submit_hint_available").replace("{n}", matchingClaim.remaining_in_claim);
+        submitBtn.disabled = false;
+        studioBtn.disabled = false;
+        const genderLabel = user.gender === "male" ? NM.t("gender_male") : user.gender === "female" ? NM.t("gender_female") : "—";
+        namingNotice.textContent = NM.t("task_naming_notice")
+          .replace("{name}", user.firstName || "—")
+          .replace("{whatsapp}", user.whatsappNumber || "—")
+          .replace("{gender}", genderLabel);
+        namingNotice.classList.remove("hidden");
+      }
+      
+      // Show/hide buttons based on task type
+      if (isVoiceRecording) {
+        studioBtn.style.display = "block";
+        submitBtn.style.display = "none";
+      } else {
+        studioBtn.style.display = "none";
+        submitBtn.style.display = "block";
+      }
+    } catch (_) {
+      submitCard.classList.add("hidden");
+    }
+  }
+
+  function enterRecordingStudio() {
+    if (!matchingClaim) {
+      alert("لم تسجل مجموعتك على هذه المهمة بعد");
+      return;
+    }
+    window.location.href = `/pages/recording-studio.html?taskId=${currentTask.id}&claimId=${matchingClaim.claim_id}`;
+  }
+
+  document.getElementById("submit-file").addEventListener("change", async function () {
+    const file = this.files[0];
+    if (!file || !matchingClaim) return;
+    const errorBox = document.getElementById("submit-error");
+    const successBox = document.getElementById("submit-success");
+    errorBox.style.display = "none";
+    successBox.style.display = "none";
+    this.disabled = true;
+    const btn = document.getElementById("submit-btn");
+    const originalBtnText = btn.textContent;
+    btn.textContent = NM.t("task_uploading");
+    btn.disabled = true;
+    try {
+      await NM.apiUploadSubmission(matchingClaim.claim_id, file);
+      successBox.textContent = NM.t("task_upload_success");
+      successBox.style.display = "block";
+      await loadMatchingClaim(taskId);
+    } catch (err) {
+      errorBox.textContent = err.detail ? `${err.message} (تفاصيل تقنية: ${err.detail})` : err.message;
+      errorBox.style.display = "block";
+    } finally {
+      this.disabled = false;
+      this.value = "";
+      btn.textContent = originalBtnText;
+      btn.disabled = false;
+    }
+  });
+
+  document.addEventListener("nm:langchange", () => {
+    if (currentTask) renderTask();
+    loadMatchingClaim(taskId);
+  });
+
+  loadTask();
+</script>
+</body>
+</html>

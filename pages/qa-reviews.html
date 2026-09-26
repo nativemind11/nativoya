@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>لوحة تحكم المراجعة - Nativoya</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: #f5f5f5;
+        color: #333;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #6B4FBB 0%, #E74C8C 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      .header h1 {
+        font-size: 28px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+      }
+
+      .stat-card {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid white;
+      }
+
+      .stat-label {
+        font-size: 12px;
+        opacity: 0.9;
+        margin-bottom: 5px;
+      }
+
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+      }
+
+      /* Main Content */
+      .reviews-container {
+        display: grid;
+        grid-template-columns: 350px 1fr;
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+
+      /* Submissions List */
+      .submissions-list {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        max-height: 600px;
+        overflow-y: auto;
+      }
+
+      .submissions-header {
+        padding: 20px;
+        border-bottom: 1px solid #e0e0e0;
+        background: #f9f9f9;
+      }
+
+      .submissions-header h2 {
+        font-size: 18px;
+        color: #6B4FBB;
+      }
+
+      .submission-item {
+        padding: 15px 20px;
+        border-bottom: 1px solid #e0e0e0;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .submission-item:hover {
+        background: #f5f5f5;
+      }
+
+      .submission-item.active {
+        background: #ede7f6;
+        border-left: 4px solid #6B4FBB;
+      }
+
+      .submission-item-title {
+        font-weight: 600;
+        color: #333;
+        font-size: 14px;
+        margin-bottom: 5px;
+      }
+
+      .submission-item-meta {
+        font-size: 12px;
+        color: #999;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .submission-item-status {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .status-pending {
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      .status-approved {
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .status-rejected {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      /* Submission Detail */
+      .submission-detail {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .detail-section {
+        margin-bottom: 25px;
+      }
+
+      .detail-section h3 {
+        color: #6B4FBB;
+        font-size: 16px;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 10px;
+      }
+
+      .detail-info {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+
+      .info-row {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .info-label {
+        font-size: 12px;
+        color: #999;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
+      .info-value {
+        font-size: 14px;
+        color: #333;
+        font-weight: 500;
+      }
+
+      /* Audio Player */
+      .audio-player {
+        background: #f9f9f9;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+      }
+
+      .audio-player audio {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+
+      .file-link {
+        display: inline-block;
+        padding: 8px 16px;
+        background: #6B4FBB;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        margin-top: 10px;
+      }
+
+      .file-link:hover {
+        background: #764ba2;
+      }
+
+      /* Review Controls */
+      .review-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        margin-bottom: 25px;
+      }
+
+      .btn {
+        padding: 12px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .btn-approve {
+        background: #28a745;
+        color: white;
+      }
+
+      .btn-approve:hover:not(:disabled) {
+        background: #218838;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
+      }
+
+      .btn-reject {
+        background: #dc3545;
+        color: white;
+      }
+
+      .btn-reject:hover:not(:disabled) {
+        background: #c82333;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(220, 53, 69, 0.3);
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* Feedback Textarea */
+      .feedback-section {
+        margin-bottom: 20px;
+      }
+
+      .feedback-section label {
+        display: block;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6B4FBB;
+        margin-bottom: 10px;
+      }
+
+      .feedback-section textarea {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 13px;
+        min-height: 100px;
+        resize: vertical;
+      }
+
+      .feedback-section textarea:focus {
+        outline: none;
+        border-color: #6B4FBB;
+        box-shadow: 0 0 0 3px rgba(107, 79, 187, 0.1);
+      }
+
+      /* Empty State */
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 400px;
+        color: #999;
+      }
+
+      .empty-state p {
+        font-size: 16px;
+        margin-top: 10px;
+      }
+
+      /* Responsive */
+      @media (max-width: 900px) {
+        .reviews-container {
+          grid-template-columns: 1fr;
+        }
+
+        .detail-info {
+          grid-template-columns: 1fr;
+        }
+
+        .review-controls {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #999;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #6B4FBB;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 10px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .alert {
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .alert-success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .alert-error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .alert-info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header with Stats -->
+      <div class="header">
+        <h1>🔍 لوحة تحكم المراجعة</h1>
+        <p>مراجعة ومعالجة التسليمات المعلقة</p>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">⏳ بانتظار المراجعة</div>
+            <div class="stat-value" id="statPending">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">✅ موافق عليها</div>
+            <div class="stat-value" id="statApproved">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">❌ مرفوضة</div>
+            <div class="stat-value" id="statRejected">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Review Interface -->
+      <div class="reviews-container">
+        <!-- Submissions List -->
+        <div class="submissions-list">
+          <div class="submissions-header">
+            <h2>📋 التسليمات</h2>
+          </div>
+          <div id="submissionsList"></div>
+        </div>
+
+        <!-- Submission Detail -->
+        <div class="submission-detail" id="submissionDetail">
+          <div class="empty-state">
+            <p>اختر تسليماً لمراجعته</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/shared.js"></script>
+
+    <script>
+      let allSubmissions = [];
+      let selectedSubmission = null;
+
+      async function loadPendingReviews() {
+        try {
+          const response = await fetch("/api/qa/pending-reviews");
+          if (!response.ok) {
+            if (response.status === 403) {
+              document.body.innerHTML =
+                '<div style="padding: 50px; text-align: center;"><h2>⛔ غير مخول</h2><p>هذه الصفحة متاحة فقط للهيد ليدر</p></div>';
+              return;
+            }
+            throw new Error("Failed to load submissions");
+          }
+
+          allSubmissions = await response.json();
+          renderSubmissionsList();
+          updateStats();
+        } catch (err) {
+          console.error("Load error:", err);
+          showAlert("خطأ في تحميل التسليمات", "error");
+        }
+      }
+
+      function renderSubmissionsList() {
+        const listElement = document.getElementById("submissionsList");
+
+        if (allSubmissions.length === 0) {
+          listElement.innerHTML =
+            '<div class="empty-state" style="min-height: auto;"><p>🎉 لا توجد تسليمات معلقة</p></div>';
+          return;
+        }
+
+        listElement.innerHTML = allSubmissions
+          .map(
+            (sub, idx) => `
+          <div class="submission-item ${selectedSubmission?.id === sub.submission_id ? "active" : ""}" onclick="selectSubmission(${idx})">
+            <div class="submission-item-title">${sub.member_name}</div>
+            <div class="submission-item-meta">
+              <span>${sub.task_title}</span>
+              <span class="submission-item-status status-${sub.qa_review_status === "not_reviewed" ? "pending" : sub.qa_review_status}">
+                ${getStatusLabel(sub.qa_review_status)}
+              </span>
+            </div>
+          </div>
+        `
+          )
+          .join("");
+      }
+
+      function selectSubmission(index) {
+        selectedSubmission = allSubmissions[index];
+        renderSubmissionDetail();
+        renderSubmissionsList();
+      }
+
+      function renderSubmissionDetail() {
+        if (!selectedSubmission) return;
+
+        const detail = document.getElementById("submissionDetail");
+        const isReviewed = selectedSubmission.qa_review_status !== "not_reviewed";
+
+        detail.innerHTML = `
+          <!-- Member Info -->
+          <div class="detail-section">
+            <h3>👤 بيانات العضو</h3>
+            <div class="detail-info">
+              <div class="info-row">
+                <div class="info-label">الاسم</div>
+                <div class="info-value">${selectedSubmission.member_name}</div>
+              </div>
+              <div class="info-row">
+                <div class="info-label">رقم الواتس</div>
+                <div class="info-value">${selectedSubmission.whatsapp_number || "N/A"}</div>
+              </div>
+              <div class="info-row">
+                <div class="info-label">المجموعة</div>
+                <div class="info-value">${selectedSubmission.language} #${selectedSubmission.group_number}</div>
+              </div>
+              <div class="info-row">
+                <div class="info-label">الجنس</div>
+                <div class="info-value">${getGenderLabel(selectedSubmission.gender)}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Task Info -->
+          <div class="detail-section">
+            <h3>📝 بيانات المهمة</h3>
+            <div class="detail-info">
+              <div class="info-row">
+                <div class="info-label">المهمة</div>
+                <div class="info-value">${selectedSubmission.task_title}</div>
+              </div>
+              <div class="info-row">
+                <div class="info-label">تاريخ التسليم</div>
+                <div class="info-value">${formatDate(selectedSubmission.created_at)}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Audio Files -->
+          <div class="detail-section">
+            <h3>🎙️ الملفات الصوتية</h3>
+            <div class="audio-player">
+              <a href="${selectedSubmission.file_url}" target="_blank" class="file-link">
+                📥 فتح الملف المضغوط (ZIP)
+              </a>
+            </div>
+          </div>
+
+          <!-- Review Section -->
+          ${
+            !isReviewed
+              ? `
+            <div class="detail-section">
+              <h3>✏️ مراجعتك</h3>
+              
+              <div class="feedback-section">
+                <label for="feedbackText">ملاحظاتك (اختياري)</label>
+                <textarea id="feedbackText" placeholder="أضف ملاحظاتك حول التسليم..."></textarea>
+              </div>
+
+              <div class="review-controls">
+                <button class="btn btn-approve" onclick="approveSubmission()">
+                  ✅ الموافقة
+                </button>
+                <button class="btn btn-reject" onclick="showRejectDialog()">
+                  ❌ الرفض
+                </button>
+              </div>
+            </div>
+          `
+              : `
+            <div class="alert alert-info">
+              <span>📋 تم مراجعة هذا التسليم بالفعل</span>
+            </div>
+            <div class="detail-section">
+              <h3>📋 بيانات المراجعة</h3>
+              <div class="detail-info">
+                <div class="info-row">
+                  <div class="info-label">الحالة</div>
+                  <div class="info-value">${getStatusLabel(selectedSubmission.qa_review_status)}</div>
+                </div>
+                <div class="info-row">
+                  <div class="info-label">تاريخ المراجعة</div>
+                  <div class="info-value">${formatDate(selectedSubmission.reviewed_at)}</div>
+                </div>
+              </div>
+              ${
+                selectedSubmission.feedback
+                  ? `
+                <div style="margin-top: 15px; padding: 12px; background: #f9f9f9; border-radius: 6px;">
+                  <strong>الملاحظات:</strong><br>
+                  ${selectedSubmission.feedback}
+                </div>
+              `
+                  : ""
+              }
+            </div>
+          `
+          }
+        `;
+      }
+
+      async function approveSubmission() {
+        if (!selectedSubmission) return;
+
+        const feedback = document.getElementById("feedbackText")?.value || "";
+
+        try {
+          const response = await fetch(
+            `/api/qa/submission/${selectedSubmission.submission_id}/review`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ approve: true, feedback }),
+            }
+          );
+
+          if (!response.ok) throw new Error("Approval failed");
+
+          showAlert("✅ تم الموافقة على التسليم", "success");
+          await loadPendingReviews();
+        } catch (err) {
+          console.error("Approval error:", err);
+          showAlert("خطأ في الموافقة", "error");
+        }
+      }
+
+      function showRejectDialog() {
+        const reason = prompt("اكتب سبب الرفض:");
+        if (reason) {
+          rejectSubmission(reason);
+        }
+      }
+
+      async function rejectSubmission(feedback) {
+        if (!selectedSubmission) return;
+
+        try {
+          const response = await fetch(
+            `/api/qa/submission/${selectedSubmission.submission_id}/review`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ approve: false, feedback }),
+            }
+          );
+
+          if (!response.ok) throw new Error("Rejection failed");
+
+          showAlert("❌ تم رفض التسليم", "error");
+          await loadPendingReviews();
+        } catch (err) {
+          console.error("Rejection error:", err);
+          showAlert("خطأ في الرفض", "error");
+        }
+      }
+
+      async function updateStats() {
+        try {
+          const response = await fetch("/api/qa/stats");
+          if (response.ok) {
+            const stats = await response.json();
+            document.getElementById("statPending").textContent = stats.pending_count || 0;
+            document.getElementById("statApproved").textContent = stats.approved_count || 0;
+            document.getElementById("statRejected").textContent = stats.rejected_count || 0;
+          }
+        } catch (err) {
+          console.error("Stats error:", err);
+        }
+      }
+
+      function getStatusLabel(status) {
+        const labels = {
+          approved: "✅ موافق عليه",
+          rejected: "❌ مرفوض",
+          pending: "⏳ معلق",
+          not_reviewed: "⏳ لم يتم المراجعة",
+        };
+        return labels[status] || status;
+      }
+
+      function getGenderLabel(gender) {
+        const labels = { male: "👨 ذكر", female: "👩 أنثى", other: "❓ أخرى" };
+        return labels[gender] || "غير محدد";
+      }
+
+      function formatDate(dateString) {
+        if (!dateString) return "N/A";
+        return new Date(dateString).toLocaleString("ar-EG");
+      }
+
+      function showAlert(message, type) {
+        const alertDiv = document.createElement("div");
+        alertDiv.className = `alert alert-${type}`;
+        alertDiv.textContent = message;
+
+        const container = document.querySelector(".container");
+        container.insertBefore(alertDiv, container.firstChild);
+
+        setTimeout(() => alertDiv.remove(), 4000);
+      }
+
+      // Initialize
+      document.addEventListener("DOMContentLoaded", loadPendingReviews);
+
+      // Refresh every 30 seconds
+      setInterval(loadPendingReviews, 30000);
+    </script>
+  </body>
+</html>

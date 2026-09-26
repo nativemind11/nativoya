@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة الأدمن — Nativoya</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+<main class="container section">
+  <div class="dash-layout">
+    <aside class="dash-sidebar">
+      <span class="role-tag">هيد ليدر</span>
+      <a href="dashboard-admin.html" class="active">🏠 نظرة عامة</a>
+      <a href="#groups">👥 كل الجروبات</a>
+      <a href="groups.html">💬 مراقبة الشات</a>
+      <a href="#tasks">📋 نشر مهمة</a>
+      <a href="#manage-tasks">🗂️ إدارة المهام</a>
+      <a href="#review-all">✅ مراجعة التسليمات</a>
+      <a href="#payments">💸 المدفوعات</a>
+      <a href="../business/index.html" target="_blank" rel="noopener">🌐 موقع العملاء</a>
+      <a href="#" onclick="NM.mockLogout(); location.href='login.html'; return false;">🚪 خروج</a>
+    </aside>
+
+    <div>
+      <h1 style="font-size:1.6rem;" id="welcome-msg">لوحة تحكم الهيد ليدر</h1>
+      <p class="text-muted">رؤية كاملة على كل الجروبات، الليدرز، الأعضاء، والمدفوعات.</p>
+
+      <div class="grid-3" style="margin:24px 0;">
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;" id="stat-groups">—</div><p class="mb-0 text-muted">جروب نشط</p></div>
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-primary-blue);font-weight:800;" id="stat-members">—</div><p class="mb-0 text-muted">عضو مسجل</p></div>
+        <div class="card card-compact text-center"><div style="font-size:1.8rem;color:var(--color-danger);font-weight:800;" id="stat-pending">—</div><p class="mb-0 text-muted">تحويلات معلّقة</p></div>
+      </div>
+
+      <div class="card" id="drive" style="margin-top:20px;">
+        <h3>جوجل درايف — رفع ملفات المهام</h3>
+        <p class="text-muted">لازم واحد من الهيد ليدرز يوصّل حساب Google Drive بتاعه مرة واحدة، وبعدها كل مهمة بتتنشر بياخد فولدر لوحده تلقائيًا يترفع فيه كل تسليمات الأعضاء.</p>
+        <p id="drive-status">جاري التحقق...</p>
+        <a id="drive-connect-btn" class="btn btn-primary hidden" target="_blank" rel="noopener">وصّل جوجل درايف</a>
+      </div>
+
+      <div class="card" id="tasks" style="margin-top:20px;">
+        <h3>نشر مهمة جديدة</h3>
+        <p id="task-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <form id="task-form" class="grid-2" style="align-items:end;">
+          <div class="field"><label>نوع المهمة (المهارة)</label><select id="t-service" required></select></div>
+          <div class="field"><label>اسم المهمة</label><input type="text" id="t-name" placeholder="مثال: توسيم بيانات محادثة" required></div>
+          <div class="field"><label>الكمية الإجمالية</label><input type="number" id="t-qty" placeholder="100" required></div>
+          <div class="field">
+            <label>عدد الذكور المطلوب (اختياري)</label>
+            <input type="number" id="t-qty-male" placeholder="مثال: 60">
+          </div>
+          <div class="field">
+            <label>عدد الإناث المطلوب (اختياري)</label>
+            <input type="number" id="t-qty-female" placeholder="مثال: 40">
+          </div>
+          <div class="field">
+            <label>سعر الميمبر لكل وحدة</label>
+            <div class="flex gap-8">
+              <input type="number" step="0.01" id="t-price-member" placeholder="5.00" style="flex:2;">
+              <select id="t-currency" style="flex:1;">
+                <option value="USD">USD</option>
+                <option value="EGP">EGP</option>
+              </select>
+            </div>
+            <p class="hint">للعضو العادي، سواء في جروب أساسي أو جروب ليدر داخل من لينك.</p>
+          </div>
+          <div class="field">
+            <label>سعر الليدر لكل وحدة</label>
+            <input type="number" step="0.01" id="t-price-leader" placeholder="7.00">
+            <p class="hint">نفس العملة المختارة فوق. كل واحد بيشوف السعر بتاعه بس حسب حسابه.</p>
+          </div>
+          <div class="field"><label>روابط فيديو الشرح</label><textarea id="t-video" rows="2" placeholder="رابط في كل سطر&#10;https://youtube.com/...&#10;https://youtube.com/..."></textarea></div>
+          <div class="field"><label>روابط السامبل الصوتي</label><textarea id="t-audio" rows="2" placeholder="عنوان السامبل | الرابط — واحد في كل سطر&#10;مثال ١ - نبرة هادئة | https://.../sample1.mp3&#10;مثال ٢ - نبرة حماسية | https://.../sample2.mp3&#10;(العنوان اختياري: ممكن تسيب رابط لوحده من غير عنوان)"></textarea></div>
+          <div class="field" style="grid-column:1/-1;"><label>التعليمات</label><textarea id="t-instructions" placeholder="اشرح المطلوب بالتفصيل..."></textarea></div>
+          <div class="field" style="grid-column:1/-1;">
+            <label>ملف تعليمات (PDF أو TXT) — اختياري</label>
+            <input type="file" id="t-instructions-file" accept=".pdf,.txt,application/pdf,text/plain">
+            <p class="hint" id="t-instructions-file-current"></p>
+          </div>
+
+          <div class="field" style="grid-column:1/-1;">
+            <label>هتنزل المهمة لـ:</label>
+            <div class="radio-card-group">
+              <label class="radio-card">
+                <input type="radio" name="t-target" value="all" checked>
+                <div><strong>كل الجروبات</strong><div class="hint">كل عضو هيقدر يشوفها</div></div>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="t-target" value="specific">
+                <div><strong>جروبات محددة بس</strong><div class="hint">اختار الجروبات تحت</div></div>
+              </label>
+            </div>
+          </div>
+          <div class="field hidden" id="t-groups-field" style="grid-column:1/-1;">
+            <label>اختار الجروبات</label>
+            <div id="t-groups-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; max-height:220px; overflow-y:auto;"></div>
+          </div>
+
+          <div style="grid-column:1/-1;" class="flex gap-8">
+            <button class="btn btn-primary" type="submit" id="task-submit">نشر المهمة</button>
+            <button class="btn btn-secondary hidden" type="button" id="task-cancel-edit">إلغاء التعديل</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" id="manage-tasks" style="margin-top:20px;">
+        <h3>إدارة المهام المنشورة</h3>
+        <p class="text-muted" style="font-size:0.85rem;">عدّل تفاصيل أي مهمة أو احذفها. الكمية الإجمالية منقدرش تقل عن اللي اتاستلم بالفعل.</p>
+        <p id="manage-tasks-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>المهمة</th><th>النوع</th><th>السعر</th><th>اتاستلم / الإجمالي</th><th></th></tr></thead>
+            <tbody id="manage-tasks-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card hidden" id="task-claims-panel" style="margin-top:20px;">
+        <h3 id="task-claims-title">مين اخد ايه</h3>
+        <div id="task-gender-breakdown" class="flex gap-8" style="margin-bottom:16px;"></div>
+        <p class="text-muted" style="font-size:0.85rem;">الجروبات اللي استلمت من المهمة دي:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الجروب</th><th>الليدر</th><th>الكمية المستلمة</th><th>اتسلّم / المستلم</th><th>فولدر الدرايف</th></tr></thead>
+            <tbody id="task-claims-body"></tbody>
+          </table>
+        </div>
+        <p class="text-muted" style="font-size:0.85rem; margin-top:20px;">كل التسليمات الفردية على المهمة دي:</p>
+        <input type="text" id="task-submissions-search" placeholder="🔍 ابحث باسم العضو اللي سلّم..." oninput="filterTaskSubmissions()" style="width:100%; max-width:320px; margin-bottom:12px;">
+        <div id="task-submissions-day-tabs" class="flex gap-8" style="flex-wrap:wrap; margin-bottom:12px;"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>العضو</th><th>الجروب</th><th>الليدر</th><th>الوقت</th><th>الملف</th><th>الحالة</th><th></th></tr></thead>
+            <tbody id="task-submissions-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="review-all" style="margin-top:20px;">
+        <h3>مراجعة التسليمات</h3>
+        <p class="text-muted" style="font-size:0.85rem;">كل شغل اترفع من أي عضو أو ليدر في أي جروب، وبانتظار قرارك.</p>
+        <p id="review-all-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>العضو</th><th>المهمة</th><th>الجروب</th><th>الليدر</th><th>الوقت</th><th>الملف</th><th></th></tr></thead>
+            <tbody id="review-all-body"><tr><td colspan="7" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- QA Reviews — Review voice recordings before final approval -->
+      <div class="card" id="qa-reviews" style="margin-top:20px;">
+        <h3>✏️ مراجعة التسجيلات (QA)</h3>
+        <p class="text-muted" style="font-size:0.85rem;">مراجعة جودة التسجيلات الصوتية قبل الموافقة النهائية.</p>
+        <p id="qa-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <a href="qa-reviews.html" class="btn btn-secondary">فتح لوحة المراجعة المتقدمة →</a>
+      </div>
+
+      <div class="card" id="leader-requests" style="margin-top:20px;">
+        <h3>طلبات ليدرشيب معلّقة</h3>
+        <p class="text-muted">لما توافق، بيتعمل جروب جديد فورًا وحساب اللي طلب بيترقى لـ"ليدر" تلقائيًا.</p>
+        <p id="leader-requests-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الاسم</th><th>اللغة</th><th>الإيميل</th><th>واتساب</th><th></th></tr></thead>
+            <tbody id="leader-requests-body"><tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="groups" style="margin-top:20px;">
+        <h3>كل الجروبات</h3>
+        <p id="groups-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>اللغة</th><th>رقم الجروب</th><th>الليدر</th><th>الأعضاء</th></tr></thead>
+            <tbody id="all-groups-body"><tr><td colspan="4" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Record a new payout owed to a leader -->
+      <div class="card" id="new-payment" style="margin-top:20px;">
+        <h3>تسجيل مستحق جديد لليدر</h3>
+        <form id="payment-form" class="grid-2" style="align-items:end;">
+          <div class="field"><label>الليدر</label><select id="p-leader" required></select></div>
+          <div class="field"><label>المبلغ</label><input type="number" step="0.01" id="p-amount" placeholder="1250" required></div>
+          <div class="field">
+            <label>العملة</label>
+            <select id="p-currency"><option value="EGP">EGP</option><option value="USD">USD</option></select>
+          </div>
+          <div class="field">
+            <label>طريقة الاستلام</label>
+            <select id="p-method">
+              <option value="instapay">InstaPay</option>
+              <option value="vodafone_cash">فودافون كاش</option>
+              <option value="etisalat_cash">اتصالات كاش</option>
+              <option value="syriatel_cash">سيرياتل كاش</option>
+              <option value="sham_cash">شام كاش</option>
+              <option value="paypal">PayPal</option>
+            </select>
+          </div>
+          <div class="field" style="grid-column:1/-1;"><label>رقم الحساب / الإيميل</label><input type="text" id="p-identifier" placeholder="01xxxxxxxxx أو name@paypal.com" required></div>
+          <div style="grid-column:1/-1;"><button class="btn btn-secondary" type="submit">تسجيل المستحق</button></div>
+        </form>
+      </div>
+
+      <!-- Manual payout confirmation — the core payments screen -->
+      <div class="card" id="payments" style="margin-top:20px;">
+        <h3>المدفوعات — تحويلات مستحقة للليدرز</h3>
+        <p class="text-muted">حوّل الفلوس بنفسك من خلال الوسيلة الموضحة، وبعدين دوس "تم التحويل" لتحديث الحالة.</p>
+        <p id="payments-error" class="hint" style="color:#e0245e; display:none;"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الليدر</th><th>المبلغ</th><th>طريقة الاستلام</th><th>رقم الحساب</th><th>الحالة</th><th></th></tr></thead>
+            <tbody id="payments-body"><tr><td colspan="6" class="text-muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="../js/shared.js"></script>
+<script>
+  const user = NM.currentUser();
+  if (!user) { location.href = "login.html"; }
+  document.getElementById("welcome-msg").textContent = `أهلاً بيك يا ${user.firstName || "هيد ليدر"} 👋`;
+
+  const METHOD_LABELS = {
+    instapay: "InstaPay", vodafone_cash: "فودافون كاش", etisalat_cash: "اتصالات كاش",
+    syriatel_cash: "سيرياتل كاش", sham_cash: "شام كاش", paypal: "PayPal",
+  };
+
+  // service dropdown for the "publish a task" form
+  const serviceSelect = document.getElementById("t-service");
+  NM.SERVICES.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.slug; opt.textContent = `${s.icon} ${s.ar}`;
+    serviceSelect.appendChild(opt);
+  });
+
+  let groupsCache = [];
+
+  async function loadGroups() {
+    try {
+      groupsCache = await NM.apiGetGroups();
+      document.getElementById("stat-groups").textContent = groupsCache.length;
+      document.getElementById("stat-members").textContent =
+        groupsCache.reduce((sum, g) => sum + Number(g.member_count || 0), 0);
+
+      document.getElementById("all-groups-body").innerHTML = groupsCache.length
+        ? groupsCache.map(g => `
+            <tr><td>${g.language}</td><td>#${g.group_number}</td><td>${g.leader_name || "—"}</td><td>${g.member_count}</td></tr>
+          `).join("")
+        : `<tr><td colspan="4" class="text-muted">مفيش جروبات لسه</td></tr>`;
+
+      // leader dropdown for the "record a payment" form
+      const leaderSelect = document.getElementById("p-leader");
+      const leaders = groupsCache.filter(g => g.leader_id);
+      leaderSelect.innerHTML = leaders.length
+        ? leaders.map(g => `<option value="${g.leader_id}" data-payout="${g.leader_payout_identifier || ""}">${g.leader_name} — ${g.language} #${g.group_number}</option>`).join("")
+        : `<option value="">مفيش ليدرز لسه</option>`;
+
+      // group checkboxes for the "publish to specific groups" picker
+      const groupsGrid = document.getElementById("t-groups-grid");
+      groupsGrid.innerHTML = groupsCache.length
+        ? groupsCache.map(g => `
+            <label class="radio-card">
+              <input type="checkbox" name="t-group" value="${g.id}">
+              <div><strong>${g.language} #${g.group_number}</strong><div class="hint">${g.leader_name || "بدون ليدر"} · ${g.member_count} عضو</div></div>
+            </label>`).join("")
+        : `<p class="text-muted">مفيش جروبات لسه</p>`;
+    } catch (err) {
+      document.getElementById("groups-error").textContent = err.message;
+      document.getElementById("groups-error").style.display = "block";
+    }
+  }
+
+  let editingTaskId = null;
+
+  async function loadManageTasks() {
+    try {
+      const tasks = await NM.apiGetAllTasks();
+      document.getElementById("manage-tasks-body").innerHTML = tasks.length
+        ? tasks.map(t => `
+            <tr>
+              <td>${t.title}${(t.male_quantity != null || t.female_quantity != null)
+                  ? `<div class="hint">🎯 مطلوب: ${t.male_quantity != null ? `${t.male_quantity} ذكر` : "—"} / ${t.female_quantity != null ? `${t.female_quantity} أنثى` : "—"}</div>`
+                  : ""}</td>
+              <td>${t.skill_icon || ""} ${t.skill_name_ar || t.skill_slug}</td>
+              <td>
+                ${t.member_price ? `👤 ${Number(t.member_price).toLocaleString("ar-EG")}` : "👤 —"}
+                <br>
+                ${t.leader_price ? `⭐ ${Number(t.leader_price).toLocaleString("ar-EG")}` : "⭐ —"}
+                ${t.member_price || t.leader_price ? ` ${t.currency}` : ""}
+              </td>
+              <td>${t.claimed_quantity} / ${t.total_quantity}</td>
+              <td>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick='startEditTask(${JSON.stringify(t).replace(/'/g, "&apos;")})'>✏️ تعديل</button>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="showTaskClaims('${t.id}', '${String(t.title).replace(/'/g, "&apos;")}')">👥 مين اخد ايه</button>
+                ${t.drive_folder_id ? `<a class="btn btn-secondary" style="padding:6px 12px;" href="https://drive.google.com/drive/folders/${t.drive_folder_id}" target="_blank" rel="noopener">📁 فولدر الدرايف</a>` : `<span class="pill" style="opacity:0.6;">📁 لسه من غير فولدر</span>`}
+                <button class="btn btn-secondary" style="padding:6px 12px; color:#e0245e;" onclick="deleteTask('${t.id}', this)">🗑️ حذف</button>
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="5" class="text-muted">لسه مفيش مهام منشورة</td></tr>`;
+    } catch (err) {
+      document.getElementById("manage-tasks-error").textContent = err.message;
+      document.getElementById("manage-tasks-error").style.display = "block";
+    }
+  }
+
+  async function showTaskClaims(taskId, taskTitle) {
+    const panel = document.getElementById("task-claims-panel");
+    panel.classList.remove("hidden");
+    document.getElementById("task-claims-title").textContent = `مين اخد ايه من: ${taskTitle}`;
+    document.getElementById("task-gender-breakdown").innerHTML = "";
+    document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="5" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-submissions-day-tabs").innerHTML = "";
+    document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">جاري التحميل...</td></tr>`;
+    document.getElementById("task-submissions-search").value = "";
+    panel.scrollIntoView({ behavior: "smooth" });
+
+    try {
+      const { claims, submissions, genderBreakdown } = await NM.apiGetTaskClaims(taskId);
+      if (genderBreakdown) {
+        document.getElementById("task-gender-breakdown").innerHTML = `
+          <span class="pill">👨 ذكور سلّموا شغل: ${genderBreakdown.male}</span>
+          <span class="pill">👩 إناث سلّموا شغل: ${genderBreakdown.female}</span>
+          ${genderBreakdown.unspecified ? `<span class="pill">❔ بدون نوع محدد: ${genderBreakdown.unspecified}</span>` : ""}
+        `;
+      }
+      document.getElementById("task-claims-body").innerHTML = claims.length
+        ? claims.map(c => `
+            <tr>
+              <td>${c.language} #${c.group_number}</td>
+              <td>${c.leader_name || "بدون ليدر (تحت الهيد ليدر)"}</td>
+              <td>${c.quantity}</td>
+              <td>${c.submitted_count} / ${c.quantity}</td>
+              <td>${c.drive_folder_id ? `<a class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" href="https://drive.google.com/drive/folders/${c.drive_folder_id}" target="_blank" rel="noopener">📁 فتح</a>` : "—"}</td>
+            </tr>`).join("")
+        : `<tr><td colspan="5" class="text-muted">مفيش أي جروب استلم من المهمة دي لسه</td></tr>`;
+
+      renderSubmissionsByDay(submissions, taskId);
+    } catch (err) {
+      document.getElementById("task-claims-body").innerHTML = `<tr><td colspan="5" class="text-muted">${err.message}</td></tr>`;
+    }
+  }
+
+  // Groups this task's submissions by the day they were uploaded, and shows
+  // one day at a time behind tabs — instead of every submission from every
+  // day dumped into one long table.
+  function renderSubmissionsByDay(submissions, taskId) {
+    const byDay = {};
+    submissions.forEach(s => {
+      const day = new Date(s.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" });
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(s);
+    });
+    const days = Object.keys(byDay); // already newest-first since submissions arrived sorted DESC
+
+    const tabsWrap = document.getElementById("task-submissions-day-tabs");
+    window.__submissionsByDay = byDay; // scratch state for the tab click handler below
+    window.__submissionsAll = submissions; // flat list (all days) — used by the name search below
+    window.__submissionsTaskId = taskId;
+    if (!days.length) {
+      tabsWrap.innerHTML = "";
+      document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">لسه محدش سلّم شغل على المهمة دي</td></tr>`;
+      return;
+    }
+
+    tabsWrap.innerHTML = days.map((day, i) => `
+      <button class="btn ${i === 0 ? "btn-primary" : "btn-secondary"}" style="padding:6px 14px; font-size:0.85rem;" data-day="${day}" onclick="selectSubmissionDay('${taskId}', this)">${day} (${byDay[day].length})</button>
+    `).join("");
+
+    renderSubmissionDayTable(byDay[days[0]], taskId);
+  }
+
+  function selectSubmissionDay(taskId, btn) {
+    document.querySelectorAll("#task-submissions-day-tabs button").forEach(b => {
+      b.classList.toggle("btn-primary", b === btn);
+      b.classList.toggle("btn-secondary", b !== btn);
+    });
+    renderSubmissionDayTable(window.__submissionsByDay[btn.dataset.day], taskId);
+  }
+
+  // Filters submissions by member name as the head_leader types. Searches
+  // across ALL days at once (not just the currently open tab) — the whole
+  // point is finding someone's delivery without knowing which day it landed
+  // on. Clearing the box goes back to the normal per-day tab view.
+  function filterTaskSubmissions() {
+    const query = document.getElementById("task-submissions-search").value.trim().toLowerCase();
+    const tabsWrap = document.getElementById("task-submissions-day-tabs");
+    if (!query) {
+      tabsWrap.style.display = "";
+      const activeTab = tabsWrap.querySelector("button.btn-primary") || tabsWrap.querySelector("button");
+      if (activeTab) renderSubmissionDayTable(window.__submissionsByDay[activeTab.dataset.day], window.__submissionsTaskId);
+      return;
+    }
+    tabsWrap.style.display = "none";
+    const matches = (window.__submissionsAll || []).filter(s => (s.member_name || "").toLowerCase().includes(query));
+    if (!matches.length) {
+      document.getElementById("task-submissions-body").innerHTML = `<tr><td colspan="7" class="text-muted">مفيش تسليمات لعضو اسمه "${query}"</td></tr>`;
+      return;
+    }
+    renderSubmissionDayTable(matches, window.__submissionsTaskId);
+  }
+
+  function renderSubmissionDayTable(submissions, taskId) {
+    document.getElementById("task-submissions-body").innerHTML = (submissions || []).map(s => `
+        <tr>
+          <td>${s.member_name}</td>
+          <td>${s.language} #${s.group_number}</td>
+          <td>${s.leader_name || "بدون ليدر"}</td>
+          <td>${new Date(s.created_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}</td>
+          <td>${s.file_url ? `<a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a>` : "—"}</td>
+          <td>
+            <span class="pill ${s.status === "completed" ? "badge-success" : s.status === "rejected" ? "badge-danger" : "badge-pending"}">
+              ${s.status === "completed" ? "✅ مقبول" : s.status === "rejected" ? "❌ مرفوض" : "بانتظار المراجعة"}
+            </span>
+            ${s.status === "rejected" && s.rejection_reason ? `<div class="text-muted" style="font-size:0.8rem; margin-top:4px;">سبب الرفض: ${s.rejection_reason}</div>` : ""}
+          </td>
+          <td>
+            ${s.status === "in_review" ? `
+              <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmissionAdmin('${s.id}', true, this, '${taskId}')">✅ موافقة</button>
+              <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmissionAdmin('${s.id}', false, this, '${taskId}')">❌ رفض</button>
+            ` : ""}
+          </td>
+        </tr>`).join("");
+  }
+
+  async function reviewSubmissionAdmin(submissionId, approve, btn, taskId) {
+    let reason = null;
+    if (!approve) {
+      reason = prompt("سبب الرفض؟ (هيظهر للعضو اللي رفع الشغل)");
+      if (reason === null) return; // cancelled
+      if (!reason.trim()) { alert("لازم تكتب سبب عشان تقدر ترفض."); return; }
+    }
+    btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = true);
+    try {
+      await NM.apiReviewSubmission(submissionId, approve, reason);
+      await showTaskClaims(taskId, document.getElementById("task-claims-title").textContent.replace("مين اخد ايه من: ", ""));
+    } catch (err) {
+      alert(err.message);
+      btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = false);
+    }
+  }
+
+  function startEditTask(t) {
+    editingTaskId = t.id;
+    document.getElementById("t-service").value = t.skill_slug;
+    document.getElementById("t-name").value = t.title;
+    document.getElementById("t-qty").value = t.total_quantity;
+    document.getElementById("t-qty-male").value = t.male_quantity != null ? t.male_quantity : "";
+    document.getElementById("t-qty-female").value = t.female_quantity != null ? t.female_quantity : "";
+    document.getElementById("t-price-member").value = t.member_price || "";
+    document.getElementById("t-price-leader").value = t.leader_price || "";
+    document.getElementById("t-currency").value = t.currency || "USD";
+    document.getElementById("t-video").value = (t.video_urls || []).join("\n");
+    // Each line is "عنوان | رابط", matching audio_sample_urls[i] with
+    // audio_sample_titles[i] by index. A sample with no title just shows
+    // its bare URL (so old data with no titles yet still round-trips fine).
+    document.getElementById("t-audio").value = (t.audio_sample_urls || [])
+      .map((url, i) => { const title = (t.audio_sample_titles || [])[i]; return title ? `${title} | ${url}` : url; })
+      .join("\n");
+    document.getElementById("t-instructions").value = t.instructions || "";
+    document.getElementById("t-instructions-file-current").textContent = t.instructions_file_name
+      ? `📎 الملف الحالي: ${t.instructions_file_name} — اختار ملف جديد تحت لو عايز تستبدله`
+      : "";
+    document.getElementById("task-submit").textContent = "حفظ التعديلات";
+    document.getElementById("task-cancel-edit").classList.remove("hidden");
+    document.getElementById("tasks").scrollIntoView({ behavior: "smooth" });
+  }
+
+  document.getElementById("task-cancel-edit").addEventListener("click", () => {
+    editingTaskId = null;
+    document.getElementById("task-form").reset();
+    document.getElementById("t-instructions-file-current").textContent = "";
+    document.getElementById("task-submit").textContent = "نشر المهمة";
+    document.getElementById("task-cancel-edit").classList.add("hidden");
+    document.getElementById("t-groups-field").classList.add("hidden");
+  });
+
+  async function deleteTask(id, btn) {
+    if (!confirm("متأكد إنك عايز تحذف المهمة دي؟ هيتحذف معاها أي استلامات وتسليمات مرتبطة بيها.")) return;
+    btn.disabled = true;
+    try {
+      await NM.apiDeleteTask(id);
+      await loadManageTasks();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  }
+
+  document.querySelectorAll('input[name="t-target"]').forEach(r => {
+    r.addEventListener("change", () => {
+      const specific = document.querySelector('input[name="t-target"]:checked').value === "specific";
+      document.getElementById("t-groups-field").classList.toggle("hidden", !specific);
+    });
+  });
+
+  // pre-fill the payout identifier with what the leader saved at signup —
+  // still fully editable in case this payout is going somewhere else.
+  document.getElementById("p-leader").addEventListener("change", (e) => {
+    const opt = e.target.selectedOptions[0];
+    const payout = opt ? opt.getAttribute("data-payout") : "";
+    if (payout) document.getElementById("p-identifier").value = payout;
+  });
+
+  async function loadPayments() {
+    try {
+      const payments = await NM.apiGetPendingPayments();
+      document.getElementById("stat-pending").textContent = payments.length;
+      document.getElementById("payments-body").innerHTML = payments.length
+        ? payments.map(p => `
+            <tr>
+              <td>${p.recipient_name}</td>
+              <td>${Number(p.amount).toLocaleString("ar-EG")} ${p.currency}</td>
+              <td>${METHOD_LABELS[p.payout_method] || p.payout_method}</td>
+              <td dir="ltr" style="text-align:end;">${p.payout_identifier}</td>
+              <td><span class="pill badge-pending">معلّق</span></td>
+              <td><button class="btn btn-primary" style="padding:6px 14px;" onclick="markPaid('${p.id}', this)">✅ تم التحويل</button></td>
+            </tr>`).join("")
+        : `<tr><td colspan="6" class="text-muted">مفيش تحويلات معلّقة 🎉</td></tr>`;
+    } catch (err) {
+      document.getElementById("payments-error").textContent = err.message;
+      document.getElementById("payments-error").style.display = "block";
+    }
+  }
+
+  async function markPaid(id, btn) {
+    btn.disabled = true;
+    btn.textContent = "جاري التحديث...";
+    try {
+      await NM.apiMarkTransferred(id);
+      await loadPayments();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      btn.textContent = "✅ تم التحويل";
+    }
+  }
+
+  document.getElementById("task-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("task-error");
+    const submitBtn = document.getElementById("task-submit");
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جاري النشر...";
+    const targetAll = document.querySelector('input[name="t-target"]:checked').value === "all";
+    const groupIds = Array.from(document.querySelectorAll('input[name="t-group"]:checked')).map(i => i.value);
+
+    if (!editingTaskId && !targetAll && groupIds.length === 0) {
+      errorBox.textContent = "اختار جروب واحد على الأقل، أو اختار \"كل الجروبات\".";
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "نشر المهمة";
+      return;
+    }
+
+    try {
+      const payload = {
+        skillSlug: document.getElementById("t-service").value,
+        title: document.getElementById("t-name").value,
+        instructions: document.getElementById("t-instructions").value,
+        totalQuantity: Number(document.getElementById("t-qty").value),
+        maleQuantity: document.getElementById("t-qty-male").value ? Number(document.getElementById("t-qty-male").value) : null,
+        femaleQuantity: document.getElementById("t-qty-female").value ? Number(document.getElementById("t-qty-female").value) : null,
+        memberPrice: document.getElementById("t-price-member").value ? Number(document.getElementById("t-price-member").value) : null,
+        leaderPrice: document.getElementById("t-price-leader").value ? Number(document.getElementById("t-price-leader").value) : null,
+        currency: document.getElementById("t-currency").value,
+        videoUrls: document.getElementById("t-video").value.split("\n").map(s => s.trim()).filter(Boolean),
+        // Each non-empty line is either "عنوان | رابط" or just a bare رابط.
+        // Split on the FIRST "|" only, so a URL that happens to contain one
+        // (unlikely, but query strings can) doesn't get mangled.
+        ...(() => {
+          const lines = document.getElementById("t-audio").value.split("\n").map(s => s.trim()).filter(Boolean);
+          const audioSampleUrls = [], audioSampleTitles = [];
+          lines.forEach(line => {
+            const sep = line.indexOf("|");
+            if (sep === -1) { audioSampleUrls.push(line); audioSampleTitles.push(""); }
+            else { audioSampleTitles.push(line.slice(0, sep).trim()); audioSampleUrls.push(line.slice(sep + 1).trim()); }
+          });
+          return { audioSampleUrls, audioSampleTitles };
+        })(),
+      };
+
+      let taskId = editingTaskId;
+      if (editingTaskId) {
+        await NM.apiUpdateTask(editingTaskId, payload);
+      } else {
+        const created = await NM.apiCreateTask({ ...payload, targetAll, groupIds });
+        taskId = created.id;
+      }
+
+      const fileInput = document.getElementById("t-instructions-file");
+      if (fileInput.files[0]) {
+        try {
+          await NM.apiUploadTaskInstructionsFile(taskId, fileInput.files[0]);
+        } catch (fileErr) {
+          alert("✅ اتحفظت المهمة، لكن رفع ملف التعليمات فشل: " + fileErr.message);
+        }
+      }
+
+      if (editingTaskId) {
+        alert("✅ اتحفظت التعديلات!");
+        editingTaskId = null;
+        document.getElementById("task-cancel-edit").classList.add("hidden");
+      } else {
+        alert(targetAll
+          ? "✅ اتنشرت المهمة لكل الجروبات!"
+          : `✅ اتنشرت المهمة لـ ${groupIds.length} جروب محدد!`);
+      }
+      e.target.reset();
+      document.getElementById("t-instructions-file-current").textContent = "";
+      document.getElementById("t-groups-field").classList.add("hidden");
+      document.getElementById("task-submit").textContent = "نشر المهمة";
+      await loadManageTasks();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      submitBtn.disabled = false;
+      if (!editingTaskId) submitBtn.textContent = "نشر المهمة";
+    }
+  });
+
+  document.getElementById("payment-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const leaderId = document.getElementById("p-leader").value;
+    if (!leaderId) { alert("مفيش ليدرز متاحين تسجّل لهم مستحق دلوقتي."); return; }
+    try {
+      await NM.apiCreatePayment({
+        recipientId: leaderId,
+        amount: Number(document.getElementById("p-amount").value),
+        currency: document.getElementById("p-currency").value,
+        payoutMethod: document.getElementById("p-method").value,
+        payoutIdentifier: document.getElementById("p-identifier").value,
+      });
+      e.target.reset();
+      await loadPayments();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  async function loadLeaderRequests() {
+    try {
+      const requests = await NM.apiPendingLeaderRequests();
+      document.getElementById("leader-requests-body").innerHTML = requests.length
+        ? requests.map(r => `
+            <tr>
+              <td>${r.first_name}</td>
+              <td>${r.language}</td>
+              <td dir="ltr" style="text-align:end;">${r.email}</td>
+              <td dir="ltr" style="text-align:end;">${r.whatsapp_number || "—"}</td>
+              <td>
+                <button class="btn btn-primary" style="padding:6px 12px;" onclick="decideLeaderRequest('${r.id}', true, this)">✅ موافقة</button>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="decideLeaderRequest('${r.id}', false, this)">✖ رفض</button>
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="5" class="text-muted">مفيش طلبات معلّقة</td></tr>`;
+    } catch (err) {
+      document.getElementById("leader-requests-error").textContent = err.message;
+      document.getElementById("leader-requests-error").style.display = "block";
+    }
+  }
+
+  async function decideLeaderRequest(id, approve, btn) {
+    btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = true);
+    try {
+      if (approve) await NM.apiApproveLeaderRequest(id);
+      else await NM.apiRejectLeaderRequest(id);
+      await Promise.all([loadLeaderRequests(), loadGroups()]);
+    } catch (err) {
+      alert(err.message);
+      btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = false);
+    }
+  }
+
+  async function loadDriveStatus() {
+    try {
+      const status = await NM.apiGetGoogleStatus();
+      const statusEl = document.getElementById("drive-status");
+      const btn = document.getElementById("drive-connect-btn");
+      // The button stays visible either way now — even when "connected",
+      // since a saved account can still lose the specific scope uploads
+      // need (see isConnected in googleDrive.js) without this endpoint
+      // necessarily catching every case immediately. Re-authorizing is
+      // cheap and safe, so there's no reason to hide the escape hatch.
+      btn.href = NM.apiGoogleConnectUrl();
+      btn.classList.remove("hidden");
+      if (status.connected) {
+        statusEl.innerHTML = `<span class="pill badge-success">✅ متصل بحساب: ${status.email}</span>`;
+        btn.textContent = "أعد الاتصال بجوجل درايف";
+      } else {
+        statusEl.innerHTML = `<span class="pill badge-pending">⚠️ مش متصل لسه (أو محتاج صلاحيات جديدة)</span>`;
+        btn.textContent = "وصّل جوجل درايف";
+      }
+    } catch (err) {
+      document.getElementById("drive-status").textContent = err.message;
+    }
+  }
+
+  async function loadReviewQueueAll() {
+    try {
+      const queue = await NM.apiReviewQueueAll();
+      document.getElementById("review-all-body").innerHTML = queue.length
+        ? queue.map(s => `
+            <tr>
+              <td>${s.member_name}</td>
+              <td>${s.task_title}</td>
+              <td>${s.language} #${s.group_number}</td>
+              <td>${s.leader_name || "بدون ليدر"}</td>
+              <td>${new Date(s.created_at).toLocaleString("ar-EG", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</td>
+              <td><a href="${s.file_url}" target="_blank" rel="noopener">فتح الملف</a></td>
+              <td>
+                <button class="btn btn-secondary" style="padding:6px 12px;" onclick="reviewSubmissionAll('${s.submission_id}', true, this)">✅ موافقة</button>
+                <button class="btn btn-secondary" style="padding:6px 12px; color:#C0392B;" onclick="reviewSubmissionAll('${s.submission_id}', false, this)">❌ رفض</button>
+              </td>
+            </tr>`).join("")
+        : `<tr><td colspan="7" class="text-muted">مفيش تسليمات محتاجة مراجعة دلوقتي</td></tr>`;
+    } catch (err) {
+      document.getElementById("review-all-error").textContent = err.message;
+      document.getElementById("review-all-error").style.display = "block";
+    }
+  }
+
+  async function reviewSubmissionAll(id, approve, btn) {
+    let reason = null;
+    if (!approve) {
+      reason = prompt("سبب الرفض؟ (هيظهر للشخص اللي رفع الشغل)");
+      if (reason === null) return; // cancelled
+      if (!reason.trim()) { alert("لازم تكتب سبب عشان تقدر ترفض."); return; }
+    }
+    btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = true);
+    try {
+      await NM.apiReviewSubmission(id, approve, reason);
+      await loadReviewQueueAll();
+    } catch (err) {
+      alert(err.message);
+      btn.closest("tr").querySelectorAll("button").forEach(b => b.disabled = false);
+    }
+  }
+
+  loadGroups();
+  loadPayments();
+  loadLeaderRequests();
+  loadDriveStatus();
+  loadManageTasks();
+  loadReviewQueueAll();
+</script>
+</body>
+</html>
