@@ -576,8 +576,10 @@
           });
         } catch (err) {
           console.error("Setup error:", err);
-          alert("خطأ في تحميل المهمة");
-          window.location.href = "/pages/tasks.html";
+          console.log("Task ID:", taskId);
+          console.log("Claim ID:", claimId);
+          alert("خطأ في تحميل المهمة: " + err.message);
+          // Don't redirect - stay here for debugging
         }
       });
     </script>
