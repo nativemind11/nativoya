@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة الهيد ليدر — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div>
+  <nav>
+    <span id="hl-name" style="color:var(--studio-text-muted);"></span>
+    <a href="#" id="logout-link" class="studio-btn studio-btn-secondary" style="padding:8px 16px;">خروج</a>
+  </nav>
+</header>
+
+<main class="studio-shell wide">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:12px;">
+    <div>
+      <div class="studio-eyebrow">لوحة الهيد ليدر</div>
+      <h1 class="studio-title" style="margin:0;">كل المهام المنشورة</h1>
+    </div>
+    <button class="studio-btn studio-btn-primary" disabled title="بيتفعّل في المرحلة الجاية">+ نشر مهمة جديدة</button>
+  </div>
+
+  <div class="studio-card">
+    <div class="studio-empty">
+      <div class="icon">🎙️</div>
+      <p>لسه مفيش مهام منشورة — نشر المهام بيتفعّل في المرحلة الجاية (رفع السكريبت، السامبلات الصوتية، وإعدادات التسجيل).</p>
+    </div>
+  </div>
+</main>
+
+<script src="../js/studio-shared.js"></script>
+<script>
+  const user = NMStudio.requireStudioRole("head_leader");
+  if (user) document.getElementById("hl-name").textContent = user.name;
+  document.getElementById("logout-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    NMStudio.logout();
+    location.href = "login.html";
+  });
+</script>
+</body>
+</html>

@@ -269,4 +269,7 @@ module.exports = {
   initResumableUpload,
   shareFileWithAnyone,
   isConnected,
+  // exported for config/studioDrive.js to reuse the same connected account
+  getAuthorizedClient,
+  shareWithAnyone,
 };

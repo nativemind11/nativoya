@@ -223,3 +223,11 @@ CREATE INDEX idx_tasks_skill ON tasks(skill_slug);
 CREATE INDEX idx_task_targets_group ON task_targets(group_id);
 CREATE INDEX idx_payments_status ON payments(status);
 CREATE INDEX idx_task_claims_group ON task_claims(group_id);
+
+-- --------------------------------------------------------------------------
+-- NATIVOYA STUDIO (recording studio sub-system) lives in its own file,
+-- db/migration_studio.sql, since it's a fully separate set of tables with
+-- its own accounts (studio_head_leaders/studio_leaders/studio_qa_reviewers)
+-- — nothing in it references the tables above. Run that file too on a
+-- fresh database if you're setting up the Studio as well.
+-- --------------------------------------------------------------------------

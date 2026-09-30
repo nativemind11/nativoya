@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تسجيل الدخول — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <a href="index.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
+  <nav><a href="leader-signup.html">حساب ليدر جديد</a></nav>
+</header>
+
+<main class="studio-shell">
+  <div class="studio-card">
+    <div class="studio-eyebrow">تسجيل الدخول</div>
+    <h1 class="studio-title">أهلاً بيك تاني</h1>
+    <p class="studio-subtitle">اختار نوع حسابك وادخل بياناتك.</p>
+
+    <div class="studio-tabs" id="role-tabs">
+      <div class="studio-tab active" data-role="leader">ليدر</div>
+      <div class="studio-tab" data-role="qa">QA</div>
+      <div class="studio-tab" data-role="head_leader">هيد ليدر</div>
+    </div>
+
+    <form id="login-form">
+      <div class="studio-field">
+        <label for="l-email">البريد الإلكتروني</label>
+        <input type="email" id="l-email" required autofocus>
+      </div>
+      <div class="studio-field">
+        <label for="l-password">كلمة المرور</label>
+        <input type="password" id="l-password" required>
+      </div>
+      <p class="studio-error" id="login-error"></p>
+      <button type="submit" class="studio-btn studio-btn-primary studio-btn-block" id="login-btn">دخول</button>
+    </form>
+  </div>
+</main>
+
+<script src="../js/studio-shared.js"></script>
+<script>
+  let selectedRole = "leader";
+  document.querySelectorAll("#role-tabs .studio-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll("#role-tabs .studio-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      selectedRole = tab.dataset.role;
+    });
+  });
+
+  const DASHBOARDS = {
+    leader: "dashboard-leader.html",
+    qa: "dashboard-qa.html",
+    head_leader: "dashboard-head-leader.html",
+  };
+
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("login-error");
+    const btn = document.getElementById("login-btn");
+    errorBox.style.display = "none";
+    btn.disabled = true;
+    btn.textContent = "جاري الدخول...";
+    try {
+      await NMStudio.login(
+        document.getElementById("l-email").value,
+        document.getElementById("l-password").value,
+        selectedRole
+      );
+      location.href = DASHBOARDS[selectedRole];
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "دخول";
+    }
+  });
+</script>
+</body>
+</html>

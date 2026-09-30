@@ -1,0 +1,106 @@
+/* Nativoya Studio — a deliberately separate visual identity from the main
+   site: dark, console-like, built around the idea of a waveform on a dark
+   background rather than the main site's blue/purple gradient look. */
+
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+
+:root {
+  --studio-bg: #0B0D10;
+  --studio-surface: #14171C;
+  --studio-surface-2: #1B1F26;
+  --studio-border: #262B33;
+  --studio-text: #E8EAED;
+  --studio-text-muted: #8B92A0;
+  --studio-accent: #2DD4BF;      /* teal — waveform / active state */
+  --studio-accent-dim: #12312E;
+  --studio-warn: #F5A623;        /* amber — recording / attention */
+  --studio-danger: #F0555A;
+  --studio-radius: 14px;
+  --studio-font: 'Cairo', sans-serif;
+  --studio-mono: 'JetBrains Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+
+body.studio {
+  margin: 0;
+  background: var(--studio-bg);
+  color: var(--studio-text);
+  font-family: var(--studio-font);
+  min-height: 100vh;
+}
+
+.studio-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 28px; border-bottom: 1px solid var(--studio-border);
+  background: var(--studio-surface);
+}
+.studio-logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; }
+.studio-logo .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--studio-accent); box-shadow: 0 0 10px var(--studio-accent); }
+.studio-logo .sub { color: var(--studio-text-muted); font-weight: 500; font-size: 0.8rem; }
+.studio-header nav { display: flex; gap: 22px; align-items: center; }
+.studio-header a { color: var(--studio-text-muted); text-decoration: none; font-size: 0.92rem; }
+.studio-header a:hover, .studio-header a.active { color: var(--studio-text); }
+
+.studio-shell { max-width: 480px; margin: 0 auto; padding: 60px 20px; }
+.studio-shell.wide { max-width: 1100px; }
+
+.studio-card {
+  background: var(--studio-surface); border: 1px solid var(--studio-border);
+  border-radius: var(--studio-radius); padding: 28px;
+}
+.studio-card + .studio-card { margin-top: 18px; }
+
+.studio-eyebrow { color: var(--studio-accent); font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; }
+.studio-title { font-size: 1.5rem; font-weight: 800; margin: 0 0 6px; }
+.studio-subtitle { color: var(--studio-text-muted); font-size: 0.92rem; margin: 0 0 22px; line-height: 1.6; }
+
+.studio-field { margin-bottom: 16px; }
+.studio-field label { display: block; font-size: 0.85rem; color: var(--studio-text-muted); margin-bottom: 6px; }
+.studio-field input, .studio-field select, .studio-field textarea {
+  width: 100%; background: var(--studio-surface-2); border: 1px solid var(--studio-border);
+  color: var(--studio-text); border-radius: 10px; padding: 11px 13px; font-family: inherit; font-size: 0.95rem;
+}
+.studio-field input:focus, .studio-field select:focus, .studio-field textarea:focus {
+  outline: none; border-color: var(--studio-accent);
+}
+
+.studio-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: none; border-radius: 10px; padding: 12px 20px; font-family: inherit;
+  font-weight: 700; font-size: 0.92rem; cursor: pointer; text-decoration: none;
+}
+.studio-btn-primary { background: var(--studio-accent); color: #04211D; }
+.studio-btn-primary:hover { filter: brightness(1.08); }
+.studio-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.studio-btn-secondary { background: var(--studio-surface-2); color: var(--studio-text); border: 1px solid var(--studio-border); }
+.studio-btn-block { width: 100%; }
+.studio-btn-danger { background: var(--studio-danger); color: #2A0507; }
+
+.studio-tabs { display: flex; gap: 6px; background: var(--studio-surface-2); padding: 4px; border-radius: 10px; margin-bottom: 22px; }
+.studio-tab { flex: 1; text-align: center; padding: 9px; border-radius: 8px; font-size: 0.85rem; font-weight: 700; color: var(--studio-text-muted); cursor: pointer; }
+.studio-tab.active { background: var(--studio-accent); color: #04211D; }
+
+.studio-error { color: var(--studio-danger); font-size: 0.85rem; margin: -6px 0 14px; display: none; }
+.studio-success { color: var(--studio-accent); font-size: 0.85rem; margin: -6px 0 14px; display: none; }
+.studio-hint { color: var(--studio-text-muted); font-size: 0.8rem; margin-top: 6px; }
+.studio-code { font-family: var(--studio-mono); color: var(--studio-accent); background: var(--studio-accent-dim); padding: 2px 8px; border-radius: 6px; font-size: 0.88rem; }
+
+.studio-pill { display: inline-block; background: var(--studio-surface-2); border: 1px solid var(--studio-border); color: var(--studio-text-muted); border-radius: 999px; padding: 4px 12px; font-size: 0.78rem; }
+.studio-pill.status-approved { color: var(--studio-accent); border-color: var(--studio-accent-dim); }
+.studio-pill.status-rejected { color: var(--studio-danger); }
+.studio-pill.status-pending { color: var(--studio-warn); }
+
+.studio-grid { display: grid; gap: 16px; }
+.studio-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.studio-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 720px) { .studio-grid.cols-2, .studio-grid.cols-3 { grid-template-columns: 1fr; } }
+
+.studio-table-wrap { overflow-x: auto; }
+.studio-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.studio-table th { text-align: start; color: var(--studio-text-muted); font-weight: 600; font-size: 0.78rem; padding: 10px 12px; border-bottom: 1px solid var(--studio-border); }
+.studio-table td { padding: 12px; border-bottom: 1px solid var(--studio-border); }
+.studio-table tr:last-child td { border-bottom: none; }
+
+.studio-empty { text-align: center; padding: 50px 20px; color: var(--studio-text-muted); }
+.studio-empty .icon { font-size: 2rem; margin-bottom: 10px; }

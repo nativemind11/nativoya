@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة مراجع QA — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div>
+  <nav>
+    <span id="qa-name" style="color:var(--studio-text-muted);"></span>
+    <a href="#" id="logout-link" class="studio-btn studio-btn-secondary" style="padding:8px 16px;">خروج</a>
+  </nav>
+</header>
+
+<main class="studio-shell wide">
+  <div class="studio-eyebrow">لوحة المراجعة</div>
+  <h1 class="studio-title">التسليمات اللي محتاجة مراجعة</h1>
+
+  <div class="studio-card" style="margin-top:18px;">
+    <div class="studio-empty">
+      <div class="icon">✅</div>
+      <p>لسه مفيش تسليمات — المراجعة (سماع الملفات، قبول/رفض) بتتفعّل في مرحلة الـ QA.</p>
+    </div>
+  </div>
+</main>
+
+<script src="../js/studio-shared.js"></script>
+<script>
+  const user = NMStudio.requireStudioRole("qa");
+  if (user) document.getElementById("qa-name").textContent = user.name;
+  document.getElementById("logout-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    NMStudio.logout();
+    location.href = "login.html";
+  });
+</script>
+</body>
+</html>
