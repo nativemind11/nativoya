@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نشر مهمة جديدة — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <a href="dashboard-head-leader.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
+  <nav>
+    <a href="dashboard-head-leader.html">← رجوع للوحة التحكم</a>
+    <a href="#" id="logout-link" class="studio-btn studio-btn-secondary" style="padding:8px 16px;">خروج</a>
+  </nav>
+</header>
+
+<main class="studio-shell">
+
+  <!-- STEP 1: basic info + settings + leader codes -->
+  <div class="studio-card" id="step-1">
+    <div class="studio-eyebrow">خطوة 1 من 3</div>
+    <h1 class="studio-title">بيانات المهمة</h1>
+
+    <div class="studio-field">
+      <label for="t-title">اسم المهمة</label>
+      <input type="text" id="t-title" placeholder="مثال: جمل الأخبار — دفعة 1" required>
+    </div>
+
+    <div class="studio-grid cols-2">
+      <div class="studio-field">
+        <label for="t-quantity">الكمية المطلوبة (كام شخص)</label>
+        <input type="number" id="t-quantity" min="1" value="10" required>
+      </div>
+      <div class="studio-field">
+        <label for="t-difficulty">الصعوبة</label>
+        <select id="t-difficulty">
+          <option value="easy">سهلة</option>
+          <option value="medium" selected>متوسطة</option>
+          <option value="hard">صعبة</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="studio-grid cols-2">
+      <div class="studio-field">
+        <label for="t-sample-rate">معدل العينة (Sample Rate)</label>
+        <select id="t-sample-rate">
+          <option value="16000" selected>16,000 Hz</option>
+          <option value="22050">22,050 Hz</option>
+          <option value="44100">44,100 Hz</option>
+          <option value="48000">48,000 Hz</option>
+        </select>
+      </div>
+      <div class="studio-field">
+        <label for="t-bit-depth">عمق البت (Bit Depth)</label>
+        <select id="t-bit-depth">
+          <option value="16" selected>16 bit</option>
+          <option value="24">24 bit</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="studio-grid cols-2">
+      <div class="studio-field">
+        <label for="t-format">الصيغة</label>
+        <select id="t-format">
+          <option value="wav" selected>WAV</option>
+          <option value="mp3">MP3</option>
+        </select>
+      </div>
+      <div class="studio-field">
+        <label for="t-channels">القناة (Channel)</label>
+        <select id="t-channels">
+          <option value="mono" selected>Mono</option>
+          <option value="stereo">Stereo</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="studio-field">
+      <label for="t-leader-codes">أكواد الليدرز المسموح لهم بالمهمة دي</label>
+      <input type="text" id="t-leader-codes" placeholder="مثال: L001, L002, L003" required>
+      <p class="studio-hint">اكتب الأكواد مفصولة بفاصلة. اتأكد إن كل كود مسجّل بالفعل في الاستوديو.</p>
+    </div>
+
+    <p class="studio-error" id="step1-error"></p>
+    <button class="studio-btn studio-btn-primary studio-btn-block" id="step1-btn">التالي: رفع السكريبت</button>
+  </div>
+
+  <!-- STEP 2: upload script + per-sentence reference audio -->
+  <div class="studio-card hidden" id="step-2">
+    <div class="studio-eyebrow">خطوة 2 من 3</div>
+    <h1 class="studio-title">السكريبت والسامبلات الصوتية</h1>
+    <p class="studio-subtitle">ارفع ملف txt فيه كل جملة في سطر لوحدها. بعد ما يترفع، تقدر تضيف سامبل صوتي مرجعي لكل جملة (اختياري).</p>
+
+    <div class="studio-field">
+      <label for="t-script-file">ملف الجمل (.txt)</label>
+      <input type="file" id="t-script-file" accept=".txt">
+    </div>
+    <p class="studio-error" id="script-error"></p>
+    <button class="studio-btn studio-btn-secondary" id="script-upload-btn">رفع الملف</button>
+
+    <div id="samples-list" style="margin-top:22px;"></div>
+
+    <p class="studio-error" id="step2-error"></p>
+    <button class="studio-btn studio-btn-primary studio-btn-block" id="step2-btn" style="margin-top:18px;" disabled>التالي: مراجعة ونشر</button>
+  </div>
+
+  <!-- STEP 3: review + publish -->
+  <div class="studio-card hidden" id="step-3">
+    <div class="studio-eyebrow">خطوة 3 من 3</div>
+    <h1 class="studio-title">مراجعة ونشر</h1>
+    <div id="review-box" class="studio-card" style="background:var(--studio-surface-2);"></div>
+    <p class="studio-error" id="publish-error"></p>
+    <p class="studio-success" id="publish-success"></p>
+    <button class="studio-btn studio-btn-primary studio-btn-block" id="publish-btn" style="margin-top:18px;">🚀 نشر المهمة</button>
+  </div>
+
+</main>
+
+<script src="../js/studio-shared.js"></script>
+<script>
+  const user = NMStudio.requireStudioRole("head_leader");
+  document.getElementById("logout-link").addEventListener("click", (e) => {
+    e.preventDefault(); NMStudio.logout(); location.href = "login.html";
+  });
+
+  let createdTask = null;
+  let currentSamples = [];
+
+  document.getElementById("step1-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("step1-error");
+    errorBox.style.display = "none";
+    const title = document.getElementById("t-title").value.trim();
+    const quantity = document.getElementById("t-quantity").value;
+    const leaderCodes = document.getElementById("t-leader-codes").value.trim();
+    if (!title || !quantity || !leaderCodes) {
+      errorBox.textContent = "من فضلك املا كل الحقول المطلوبة.";
+      errorBox.style.display = "block";
+      return;
+    }
+    const btn = document.getElementById("step1-btn");
+    btn.disabled = true; btn.textContent = "جاري الإنشاء...";
+    try {
+      createdTask = await NMStudio.apiCreateTask({
+        title, quantity,
+        difficulty: document.getElementById("t-difficulty").value,
+        sampleRate: document.getElementById("t-sample-rate").value,
+        bitDepth: document.getElementById("t-bit-depth").value,
+        format: document.getElementById("t-format").value,
+        channels: document.getElementById("t-channels").value,
+        leaderCodes,
+      });
+      document.getElementById("step-1").classList.add("hidden");
+      document.getElementById("step-2").classList.remove("hidden");
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "التالي: رفع السكريبت";
+    }
+  });
+
+  document.getElementById("script-upload-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("script-error");
+    errorBox.style.display = "none";
+    const file = document.getElementById("t-script-file").files[0];
+    if (!file) { errorBox.textContent = "اختار ملف txt الأول."; errorBox.style.display = "block"; return; }
+    const btn = document.getElementById("script-upload-btn");
+    btn.disabled = true; btn.textContent = "جاري الرفع...";
+    try {
+      const result = await NMStudio.apiUploadScript(createdTask.id, file);
+      currentSamples = result.samples;
+      renderSamples();
+      document.getElementById("step2-btn").disabled = false;
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "رفع الملف";
+    }
+  });
+
+  function renderSamples() {
+    const wrap = document.getElementById("samples-list");
+    wrap.innerHTML = `<p class="studio-hint" style="margin-bottom:10px;">اتحمّل ${currentSamples.length} جملة. تقدر تضيف سامبل صوتي مرجعي لكل واحدة (اختياري):</p>` +
+      currentSamples.map((s, i) => `
+        <div class="studio-card" style="padding:14px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <div><strong>#${i + 1}</strong> — ${escapeHtml(s.sentence_name)}</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${s.audio_url ? `<span class="studio-pill status-approved">✓ اترفع</span>` : ""}
+            <input type="file" accept="audio/*" class="hidden" id="audio-${s.id}" onchange="uploadSampleAudio('${s.id}', this)">
+            <button type="button" class="studio-btn studio-btn-secondary" style="padding:6px 12px; font-size:0.8rem;" onclick="document.getElementById('audio-${s.id}').click()">🎵 ${s.audio_url ? "استبدال" : "إضافة سامبل"}</button>
+          </div>
+        </div>`).join("");
+  }
+
+  async function uploadSampleAudio(sampleId, inputEl) {
+    const file = inputEl.files[0];
+    if (!file) return;
+    inputEl.disabled = true;
+    try {
+      await NMStudio.apiUploadSampleAudio(createdTask.id, sampleId, file);
+      const sample = currentSamples.find(s => s.id === sampleId);
+      if (sample) sample.audio_url = "uploaded";
+      renderSamples();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      inputEl.disabled = false;
+    }
+  }
+
+  document.getElementById("step2-btn").addEventListener("click", () => {
+    document.getElementById("step-2").classList.add("hidden");
+    document.getElementById("step-3").classList.remove("hidden");
+    document.getElementById("review-box").innerHTML = `
+      <p><strong>المهمة:</strong> ${escapeHtml(createdTask.title)}</p>
+      <p><strong>الكمية:</strong> ${createdTask.quantity}</p>
+      <p><strong>عدد الجمل:</strong> ${currentSamples.length}</p>
+      <p class="mb-0"><strong>الإعدادات:</strong> ${createdTask.recording_settings.sampleRate}Hz, ${createdTask.recording_settings.bitDepth}bit, ${createdTask.recording_settings.format.toUpperCase()}, ${createdTask.recording_settings.channels}</p>
+    `;
+  });
+
+  document.getElementById("publish-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("publish-error");
+    const successBox = document.getElementById("publish-success");
+    errorBox.style.display = "none"; successBox.style.display = "none";
+    const btn = document.getElementById("publish-btn");
+    btn.disabled = true; btn.textContent = "جاري النشر...";
+    try {
+      await NMStudio.apiPublishTask(createdTask.id);
+      successBox.textContent = "✅ اتنشرت المهمة بنجاح!";
+      successBox.style.display = "block";
+      setTimeout(() => location.href = "dashboard-head-leader.html", 1200);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      btn.disabled = false; btn.textContent = "🚀 نشر المهمة";
+    }
+  });
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  window.uploadSampleAudio = uploadSampleAudio;
+</script>
+</body>
+</html>

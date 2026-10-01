@@ -23,14 +23,11 @@
       <div class="studio-eyebrow">لوحة الهيد ليدر</div>
       <h1 class="studio-title" style="margin:0;">كل المهام المنشورة</h1>
     </div>
-    <button class="studio-btn studio-btn-primary" disabled title="بيتفعّل في المرحلة الجاية">+ نشر مهمة جديدة</button>
+    <a href="publish-task.html" class="studio-btn studio-btn-primary">+ نشر مهمة جديدة</a>
   </div>
 
-  <div class="studio-card">
-    <div class="studio-empty">
-      <div class="icon">🎙️</div>
-      <p>لسه مفيش مهام منشورة — نشر المهام بيتفعّل في المرحلة الجاية (رفع السكريبت، السامبلات الصوتية، وإعدادات التسجيل).</p>
-    </div>
+  <div class="studio-card" id="tasks-wrap">
+    <div class="studio-empty"><p>جاري التحميل...</p></div>
   </div>
 </main>
 
@@ -43,6 +40,47 @@
     NMStudio.logout();
     location.href = "login.html";
   });
+
+  const STATUS_LABELS = { draft: "مسودة", published: "منشورة", closed: "مقفولة" };
+
+  async function loadTasks() {
+    const wrap = document.getElementById("tasks-wrap");
+    try {
+      const tasks = await NMStudio.apiGetMyTasks();
+      if (!tasks.length) {
+        wrap.innerHTML = `<div class="studio-empty"><div class="icon">🎙️</div><p>لسه مفيش مهام منشورة. دوس "نشر مهمة جديدة" عشان تبدأ.</p></div>`;
+        return;
+      }
+      wrap.innerHTML = `
+        <div class="studio-table-wrap">
+          <table class="studio-table">
+            <thead><tr><th>المهمة</th><th>الحالة</th><th>الجمل</th><th>الليدرز</th><th>تسليمات</th><th>ذكور معتمدة</th><th>إناث معتمدة</th></tr></thead>
+            <tbody>
+              ${tasks.map(t => `
+                <tr>
+                  <td>${escapeHtml(t.title)}</td>
+                  <td><span class="studio-pill ${t.status === "published" ? "status-approved" : ""}">${STATUS_LABELS[t.status] || t.status}</span></td>
+                  <td>${t.sample_count}</td>
+                  <td>${t.leader_count}</td>
+                  <td>${t.submission_count}</td>
+                  <td>${t.approved_male_count}</td>
+                  <td>${t.approved_female_count}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`;
+    } catch (err) {
+      wrap.innerHTML = `<div class="studio-empty"><p>${err.message}</p></div>`;
+    }
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  loadTasks();
 </script>
 </body>
 </html>

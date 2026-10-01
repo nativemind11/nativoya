@@ -78,8 +78,45 @@
   // /studio/index.html or a subfolder.
   function rel(path) { return path; }
 
+  // ---- head_leader: tasks -------------------------------------------
+  function apiCreateTask(payload) {
+    return apiFetch("/api/studio/headleader/tasks", { method: "POST", body: JSON.stringify(payload) });
+  }
+
+  async function apiUploadFile(path, file, extraFields) {
+    const form = new FormData();
+    form.append("file", file);
+    Object.entries(extraFields || {}).forEach(([k, v]) => form.append(k, v));
+    const headers = {};
+    const token = authToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}${path}`, { method: "POST", headers, body: form });
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) throw new Error((data && data.error) || "تعذر رفع الملف");
+    return data;
+  }
+
+  function apiUploadScript(taskId, file) {
+    return apiUploadFile(`/api/studio/headleader/tasks/${taskId}/script`, file);
+  }
+  function apiUploadSampleAudio(taskId, sampleId, file, duration) {
+    return apiUploadFile(`/api/studio/headleader/tasks/${taskId}/samples/${sampleId}/audio`, file, duration ? { duration } : {});
+  }
+  function apiPublishTask(taskId) {
+    return apiFetch(`/api/studio/headleader/tasks/${taskId}/publish`, { method: "POST" });
+  }
+  function apiGetMyTasks() {
+    return apiFetch("/api/studio/headleader/tasks");
+  }
+  function apiGetTaskDetail(taskId) {
+    return apiFetch(`/api/studio/headleader/tasks/${taskId}`);
+  }
+
   window.NMStudio = {
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
+    apiCreateTask, apiUploadScript, apiUploadSampleAudio, apiPublishTask,
+    apiGetMyTasks, apiGetTaskDetail,
   };
 })();

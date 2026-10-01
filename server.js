@@ -9,6 +9,7 @@ const paymentsRoutes = require("./routes/payments");
 const recordingRoutes = require("./routes/recording");
 const qaRoutes = require("./routes/qa");
 const studioAuthRoutes = require("./routes/studio/auth");
+const studioHeadLeaderRoutes = require("./routes/studio/headleader");
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/api/payments", paymentsRoutes);
 app.use("/api/recording", recordingRoutes);
 app.use("/api/qa", qaRoutes);
 app.use("/api/studio/auth", studioAuthRoutes);
+app.use("/api/studio/headleader", studioHeadLeaderRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
