@@ -81,9 +81,11 @@
     </div>
 
     <div class="studio-field">
-      <label for="t-leader-codes">أكواد الليدرز المسموح لهم بالمهمة دي</label>
-      <input type="text" id="t-leader-codes" placeholder="مثال: L001, L002, L003" required>
-      <p class="studio-hint">اكتب الأكواد مفصولة بفاصلة. اتأكد إن كل كود مسجّل بالفعل في الاستوديو.</p>
+      <label>الليدرز المسموح لهم بالمهمة دي</label>
+      <div id="leaders-picker" class="studio-card" style="background:var(--studio-surface-2); padding:12px; max-height:260px; overflow-y:auto;">
+        <p class="studio-hint">جاري تحميل الليدرز...</p>
+      </div>
+      <p class="studio-hint">علّم على كل ليدر عايز يشتغل على المهمة دي.</p>
     </div>
 
     <p class="studio-error" id="step1-error"></p>
@@ -131,14 +133,34 @@
   let createdTask = null;
   let currentSamples = [];
 
+  async function loadLeaders() {
+    const wrap = document.getElementById("leaders-picker");
+    try {
+      const leaders = await NMStudio.apiGetLeaders();
+      if (!leaders.length) {
+        wrap.innerHTML = `<p class="studio-hint mb-0">لسه مفيش أي ليدر عمل حساب في الاستوديو.</p>`;
+        return;
+      }
+      wrap.innerHTML = leaders.map(l => `
+        <label style="display:flex; align-items:center; gap:10px; padding:8px 4px; cursor:pointer; border-bottom:1px solid var(--studio-border);">
+          <input type="checkbox" class="leader-checkbox" value="${l.id}" style="width:17px; height:17px; accent-color:var(--studio-accent);">
+          <span class="studio-code" style="font-size:0.8rem;">${l.leader_code}</span>
+          <span>${escapeHtml(l.name)}</span>
+        </label>`).join("");
+    } catch (err) {
+      wrap.innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
+    }
+  }
+  loadLeaders();
+
   document.getElementById("step1-btn").addEventListener("click", async () => {
     const errorBox = document.getElementById("step1-error");
     errorBox.style.display = "none";
     const title = document.getElementById("t-title").value.trim();
     const quantity = document.getElementById("t-quantity").value;
-    const leaderCodes = document.getElementById("t-leader-codes").value.trim();
-    if (!title || !quantity || !leaderCodes) {
-      errorBox.textContent = "من فضلك املا كل الحقول المطلوبة.";
+    const leaderIds = Array.from(document.querySelectorAll(".leader-checkbox:checked")).map(c => c.value);
+    if (!title || !quantity || !leaderIds.length) {
+      errorBox.textContent = "من فضلك املا كل الحقول واختار ليدر واحد على الأقل.";
       errorBox.style.display = "block";
       return;
     }
@@ -152,7 +174,7 @@
         bitDepth: document.getElementById("t-bit-depth").value,
         format: document.getElementById("t-format").value,
         channels: document.getElementById("t-channels").value,
-        leaderCodes,
+        leaderIds,
       });
       document.getElementById("step-1").classList.add("hidden");
       document.getElementById("step-2").classList.remove("hidden");

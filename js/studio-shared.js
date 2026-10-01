@@ -106,6 +106,9 @@
   function apiPublishTask(taskId) {
     return apiFetch(`/api/studio/headleader/tasks/${taskId}/publish`, { method: "POST" });
   }
+  function apiGetLeaders() {
+    return apiFetch("/api/studio/headleader/leaders");
+  }
   function apiGetMyTasks() {
     return apiFetch("/api/studio/headleader/tasks");
   }
@@ -117,6 +120,6 @@
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
     apiCreateTask, apiUploadScript, apiUploadSampleAudio, apiPublishTask,
-    apiGetMyTasks, apiGetTaskDetail,
+    apiGetMyTasks, apiGetTaskDetail, apiGetLeaders,
   };
 })();

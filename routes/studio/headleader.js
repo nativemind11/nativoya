@@ -11,34 +11,47 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 
 router.use(requireStudioAuth, requireStudioRole("head_leader"));
 
-// POST /api/studio/headleader/tasks — create a new DRAFT task. Leader codes
-// are resolved to ids right away so a typo is caught immediately instead of
-// silently failing later at publish time.
+// GET /api/studio/headleader/leaders — every registered leader, so the
+// publish-task page can show a pick-list instead of making the head_leader
+// remember/type codes by hand.
+router.get("/leaders", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, leader_code FROM studio_leaders ORDER BY leader_code`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "تعذر تحميل قائمة الليدرز" });
+  }
+});
+
+// POST /api/studio/headleader/tasks — create a new DRAFT task. leaderIds is
+// an array of studio_leaders.id, picked from the list on the publish page
+// (no more typing codes by hand).
 router.post("/tasks", async (req, res) => {
   const {
     title, quantity, difficulty,
     sampleRate, bitDepth, format, channels,
-    leaderCodes, // e.g. "L001, L002"
+    leaderIds,
   } = req.body;
 
   if (!title || !quantity) return res.status(400).json({ error: "العنوان والكمية مطلوبين" });
-
-  const codes = (leaderCodes || "").split(",").map(c => c.trim().toUpperCase()).filter(Boolean);
-  if (!codes.length) return res.status(400).json({ error: "لازم تحدد كود ليدر واحد على الأقل" });
+  if (!Array.isArray(leaderIds) || !leaderIds.length) {
+    return res.status(400).json({ error: "لازم تختار ليدر واحد على الأقل" });
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const leadersResult = await client.query(
-      `SELECT id, leader_code FROM studio_leaders WHERE leader_code = ANY($1::text[])`,
-      [codes]
+      `SELECT id, leader_code FROM studio_leaders WHERE id = ANY($1::uuid[])`,
+      [leaderIds]
     );
-    const foundCodes = leadersResult.rows.map(r => r.leader_code);
-    const missing = codes.filter(c => !foundCodes.includes(c));
-    if (missing.length) {
+    if (leadersResult.rows.length !== leaderIds.length) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: `الأكواد دي مش موجودة: ${missing.join(", ")}` });
+      return res.status(400).json({ error: "في ليدر محدد مش موجود، حدّث الصفحة وجرّب تاني" });
     }
 
     const settings = {
