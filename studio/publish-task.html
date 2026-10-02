@@ -189,6 +189,11 @@
   document.getElementById("script-upload-btn").addEventListener("click", async () => {
     const errorBox = document.getElementById("script-error");
     errorBox.style.display = "none";
+    if (!createdTask) {
+      errorBox.textContent = "لازم تخلّص خطوة 1 (بيانات المهمة) الأول قبل رفع السكريبت.";
+      errorBox.style.display = "block";
+      return;
+    }
     const file = document.getElementById("t-script-file").files[0];
     if (!file) { errorBox.textContent = "اختار ملف txt الأول."; errorBox.style.display = "block"; return; }
     const btn = document.getElementById("script-upload-btn");

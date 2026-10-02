@@ -21,6 +21,7 @@
 }
 
 * { box-sizing: border-box; }
+.hidden { display: none !important; }
 
 body.studio {
   margin: 0;
