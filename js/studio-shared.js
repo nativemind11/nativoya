@@ -103,6 +103,11 @@
   function apiUploadSampleAudio(taskId, sampleId, file, duration) {
     return apiUploadFile(`/api/studio/headleader/tasks/${taskId}/samples/${sampleId}/audio`, file, duration ? { duration } : {});
   }
+  function apiUploadBulkSampleAudio(taskId, sampleIds, file, duration) {
+    const extra = { sampleIds: JSON.stringify(sampleIds) };
+    if (duration) extra.duration = duration;
+    return apiUploadFile(`/api/studio/headleader/tasks/${taskId}/samples/bulk-audio`, file, extra);
+  }
   function apiPublishTask(taskId) {
     return apiFetch(`/api/studio/headleader/tasks/${taskId}/publish`, { method: "POST" });
   }
@@ -119,7 +124,7 @@
   window.NMStudio = {
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
-    apiCreateTask, apiUploadScript, apiUploadSampleAudio, apiPublishTask,
+    apiCreateTask, apiUploadScript, apiUploadSampleAudio, apiUploadBulkSampleAudio, apiPublishTask,
     apiGetMyTasks, apiGetTaskDetail, apiGetLeaders,
   };
 })();

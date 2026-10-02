@@ -105,6 +105,15 @@
     <p class="studio-error" id="script-error"></p>
     <button class="studio-btn studio-btn-secondary" id="script-upload-btn">رفع الملف</button>
 
+    <div id="bulk-audio-bar" class="studio-card" style="margin-top:18px; padding:14px; background:var(--studio-surface-2); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <span class="studio-hint mb-0" id="bulk-audio-count">0 جملة متحددة</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <input type="file" accept="audio/*" id="bulk-audio-file" class="hidden">
+        <button type="button" class="studio-btn studio-btn-primary" style="padding:8px 16px; font-size:0.85rem;" id="bulk-audio-btn">🎵 رفع سامبل مشترك للمحدّد</button>
+      </div>
+    </div>
+    <p class="studio-error" id="bulk-audio-error"></p>
+
     <div id="samples-list" style="margin-top:22px;"></div>
 
     <p class="studio-error" id="step2-error"></p>
@@ -213,17 +222,58 @@
 
   function renderSamples() {
     const wrap = document.getElementById("samples-list");
-    wrap.innerHTML = `<p class="studio-hint" style="margin-bottom:10px;">اتحمّل ${currentSamples.length} جملة. تقدر تضيف سامبل صوتي مرجعي لكل واحدة (اختياري):</p>` +
+    wrap.innerHTML = `<p class="studio-hint" style="margin-bottom:10px;">اتحمّل ${currentSamples.length} جملة. تقدر تضيف سامبل صوتي مرجعي لكل واحدة لوحدها، أو تحدّد كذا جملة بتاخد نفس السامبل وترفعه مرة واحدة من الشريط اللي فوق:</p>` +
       currentSamples.map((s, i) => `
         <div class="studio-card" style="padding:14px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-          <div><strong>#${i + 1}</strong> — ${escapeHtml(s.sentence_name)}</div>
+          <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+            <input type="checkbox" class="sample-select-checkbox" value="${s.id}" style="width:17px; height:17px; accent-color:var(--studio-accent);">
+            <span><strong>#${i + 1}</strong> — ${escapeHtml(s.sentence_name)}</span>
+          </label>
           <div style="display:flex; align-items:center; gap:8px;">
             ${s.audio_url ? `<span class="studio-pill status-approved">✓ اترفع</span>` : ""}
             <input type="file" accept="audio/*" class="hidden" id="audio-${s.id}" onchange="uploadSampleAudio('${s.id}', this)">
             <button type="button" class="studio-btn studio-btn-secondary" style="padding:6px 12px; font-size:0.8rem;" onclick="document.getElementById('audio-${s.id}').click()">🎵 ${s.audio_url ? "استبدال" : "إضافة سامبل"}</button>
           </div>
         </div>`).join("");
+    updateBulkAudioCount();
   }
+
+  function updateBulkAudioCount() {
+    const count = document.querySelectorAll(".sample-select-checkbox:checked").length;
+    document.getElementById("bulk-audio-count").textContent = `${count} جملة متحددة`;
+    document.getElementById("bulk-audio-btn").disabled = count === 0;
+  }
+
+  document.getElementById("samples-list").addEventListener("change", (e) => {
+    if (e.target.classList.contains("sample-select-checkbox")) updateBulkAudioCount();
+  });
+
+  document.getElementById("bulk-audio-btn").addEventListener("click", () => {
+    const selected = Array.from(document.querySelectorAll(".sample-select-checkbox:checked"));
+    if (!selected.length) return;
+    document.getElementById("bulk-audio-file").click();
+  });
+
+  document.getElementById("bulk-audio-file").addEventListener("change", async function () {
+    const file = this.files[0];
+    const selectedIds = Array.from(document.querySelectorAll(".sample-select-checkbox:checked")).map(c => c.value);
+    if (!file || !selectedIds.length) return;
+    const errorBox = document.getElementById("bulk-audio-error");
+    const btn = document.getElementById("bulk-audio-btn");
+    errorBox.style.display = "none";
+    btn.disabled = true; btn.textContent = "جاري الرفع...";
+    try {
+      const result = await NMStudio.apiUploadBulkSampleAudio(createdTask.id, selectedIds, file);
+      currentSamples = result.samples;
+      renderSamples();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "🎵 رفع سامبل مشترك للمحدّد";
+      this.value = "";
+    }
+  });
 
   async function uploadSampleAudio(sampleId, inputEl) {
     const file = inputEl.files[0];

@@ -201,6 +201,66 @@ router.post("/tasks/:id/samples/:sampleId/audio", upload.single("file"), async (
   }
 });
 
+// POST /api/studio/headleader/tasks/:id/samples/bulk-audio — upload ONE
+// reference audio file and apply it to several sentences at once (e.g.
+// "Fast1, Fast2, Fast3" all sharing the same reference clip), instead of
+// uploading the same file over and over per sentence.
+router.post("/tasks/:id/samples/bulk-audio", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "لازم ترفع ملف صوتي" });
+
+  let sampleIds;
+  try { sampleIds = JSON.parse(req.body.sampleIds || "[]"); } catch (_) { sampleIds = []; }
+  if (!Array.isArray(sampleIds) || !sampleIds.length) {
+    return res.status(400).json({ error: "اختار جملة واحدة على الأقل قبل رفع السامبل" });
+  }
+
+  try {
+    const taskResult = await pool.query(
+      `SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`,
+      [req.params.id, req.studioUser.id]
+    );
+    if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    const task = taskResult.rows[0];
+
+    const samplesCheck = await pool.query(
+      `SELECT id FROM recording_samples WHERE task_id = $1 AND id = ANY($2::uuid[])`,
+      [task.id, sampleIds]
+    );
+    if (samplesCheck.rows.length !== sampleIds.length) {
+      return res.status(400).json({ error: "في جملة محددة مش موجودة، حدّث الصفحة وجرّب تاني" });
+    }
+
+    const authClient = await getAuthorizedClient();
+    const drive = google.drive({ version: "v3", auth: authClient });
+    const studioRoot = await getOrCreateStudioRootFolder();
+    const client = await pool.connect();
+    let taskFolderId;
+    try { taskFolderId = await ensureTaskRootFolder(client, drive, task, studioRoot); }
+    finally { client.release(); }
+
+    const referenceFolderId = await getOrCreateSubfolder(drive, taskFolderId, "Reference Audio");
+    const uploaded = await uploadSubmissionFile(referenceFolderId, req.file.originalname, req.file.mimetype, req.file.buffer);
+    const audioUrl = uploaded.id ? `https://drive.google.com/file/d/${uploaded.id}/view` : null;
+    const duration = req.body.duration ? Number(req.body.duration) : null;
+
+    await pool.query(
+      `UPDATE recording_samples SET audio_url = $1, duration = $2 WHERE id = ANY($3::uuid[])`,
+      [audioUrl, duration, sampleIds]
+    );
+
+    const samples = await pool.query(
+      `SELECT * FROM recording_samples WHERE task_id = $1 ORDER BY order_index`, [task.id]
+    );
+    res.json({ audioUrl, appliedTo: sampleIds.length, samples: samples.rows });
+  } catch (err) {
+    console.error(err);
+    if (err.code === "DRIVE_NOT_CONNECTED") {
+      return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
+    }
+    res.status(500).json({ error: "تعذر رفع السامبل المشترك" });
+  }
+});
+
 // POST /api/studio/headleader/tasks/:id/publish
 router.post("/tasks/:id/publish", async (req, res) => {
   try {
