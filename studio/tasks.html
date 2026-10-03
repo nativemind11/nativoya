@@ -50,7 +50,7 @@
         <div class="studio-card">
           <div class="studio-eyebrow">${DIFFICULTY_LABELS[t.difficulty] || t.difficulty}</div>
           <h3 style="margin:4px 0 8px;">${escapeHtml(t.title)}</h3>
-          <p class="studio-hint" style="margin-bottom:16px;">${t.sample_count} جملة • ${t.submission_count} تسليم لحد دلوقتي</p>
+          <p class="studio-hint" style="margin-bottom:16px;">${t.sample_count} جملة • العدد المتاح: ${Math.max(t.quantity - t.submission_count, 0)}</p>
           <button class="studio-btn studio-btn-primary studio-btn-block" onclick="openPicker('${t.id}')">ابدأ التسجيل</button>
         </div>`).join("");
     } catch (err) {
