@@ -10,6 +10,7 @@ const recordingRoutes = require("./routes/recording");
 const qaRoutes = require("./routes/qa");
 const studioAuthRoutes = require("./routes/studio/auth");
 const studioHeadLeaderRoutes = require("./routes/studio/headleader");
+const studioTalentRoutes = require("./routes/studio/talent");
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use("/api/recording", recordingRoutes);
 app.use("/api/qa", qaRoutes);
 app.use("/api/studio/auth", studioAuthRoutes);
 app.use("/api/studio/headleader", studioHeadLeaderRoutes);
+app.use("/api/studio/talent", studioTalentRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>بياناتك — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <a href="tasks.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
+</header>
+
+<main class="studio-shell">
+  <div class="studio-card">
+    <div class="studio-eyebrow" id="step-label">خطوة 1 من 4</div>
+    <h1 class="studio-title" id="task-title">جاري التحميل...</h1>
+
+    <!-- step 1: gender -->
+    <div id="tab-gender">
+      <p class="studio-subtitle">اختار نوعك</p>
+      <div class="studio-grid cols-2">
+        <button type="button" class="studio-btn studio-btn-secondary" style="padding:22px;" onclick="pick('gender','male')">👨 ذكر</button>
+        <button type="button" class="studio-btn studio-btn-secondary" style="padding:22px;" onclick="pick('gender','female')">👩 أنثى</button>
+      </div>
+    </div>
+
+    <!-- step 2: age bracket -->
+    <div id="tab-age-bracket" class="hidden">
+      <p class="studio-subtitle">اختار الفئة العمرية</p>
+      <div class="studio-grid cols-3">
+        <button type="button" class="studio-btn studio-btn-secondary" style="padding:18px;" onclick="pick('ageBracket','child')">🧒 طفل</button>
+        <button type="button" class="studio-btn studio-btn-secondary" style="padding:18px;" onclick="pick('ageBracket','adult')">🧑 بالغ</button>
+        <button type="button" class="studio-btn studio-btn-secondary" style="padding:18px;" onclick="pick('ageBracket','elderly')">🧓 مسن</button>
+      </div>
+    </div>
+
+    <!-- step 3: fake name -->
+    <div id="tab-fake-name" class="hidden">
+      <p class="studio-subtitle">اختار اسم مستعار (مش هيظهر حد تاني بيه)</p>
+      <select id="fake-name-select" style="margin-bottom:14px;"></select>
+      <button type="button" class="studio-btn studio-btn-primary studio-btn-block" onclick="confirmFakeName()">التالي</button>
+    </div>
+
+    <!-- step 4: age -->
+    <div id="tab-age" class="hidden">
+      <p class="studio-subtitle">سنّك بالظبط؟</p>
+      <div class="studio-field">
+        <input type="number" id="age-input" min="1" max="120" placeholder="مثال: 27">
+      </div>
+      <button type="button" class="studio-btn studio-btn-primary studio-btn-block" onclick="goToPrivateStep()">التالي</button>
+    </div>
+
+    <!-- step 5+6: private info (visible to leader/QA only — used for identity + payment, never shown publicly) -->
+    <div id="tab-private" class="hidden">
+      <p class="studio-subtitle">آخر حاجة — بياناتك الحقيقية (هتفضل خاصة، بتتشاف بس من الليدر بتاعك).</p>
+      <div class="studio-field">
+        <label for="real-name-input">اسمك الحقيقي</label>
+        <input type="text" id="real-name-input">
+      </div>
+      <div class="studio-field">
+        <label for="whatsapp-input">رقم واتساب</label>
+        <input type="tel" id="whatsapp-input">
+      </div>
+      <p class="studio-error" id="final-error"></p>
+      <button type="button" class="studio-btn studio-btn-primary studio-btn-block" id="start-btn">🎙️ ابدأ التسجيل</button>
+    </div>
+  </div>
+</main>
+
+<script src="../js/studio-talent.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const taskId = params.get("taskId");
+  const leaderId = params.get("leaderId");
+  if (!taskId || !leaderId) location.href = "tasks.html";
+
+  const answers = { gender: null, ageBracket: null, fakeName: null, age: null };
+  const STEPS = ["tab-gender", "tab-age-bracket", "tab-fake-name", "tab-age", "tab-private"];
+  let stepIndex = 0;
+
+  function showStep(i) {
+    STEPS.forEach((id, idx) => document.getElementById(id).classList.toggle("hidden", idx !== i));
+    document.getElementById("step-label").textContent = `خطوة ${i + 1} من ${STEPS.length}`;
+  }
+
+  function pick(field, value) {
+    answers[field] = value;
+    stepIndex++;
+    if (field === "ageBracket") loadFakeNames();
+    showStep(stepIndex);
+  }
+
+  async function loadFakeNames() {
+    const select = document.getElementById("fake-name-select");
+    select.innerHTML = `<option>جاري التحميل...</option>`;
+    try {
+      const names = await NMTalent.getAvailableFakeNames(taskId);
+      if (!names.length) {
+        select.innerHTML = `<option value="">مفيش أسامي متاحة دلوقتي</option>`;
+        return;
+      }
+      select.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join("");
+    } catch (err) {
+      select.innerHTML = `<option value="">تعذر التحميل</option>`;
+    }
+  }
+
+  function confirmFakeName() {
+    const select = document.getElementById("fake-name-select");
+    if (!select.value) return;
+    answers.fakeName = select.value;
+    stepIndex++;
+    showStep(stepIndex);
+  }
+
+  function goToPrivateStep() {
+    answers.age = document.getElementById("age-input").value || null;
+    stepIndex++;
+    showStep(stepIndex);
+  }
+
+  document.getElementById("start-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("final-error");
+    errorBox.style.display = "none";
+    const realName = document.getElementById("real-name-input").value.trim();
+    const whatsapp = document.getElementById("whatsapp-input").value.trim();
+    if (!realName || !whatsapp) {
+      errorBox.textContent = "الاسم الحقيقي ورقم الواتس مطلوبين عشان الليدر يقدر يتابع معاك ويدفعلك.";
+      errorBox.style.display = "block";
+      return;
+    }
+    const btn = document.getElementById("start-btn");
+    btn.disabled = true; btn.textContent = "جاري البدء...";
+    try {
+      const { session } = await NMTalent.createSession({
+        taskId, leaderId,
+        gender: answers.gender,
+        ageBracket: answers.ageBracket,
+        age: answers.age,
+        fakeName: answers.fakeName,
+        realName, whatsapp,
+      });
+      NMTalent.saveSessionToken(taskId, session.session_token);
+      location.href = `recording.html?session=${session.session_token}`;
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      btn.disabled = false; btn.textContent = "🎙️ ابدأ التسجيل";
+      if (err.message.includes("الاسم")) { stepIndex = 2; showStep(stepIndex); loadFakeNames(); }
+    }
+  });
+
+  (async function loadTaskTitle() {
+    try {
+      const detail = await NMTalent.getTaskDetail(taskId);
+      document.getElementById("task-title").textContent = detail.task.title;
+    } catch (_) {
+      document.getElementById("task-title").textContent = "بياناتك";
+    }
+  })();
+
+  window.pick = pick;
+  window.confirmFakeName = confirmFakeName;
+  window.goToPrivateStep = goToPrivateStep;
+  showStep(0);
+</script>
+</body>
+</html>

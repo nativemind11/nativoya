@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>المهام المتاحة — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <a href="index.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
+</header>
+
+<main class="studio-shell wide">
+  <div class="studio-eyebrow">المهام المتاحة</div>
+  <h1 class="studio-title">اختار مهمة وابدأ تسجّل</h1>
+  <p class="studio-subtitle">مش محتاج حساب — اختار مهمة، اختار كود الليدر بتاعك، وابدأ على طول.</p>
+
+  <div id="tasks-wrap" class="studio-grid cols-3" style="margin-top:20px;">
+    <p class="studio-hint">جاري تحميل المهام...</p>
+  </div>
+
+  <!-- leader-code picker popup -->
+  <div id="picker-overlay" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;">
+    <div class="studio-card" style="max-width:420px; width:100%;">
+      <h3 style="margin-top:0;" id="picker-title">اختار كود الليدر بتاعك</h3>
+      <div id="picker-leaders"></div>
+      <button class="studio-btn studio-btn-secondary studio-btn-block" style="margin-top:14px;" id="picker-close">إلغاء</button>
+    </div>
+  </div>
+</main>
+
+<script src="../js/studio-talent.js"></script>
+<script>
+  const DIFFICULTY_LABELS = { easy: "سهلة", medium: "متوسطة", hard: "صعبة" };
+  let tasksCache = [];
+
+  async function loadTasks() {
+    const wrap = document.getElementById("tasks-wrap");
+    try {
+      tasksCache = await NMTalent.getTasks();
+      if (!tasksCache.length) {
+        wrap.innerHTML = `<div class="studio-empty"><div class="icon">🎙️</div><p>لسه مفيش مهام متاحة دلوقتي. تابعنا وارجع تاني بعد شوية.</p></div>`;
+        return;
+      }
+      wrap.innerHTML = tasksCache.map(t => `
+        <div class="studio-card">
+          <div class="studio-eyebrow">${DIFFICULTY_LABELS[t.difficulty] || t.difficulty}</div>
+          <h3 style="margin:4px 0 8px;">${escapeHtml(t.title)}</h3>
+          <p class="studio-hint" style="margin-bottom:16px;">${t.sample_count} جملة • ${t.submission_count} تسليم لحد دلوقتي</p>
+          <button class="studio-btn studio-btn-primary studio-btn-block" onclick="openPicker('${t.id}')">ابدأ التسجيل</button>
+        </div>`).join("");
+    } catch (err) {
+      wrap.innerHTML = `<div class="studio-empty"><p>${err.message}</p></div>`;
+    }
+  }
+
+  async function openPicker(taskId) {
+    const overlay = document.getElementById("picker-overlay");
+    const leadersBox = document.getElementById("picker-leaders");
+    leadersBox.innerHTML = `<p class="studio-hint">جاري التحميل...</p>`;
+    overlay.classList.remove("hidden");
+    try {
+      const detail = await NMTalent.getTaskDetail(taskId);
+      if (!detail.leaders.length) {
+        leadersBox.innerHTML = `<p class="studio-hint mb-0">مفيش أكواد ليدرز متاحة للمهمة دي دلوقتي.</p>`;
+        return;
+      }
+      leadersBox.innerHTML = detail.leaders.map(l => `
+        <button type="button" class="studio-btn studio-btn-secondary studio-btn-block" style="margin-bottom:8px; justify-content:flex-start;"
+          onclick="location.href='talent-setup.html?taskId=${taskId}&leaderId=${l.id}'">
+          <span class="studio-code">${l.leader_code}</span>
+        </button>`).join("");
+    } catch (err) {
+      leadersBox.innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
+    }
+  }
+
+  document.getElementById("picker-close").addEventListener("click", () => {
+    document.getElementById("picker-overlay").classList.add("hidden");
+  });
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  window.openPicker = openPicker;
+  loadTasks();
+</script>
+</body>
+</html>

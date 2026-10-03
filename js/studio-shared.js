@@ -97,6 +97,9 @@
     return data;
   }
 
+  function apiUploadFakeNames(taskId, file) {
+    return apiUploadFile(`/api/studio/headleader/tasks/${taskId}/fake-names`, file);
+  }
   function apiUploadScript(taskId, file) {
     return apiUploadFile(`/api/studio/headleader/tasks/${taskId}/script`, file);
   }
@@ -124,7 +127,7 @@
   window.NMStudio = {
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
-    apiCreateTask, apiUploadScript, apiUploadSampleAudio, apiUploadBulkSampleAudio, apiPublishTask,
+    apiCreateTask, apiUploadScript, apiUploadFakeNames, apiUploadSampleAudio, apiUploadBulkSampleAudio, apiPublishTask,
     apiGetMyTasks, apiGetTaskDetail, apiGetLeaders,
   };
 })();

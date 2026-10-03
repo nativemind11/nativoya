@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>التسجيل — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+<style>
+  .rec-progress-track { height: 6px; background: var(--studio-surface-2); border-radius: 999px; overflow: hidden; margin: 14px 0 22px; }
+  .rec-progress-fill { height: 100%; background: var(--studio-accent); transition: width 0.25s; }
+  .rec-sentence { font-size: 1.4rem; font-weight: 700; text-align: center; padding: 30px 16px; line-height: 1.6; }
+  .rec-timer { text-align: center; font-family: var(--studio-mono); font-size: 1.1rem; color: var(--studio-accent); margin-bottom: 10px; }
+  .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--studio-danger); display: inline-block; margin-inline-end: 6px; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+  .rec-main-btn { width: 84px; height: 84px; border-radius: 50%; border: none; cursor: pointer; font-size: 1.8rem; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+  .rec-main-btn.idle { background: var(--studio-danger); color: #fff; }
+  .rec-main-btn.recording { background: var(--studio-warn); color: #2A1A00; }
+  .rec-controls-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 18px; }
+  .rec-nav-row { display: flex; justify-content: space-between; margin-top: 24px; gap: 10px; }
+  .rec-sample-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--studio-border); display: inline-block; margin: 0 2px; }
+  .rec-sample-dot.done { background: var(--studio-accent); }
+  .rec-sample-dot.current { outline: 2px solid var(--studio-text); outline-offset: 2px; }
+</style>
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div>
+  <span class="studio-pill" id="fake-name-pill">—</span>
+</header>
+
+<main class="studio-shell">
+
+  <div id="loading-box" class="studio-card text-center"><p class="studio-hint mb-0">جاري تحميل الجلسة...</p></div>
+
+  <div id="recorder-box" class="hidden">
+    <div class="rec-progress-track"><div class="rec-progress-fill" id="progress-fill" style="width:0%;"></div></div>
+    <p class="studio-hint text-center" id="progress-text">0 / 0</p>
+
+    <div class="studio-card">
+      <div class="studio-eyebrow text-center" id="sample-number">جملة 1</div>
+      <div class="rec-sentence" id="sentence-text">—</div>
+
+      <div id="reference-audio-wrap" class="hidden text-center" style="margin-bottom:18px;">
+        <p class="studio-hint">🔊 اسمع السامبل المرجعي الأول:</p>
+        <audio id="reference-audio" controls style="width:100%;"></audio>
+      </div>
+
+      <canvas id="waveform-canvas" style="width:100%; height:80px; display:block; margin-bottom:10px;"></canvas>
+      <div class="rec-timer hidden" id="rec-timer"><span class="rec-dot"></span><span id="rec-timer-text">00:00</span></div>
+
+      <button type="button" class="rec-main-btn idle" id="main-record-btn">🎙️</button>
+      <p class="studio-hint text-center" id="rec-hint" style="margin-top:10px;">دوس عشان تبدأ التسجيل</p>
+
+      <div id="playback-controls" class="hidden">
+        <audio id="playback-audio" style="display:none;"></audio>
+        <div class="rec-controls-row">
+          <button type="button" class="studio-btn studio-btn-secondary" id="play-btn">▶️ سمّع</button>
+          <button type="button" class="studio-btn studio-btn-secondary" id="retake-btn">🔁 إعادة</button>
+          <button type="button" class="studio-btn studio-btn-primary" id="confirm-btn">✅ استخدم التسجيل ده</button>
+        </div>
+      </div>
+
+      <p class="studio-error" id="rec-error"></p>
+
+      <div class="rec-nav-row">
+        <button type="button" class="studio-btn studio-btn-secondary" id="prev-btn">→ السابقة</button>
+        <div class="text-center" id="sample-dots" style="flex:1; display:flex; align-items:center; justify-content:center; flex-wrap:wrap;"></div>
+        <button type="button" class="studio-btn studio-btn-secondary" id="next-btn">التالية ←</button>
+      </div>
+    </div>
+
+    <div class="studio-card" id="submit-card" style="margin-top:18px; text-align:center;">
+      <p class="studio-subtitle" id="submit-hint">خلّص كل الجمل عشان تقدر تسلّم التاسك.</p>
+      <button type="button" class="studio-btn studio-btn-primary studio-btn-block" id="submit-btn" disabled>📦 تجهيز وتسليم التاسك</button>
+      <p class="studio-error" id="submit-error"></p>
+    </div>
+  </div>
+
+  <div id="done-box" class="hidden studio-card text-center">
+    <div style="font-size:2.6rem;">🎉</div>
+    <h2 class="studio-title">تم التسليم بنجاح!</h2>
+    <p class="studio-subtitle">شكرًا على وقتك. التسجيلات بتاعتك راحت للمراجعة دلوقتي.</p>
+  </div>
+
+</main>
+
+<script src="../js/waveform.js"></script>
+<script src="../js/studio-talent.js"></script>
+<script>
+  const token = new URLSearchParams(location.search).get("session");
+  if (!token) location.href = "tasks.html";
+
+  let session = null;
+  let samples = [];
+  let currentIndex = 0;
+
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordedBlob = null;
+  let stream = null;
+  let audioCtx = null;
+  let waveform = null;
+  let timerInterval = null;
+  let elapsedSeconds = 0;
+
+  async function loadSession() {
+    try {
+      const data = await NMTalent.getSession(token);
+      session = data.session;
+      samples = data.samples;
+      document.getElementById("fake-name-pill").textContent = `🎭 ${session.fake_name}`;
+      document.getElementById("loading-box").classList.add("hidden");
+
+      if (session.status !== "in_progress") {
+        document.getElementById("done-box").classList.remove("hidden");
+        return;
+      }
+
+      document.getElementById("recorder-box").classList.remove("hidden");
+      currentIndex = samples.findIndex(s => !s.audio_file_url);
+      if (currentIndex === -1) currentIndex = 0;
+      renderSample();
+      updateProgress();
+    } catch (err) {
+      document.getElementById("loading-box").innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
+    }
+  }
+
+  function updateProgress() {
+    const done = samples.filter(s => s.audio_file_url).length;
+    document.getElementById("progress-fill").style.width = `${(done / samples.length) * 100}%`;
+    document.getElementById("progress-text").textContent = `${done} / ${samples.length}`;
+    document.getElementById("sample-dots").innerHTML = samples.map((s, i) =>
+      `<span class="rec-sample-dot ${s.audio_file_url ? "done" : ""} ${i === currentIndex ? "current" : ""}"></span>`
+    ).join("");
+    const submitBtn = document.getElementById("submit-btn");
+    submitBtn.disabled = done < samples.length;
+    document.getElementById("submit-hint").textContent = done < samples.length
+      ? `خلّص باقي الجمل (${samples.length - done} لسه) عشان تقدر تسلّم.`
+      : "كل الجمل اتسجّلت! جاهز تسلّم.";
+  }
+
+  function renderSample() {
+    const s = samples[currentIndex];
+    document.getElementById("sample-number").textContent = `جملة ${currentIndex + 1} من ${samples.length}`;
+    document.getElementById("sentence-text").textContent = s.sentence_name;
+
+    const refWrap = document.getElementById("reference-audio-wrap");
+    if (s.audio_url) {
+      refWrap.classList.remove("hidden");
+      document.getElementById("reference-audio").src = toPlayableUrl(s.audio_url);
+    } else {
+      refWrap.classList.add("hidden");
+    }
+
+    resetRecorderUi();
+    document.getElementById("prev-btn").disabled = currentIndex === 0;
+    document.getElementById("next-btn").disabled = currentIndex === samples.length - 1;
+    updateProgress();
+  }
+
+  // The head_leader's uploaded reference clips are stored as normal Drive
+  // webViewLink URLs (https://drive.google.com/file/d/ID/view) — not
+  // directly playable in an <audio> tag, so swap to the direct-download form.
+  function toPlayableUrl(url) {
+    const match = url.match(/\/file\/d\/([^/]+)/);
+    return match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : url;
+  }
+
+  function resetRecorderUi() {
+    recordedBlob = null;
+    document.getElementById("playback-controls").classList.add("hidden");
+    document.getElementById("main-record-btn").classList.remove("hidden");
+    document.getElementById("rec-hint").classList.remove("hidden");
+    document.getElementById("rec-hint").textContent = "دوس عشان تبدأ التسجيل";
+    document.getElementById("rec-error").style.display = "none";
+  }
+
+  document.getElementById("prev-btn").addEventListener("click", () => { currentIndex--; renderSample(); });
+  document.getElementById("next-btn").addEventListener("click", () => { currentIndex++; renderSample(); });
+
+  const mainBtn = document.getElementById("main-record-btn");
+  mainBtn.addEventListener("click", () => {
+    if (mainBtn.classList.contains("recording")) stopRecording();
+    else startRecording();
+  });
+
+  async function startRecording() {
+    const errorBox = document.getElementById("rec-error");
+    errorBox.style.display = "none";
+    try {
+      const settings = (session && session.recording_settings) || {};
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: settings.channels === "stereo" ? 2 : 1,
+          sampleRate: settings.sampleRate || 16000,
+        },
+      });
+    } catch (err) {
+      errorBox.textContent = "محتاجين إذن الميكروفون عشان تقدر تسجّل. وافق على الإذن من المتصفح وجرّب تاني.";
+      errorBox.style.display = "block";
+      return;
+    }
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    source.connect(analyser);
+    if (!waveform) {
+      waveform = new WaveformVisualizer(document.getElementById("waveform-canvas"), {
+        barColor: "#2DD4BF", barColorActive: "#F5A623", backgroundColor: "#14171C",
+      });
+    }
+    waveform.setAnalyser(analyser);
+    waveform.startVisualizing();
+
+    const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find(t => MediaRecorder.isTypeSupported(t)) || "";
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    recordedChunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = onRecordingStopped;
+    mediaRecorder.start();
+
+    elapsedSeconds = 0;
+    document.getElementById("rec-timer").classList.remove("hidden");
+    updateTimerText();
+    timerInterval = setInterval(() => { elapsedSeconds++; updateTimerText(); }, 1000);
+
+    mainBtn.classList.remove("idle"); mainBtn.classList.add("recording");
+    mainBtn.textContent = "⏹️";
+    document.getElementById("rec-hint").textContent = "بتسجّل دلوقتي — دوس تاني عشان توقف";
+  }
+
+  function updateTimerText() {
+    const m = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+    const s = String(elapsedSeconds % 60).padStart(2, "0");
+    document.getElementById("rec-timer-text").textContent = `${m}:${s}`;
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  }
+
+  function onRecordingStopped() {
+    clearInterval(timerInterval);
+    document.getElementById("rec-timer").classList.add("hidden");
+    if (waveform) waveform.stopVisualizing();
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (audioCtx) audioCtx.close();
+
+    mainBtn.classList.remove("recording"); mainBtn.classList.add("idle");
+    mainBtn.textContent = "🎙️";
+    mainBtn.classList.add("hidden");
+    document.getElementById("rec-hint").classList.add("hidden");
+
+    recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+    const url = URL.createObjectURL(recordedBlob);
+    document.getElementById("playback-audio").src = url;
+    document.getElementById("playback-controls").classList.remove("hidden");
+  }
+
+  document.getElementById("play-btn").addEventListener("click", () => {
+    document.getElementById("playback-audio").play();
+  });
+
+  document.getElementById("retake-btn").addEventListener("click", () => {
+    recordedBlob = null;
+    document.getElementById("playback-controls").classList.add("hidden");
+    document.getElementById("main-record-btn").classList.remove("hidden");
+    document.getElementById("rec-hint").classList.remove("hidden");
+    document.getElementById("rec-hint").textContent = "دوس عشان تبدأ التسجيل";
+  });
+
+  document.getElementById("confirm-btn").addEventListener("click", async () => {
+    if (!recordedBlob) return;
+    const btn = document.getElementById("confirm-btn");
+    const errorBox = document.getElementById("rec-error");
+    errorBox.style.display = "none";
+    btn.disabled = true; btn.textContent = "جاري الحفظ...";
+    try {
+      const file = new File([recordedBlob], `sample-${currentIndex + 1}.webm`, { type: recordedBlob.type });
+      await NMTalent.uploadSampleAudio(token, samples[currentIndex].id, file, elapsedSeconds);
+      samples[currentIndex].audio_file_url = "uploaded";
+      updateProgress();
+      if (currentIndex < samples.length - 1) { currentIndex++; renderSample(); }
+      else resetRecorderUi();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "✅ استخدم التسجيل ده";
+    }
+  });
+
+  document.getElementById("submit-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("submit-error");
+    errorBox.style.display = "none";
+    const btn = document.getElementById("submit-btn");
+    btn.disabled = true; btn.textContent = "جاري التجهيز والتسليم...";
+    try {
+      await NMTalent.submitSession(token);
+      document.getElementById("recorder-box").classList.add("hidden");
+      document.getElementById("done-box").classList.remove("hidden");
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      btn.disabled = false; btn.textContent = "📦 تجهيز وتسليم التاسك";
+    }
+  });
+
+  loadSession();
+</script>
+</body>
+</html>

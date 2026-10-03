@@ -105,6 +105,20 @@
     <p class="studio-error" id="script-error"></p>
     <button class="studio-btn studio-btn-secondary" id="script-upload-btn">رفع الملف</button>
 
+    <hr style="border:none; border-top:1px solid var(--studio-border); margin:22px 0;">
+    <h3 style="margin-top:0;">قائمة الأسامي المستعارة</h3>
+    <p class="studio-subtitle">ملف txt منفصل، فيه كل اسم مستعار في سطر لوحده — ده اللي المتسجّلين هيختاروا منه (كل اسم بيتحجز لحظة ما يتختار).</p>
+    <div class="studio-field">
+      <label for="t-names-file">ملف الأسامي (.txt)</label>
+      <input type="file" id="t-names-file" accept=".txt">
+    </div>
+    <p class="studio-error" id="names-error"></p>
+    <p class="studio-success" id="names-success"></p>
+    <button class="studio-btn studio-btn-secondary" id="names-upload-btn">رفع الملف</button>
+
+    <hr style="border:none; border-top:1px solid var(--studio-border); margin:22px 0;">
+    <h3 style="margin-top:0;">السامبلات الصوتية المرجعية</h3>
+
     <div id="bulk-audio-bar" class="studio-card" style="margin-top:18px; padding:14px; background:var(--studio-surface-2); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <span class="studio-hint mb-0" id="bulk-audio-count">0 جملة متحددة</span>
       <div style="display:flex; align-items:center; gap:8px;">
@@ -141,6 +155,38 @@
 
   let createdTask = null;
   let currentSamples = [];
+  let namesUploaded = false;
+
+  function maybeEnableStep2() {
+    document.getElementById("step2-btn").disabled = !(currentSamples.length && namesUploaded);
+  }
+
+  document.getElementById("names-upload-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("names-error");
+    const successBox = document.getElementById("names-success");
+    errorBox.style.display = "none"; successBox.style.display = "none";
+    if (!createdTask) {
+      errorBox.textContent = "لازم تخلّص خطوة 1 الأول.";
+      errorBox.style.display = "block";
+      return;
+    }
+    const file = document.getElementById("t-names-file").files[0];
+    if (!file) { errorBox.textContent = "اختار ملف txt الأول."; errorBox.style.display = "block"; return; }
+    const btn = document.getElementById("names-upload-btn");
+    btn.disabled = true; btn.textContent = "جاري الرفع...";
+    try {
+      const result = await NMStudio.apiUploadFakeNames(createdTask.id, file);
+      successBox.textContent = `✓ اترفع ${result.nameCount} اسم بنجاح`;
+      successBox.style.display = "block";
+      namesUploaded = true;
+      maybeEnableStep2();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "رفع الملف";
+    }
+  });
 
   async function loadLeaders() {
     const wrap = document.getElementById("leaders-picker");
@@ -211,7 +257,7 @@
       const result = await NMStudio.apiUploadScript(createdTask.id, file);
       currentSamples = result.samples;
       renderSamples();
-      document.getElementById("step2-btn").disabled = false;
+      maybeEnableStep2();
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.style.display = "block";

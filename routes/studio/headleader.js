@@ -155,6 +155,33 @@ async function ensureTaskRootFolder(client, drive, task, studioRootId) {
   return folderId;
 }
 
+// POST /api/studio/headleader/tasks/:id/fake-names — upload the .txt pool
+// of fake names talents will pick from (one per line). Separate from the
+// sentences script. Calling this again REPLACES the whole pool — any name
+// already reserved by a talent (in recording_sessions) stays reserved
+// regardless, since reservations are checked against sessions, not this list.
+router.post("/tasks/:id/fake-names", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "لازم ترفع ملف txt" });
+
+  try {
+    const taskResult = await pool.query(
+      `SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`,
+      [req.params.id, req.studioUser.id]
+    );
+    if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+
+    const names = req.file.buffer.toString("utf-8")
+      .split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!names.length) return res.status(400).json({ error: "الملف فاضي أو مفيهوش أسامي" });
+
+    await pool.query(`UPDATE recording_tasks SET fake_names = $1 WHERE id = $2`, [names, req.params.id]);
+    res.json({ nameCount: names.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "تعذر رفع ملف الأسامي" });
+  }
+});
+
 // POST /api/studio/headleader/tasks/:id/samples/:sampleId/audio — upload
 // the reference/example audio for ONE sentence.
 router.post("/tasks/:id/samples/:sampleId/audio", upload.single("file"), async (req, res) => {
@@ -278,6 +305,9 @@ router.post("/tasks/:id/publish", async (req, res) => {
     const leaderCount = await pool.query(`SELECT COUNT(*) FROM recording_task_leaders WHERE task_id = $1`, [task.id]);
     if (Number(leaderCount.rows[0].count) === 0) {
       return res.status(400).json({ error: "لازم تحدد كود ليدر واحد على الأقل قبل النشر" });
+    }
+    if (!task.fake_names || task.fake_names.length === 0) {
+      return res.status(400).json({ error: "لازم ترفع ملف الأسامي المستعارة قبل النشر" });
     }
 
     const result = await pool.query(
