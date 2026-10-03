@@ -8,6 +8,7 @@ const TABLES = {
   head_leader: "studio_head_leaders",
   leader: "studio_leaders",
   qa: "studio_qa_reviewers",
+  talent: "studio_talents",
 };
 
 async function requireStudioAuth(req, res, next) {

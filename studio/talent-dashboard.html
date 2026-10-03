@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>حسابي — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <a href="tasks.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
+  <nav>
+    <span id="talent-name" style="color:var(--studio-text-muted);"></span>
+    <a href="tasks.html">المهام المتاحة</a>
+    <a href="#" id="logout-link" class="studio-btn studio-btn-secondary" style="padding:8px 16px;">خروج</a>
+  </nav>
+</header>
+
+<main class="studio-shell wide">
+  <div class="studio-eyebrow">حسابي</div>
+  <h1 class="studio-title">تسكياتي</h1>
+
+  <div class="studio-card" id="sessions-wrap">
+    <p class="studio-hint">جاري التحميل...</p>
+  </div>
+</main>
+
+<script src="../js/studio-talent.js"></script>
+<script>
+  const talent = NMTalent.requireLogin();
+  if (talent) document.getElementById("talent-name").textContent = talent.name;
+
+  document.getElementById("logout-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    NMTalent.logout();
+    location.href = "tasks.html";
+  });
+
+  const STATUS_LABELS = {
+    in_progress: "لسه بتسجّل",
+    submitted: "اتسلّمت — في انتظار المراجعة",
+    reviewing: "بتتراجع دلوقتي",
+    approved: "✅ اتقبلت",
+    rejected: "❌ محتاجة إعادة",
+  };
+  const STATUS_CLASS = { approved: "status-approved", rejected: "status-rejected", submitted: "status-pending", reviewing: "status-pending" };
+
+  async function loadSessions() {
+    const wrap = document.getElementById("sessions-wrap");
+    try {
+      const sessions = await NMTalent.getMySessions();
+      if (!sessions.length) {
+        wrap.innerHTML = `<div class="studio-empty"><div class="icon">🎙️</div><p>لسه مسجّلتش أي حاجة. <a href="tasks.html">شوف المهام المتاحة</a> وابدأ.</p></div>`;
+        return;
+      }
+      wrap.innerHTML = `
+        <div class="studio-table-wrap">
+          <table class="studio-table">
+            <thead><tr><th>المهمة</th><th>الليدر</th><th>الاسم المستعار</th><th>التقدّم</th><th>الحالة</th></tr></thead>
+            <tbody>
+              ${sessions.map(s => `
+                <tr>
+                  <td>${escapeHtml(s.task_title)}</td>
+                  <td><span class="studio-code">${s.leader_code}</span></td>
+                  <td>${escapeHtml(s.fake_name)}</td>
+                  <td>${s.recorded_count} / ${s.sample_count}</td>
+                  <td><span class="studio-pill ${STATUS_CLASS[s.status] || ""}">${STATUS_LABELS[s.status] || s.status}</span>
+                      ${s.status === "in_progress" ? `<a href="recording.html?session=${s.session_token}" class="studio-btn studio-btn-secondary" style="padding:4px 10px; font-size:0.75rem; margin-inline-start:8px;">كمّل</a>` : ""}
+                  </td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`;
+    } catch (err) {
+      wrap.innerHTML = `<div class="studio-empty"><p>${err.message}</p></div>`;
+    }
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  if (talent) loadSessions();
+</script>
+</body>
+</html>

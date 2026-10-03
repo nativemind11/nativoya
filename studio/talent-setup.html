@@ -50,20 +50,6 @@
       <div class="studio-field">
         <input type="number" id="age-input" min="1" max="120" placeholder="مثال: 27">
       </div>
-      <button type="button" class="studio-btn studio-btn-primary studio-btn-block" onclick="goToPrivateStep()">التالي</button>
-    </div>
-
-    <!-- step 5+6: private info (visible to leader/QA only — used for identity + payment, never shown publicly) -->
-    <div id="tab-private" class="hidden">
-      <p class="studio-subtitle">آخر حاجة — بياناتك الحقيقية (هتفضل خاصة، بتتشاف بس من الليدر بتاعك).</p>
-      <div class="studio-field">
-        <label for="real-name-input">اسمك الحقيقي</label>
-        <input type="text" id="real-name-input">
-      </div>
-      <div class="studio-field">
-        <label for="whatsapp-input">رقم واتساب</label>
-        <input type="tel" id="whatsapp-input">
-      </div>
       <p class="studio-error" id="final-error"></p>
       <button type="button" class="studio-btn studio-btn-primary studio-btn-block" id="start-btn">🎙️ ابدأ التسجيل</button>
     </div>
@@ -76,9 +62,10 @@
   const taskId = params.get("taskId");
   const leaderId = params.get("leaderId");
   if (!taskId || !leaderId) location.href = "tasks.html";
+  NMTalent.requireLogin(location.pathname + location.search);
 
   const answers = { gender: null, ageBracket: null, fakeName: null, age: null };
-  const STEPS = ["tab-gender", "tab-age-bracket", "tab-fake-name", "tab-age", "tab-private"];
+  const STEPS = ["tab-gender", "tab-age-bracket", "tab-fake-name", "tab-age"];
   let stepIndex = 0;
 
   function showStep(i) {
@@ -116,22 +103,10 @@
     showStep(stepIndex);
   }
 
-  function goToPrivateStep() {
-    answers.age = document.getElementById("age-input").value || null;
-    stepIndex++;
-    showStep(stepIndex);
-  }
-
   document.getElementById("start-btn").addEventListener("click", async () => {
     const errorBox = document.getElementById("final-error");
     errorBox.style.display = "none";
-    const realName = document.getElementById("real-name-input").value.trim();
-    const whatsapp = document.getElementById("whatsapp-input").value.trim();
-    if (!realName || !whatsapp) {
-      errorBox.textContent = "الاسم الحقيقي ورقم الواتس مطلوبين عشان الليدر يقدر يتابع معاك ويدفعلك.";
-      errorBox.style.display = "block";
-      return;
-    }
+    answers.age = document.getElementById("age-input").value || null;
     const btn = document.getElementById("start-btn");
     btn.disabled = true; btn.textContent = "جاري البدء...";
     try {
@@ -141,7 +116,6 @@
         ageBracket: answers.ageBracket,
         age: answers.age,
         fakeName: answers.fakeName,
-        realName, whatsapp,
       });
       NMTalent.saveSessionToken(taskId, session.session_token);
       location.href = `recording.html?session=${session.session_token}`;
@@ -164,7 +138,6 @@
 
   window.pick = pick;
   window.confirmFakeName = confirmFakeName;
-  window.goToPrivateStep = goToPrivateStep;
   showStep(0);
 </script>
 </body>

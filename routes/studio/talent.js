@@ -4,14 +4,16 @@ const multer = require("multer");
 const archiver = require("archiver");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
+const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-// Everything in this file is PUBLIC — talents never have an account. Their
-// only "identity" is an opaque session_token kept in their own browser.
+// Browsing tasks/fake-names is PUBLIC (no need to log in just to look).
+// Starting a session and everything after it requires a talent account —
+// see requireStudioAuth below, applied per-route from here down.
 
 // GET /api/studio/talent/tasks — published tasks open for recording.
 router.get("/tasks", async (req, res) => {
@@ -72,8 +74,10 @@ router.get("/tasks/:id/fake-names", async (req, res) => {
 });
 
 // POST /api/studio/talent/sessions — reserve a fake name + start a session.
-router.post("/sessions", async (req, res) => {
-  const { taskId, leaderId, gender, ageBracket, age, fakeName, realName, whatsapp } = req.body;
+// Requires a logged-in talent account; real_name/whatsapp come from that
+// account, not the request body (one fixed identity, not re-typed per task).
+router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
+  const { taskId, leaderId, gender, ageBracket, age, fakeName } = req.body;
   if (!taskId || !leaderId || !gender || !ageBracket || !fakeName) {
     return res.status(400).json({ error: "البيانات ناقصة، املا كل الحقول المطلوبة" });
   }
@@ -95,9 +99,9 @@ router.post("/sessions", async (req, res) => {
     const sessionToken = crypto.randomBytes(24).toString("hex");
     const result = await pool.query(
       `INSERT INTO recording_sessions
-         (task_id, leader_id, session_token, gender, age_bracket, age, fake_name, real_name, whatsapp)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [taskId, leaderId, sessionToken, gender, ageBracket, age || null, fakeName, realName || null, whatsapp || null]
+         (task_id, leader_id, talent_id, session_token, gender, age_bracket, age, fake_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [taskId, leaderId, req.studioUser.id, sessionToken, gender, ageBracket, age || null, fakeName]
     );
 
     const samples = await pool.query(
@@ -115,7 +119,7 @@ router.post("/sessions", async (req, res) => {
 });
 
 // GET /api/studio/talent/sessions/:token — resume: session + samples + what's recorded so far.
-router.get("/sessions/:token", async (req, res) => {
+router.get("/sessions/:token", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
   try {
     const sessionResult = await pool.query(`
       SELECT rs.*, t.recording_settings, t.title AS task_title
@@ -124,6 +128,7 @@ router.get("/sessions/:token", async (req, res) => {
     `, [req.params.token]);
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
+    if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
 
     const samples = await pool.query(`
       SELECT s.*, ss.audio_file_url, ss.duration AS recorded_duration, ss.retakes, ss.completed_at
@@ -142,13 +147,14 @@ router.get("/sessions/:token", async (req, res) => {
 
 // POST /api/studio/talent/sessions/:token/samples/:sampleId/audio — upload
 // (or replace) the recording for ONE sentence.
-router.post("/sessions/:token/samples/:sampleId/audio", upload.single("file"), async (req, res) => {
+router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requireStudioRole("talent"), upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "لازم ترفع تسجيل صوتي" });
 
   try {
     const sessionResult = await pool.query(`SELECT * FROM recording_sessions WHERE session_token = $1`, [req.params.token]);
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
+    if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
     if (session.status !== "in_progress") {
       return res.status(400).json({ error: "الجلسة دي خلصت بالفعل، مينفعش تعدّل فيها" });
     }
@@ -200,11 +206,12 @@ router.post("/sessions/:token/samples/:sampleId/audio", upload.single("file"), a
 // recorded. Downloads every recorded clip back from Drive, zips them
 // locally, names the zip fake_name-gender-age_bracket-age.zip, uploads it
 // to that leader code's QA folder, and marks the session submitted.
-router.post("/sessions/:token/submit", async (req, res) => {
+router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
   try {
     const sessionResult = await pool.query(`SELECT * FROM recording_sessions WHERE session_token = $1`, [req.params.token]);
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
+    if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
     if (session.status !== "in_progress") {
       return res.status(400).json({ error: "الجلسة دي اتسلّمت بالفعل" });
     }
@@ -274,6 +281,27 @@ router.post("/sessions/:token/submit", async (req, res) => {
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
     }
     res.status(500).json({ error: "تعذر تسليم التاسك، حاول تاني" });
+  }
+});
+
+// GET /api/studio/talent/me/sessions — everything the logged-in talent has
+// recorded, across every task/leader they've worked with.
+router.get("/me/sessions", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT rs.*, t.title AS task_title, l.leader_code,
+        (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id) AS sample_count,
+        (SELECT COUNT(*) FROM recording_session_samples WHERE session_id = rs.id AND audio_file_url IS NOT NULL) AS recorded_count
+      FROM recording_sessions rs
+      JOIN recording_tasks t ON t.id = rs.task_id
+      JOIN studio_leaders l ON l.id = rs.leader_id
+      WHERE rs.talent_id = $1
+      ORDER BY rs.created_at DESC
+    `, [req.studioUser.id]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "تعذر تحميل تسكياتك" });
   }
 });
 

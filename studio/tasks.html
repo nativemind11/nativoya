@@ -11,6 +11,7 @@
 
 <header class="studio-header">
   <a href="index.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
+  <nav id="header-account"></nav>
 </header>
 
 <main class="studio-shell wide">
@@ -70,12 +71,21 @@
       }
       leadersBox.innerHTML = detail.leaders.map(l => `
         <button type="button" class="studio-btn studio-btn-secondary studio-btn-block" style="margin-bottom:8px; justify-content:flex-start;"
-          onclick="location.href='talent-setup.html?taskId=${taskId}&leaderId=${l.id}'">
+          onclick="goToSetup('${taskId}', '${l.id}')">
           <span class="studio-code">${l.leader_code}</span>
         </button>`).join("");
     } catch (err) {
       leadersBox.innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
     }
+  }
+
+  function goToSetup(taskId, leaderId) {
+    const setupUrl = `talent-setup.html?taskId=${taskId}&leaderId=${leaderId}`;
+    if (!NMTalent.authToken()) {
+      location.href = `talent-login.html?return=${encodeURIComponent(setupUrl)}`;
+      return;
+    }
+    location.href = setupUrl;
   }
 
   document.getElementById("picker-close").addEventListener("click", () => {
@@ -89,7 +99,13 @@
   }
 
   window.openPicker = openPicker;
+  window.goToSetup = goToSetup;
   loadTasks();
+
+  const talent = NMTalent.currentTalent();
+  document.getElementById("header-account").innerHTML = talent
+    ? `<a href="talent-dashboard.html">👤 ${talent.name}</a>`
+    : `<a href="talent-login.html">تسجيل الدخول</a>`;
 </script>
 </body>
 </html>

@@ -91,6 +91,7 @@
 <script>
   const token = new URLSearchParams(location.search).get("session");
   if (!token) location.href = "tasks.html";
+  NMTalent.requireLogin(location.pathname + location.search);
 
   let session = null;
   let samples = [];

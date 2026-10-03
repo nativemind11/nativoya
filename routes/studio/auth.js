@@ -64,6 +64,37 @@ router.post("/leader/signup", async (req, res) => {
   }
 });
 
+// POST /api/studio/auth/talent/signup — anyone recording for a task needs
+// one of these first. No leader_code here (that's chosen per-session on the
+// task they're recording for, same account can work with several leaders).
+router.post("/talent/signup", async (req, res) => {
+  const { name, email, password, whatsapp } = req.body;
+  if (!name || !email || !password || !whatsapp) {
+    return res.status(400).json({ error: "الاسم والإيميل وكلمة المرور ورقم الواتس مطلوبين" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "كلمة المرور لازم تكون 6 أحرف على الأقل" });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      `INSERT INTO studio_talents (name, email, password_hash, whatsapp)
+       VALUES ($1, $2, $3, $4) RETURNING id, name, email, whatsapp, created_at`,
+      [name, email, passwordHash, whatsapp]
+    );
+    const talent = result.rows[0];
+    const token = signStudioToken(talent.id, "talent");
+    res.status(201).json({ token, studioRole: "talent", user: talent });
+  } catch (err) {
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "فيه حساب بالإيميل ده في الاستوديو بالفعل" });
+    }
+    console.error(err);
+    res.status(500).json({ error: "تعذر إنشاء الحساب، حاول تاني" });
+  }
+});
+
 // POST /api/studio/auth/login  body: { email, password, studioRole }
 // studioRole must be one of 'head_leader' | 'leader' | 'qa' — the login page
 // has 3 tabs, one per account type, so the client always knows which to send.
