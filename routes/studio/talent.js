@@ -56,6 +56,38 @@ router.get("/tasks/:id", async (req, res) => {
   }
 });
 
+// GET /api/studio/talent/samples/:sampleId/reference-audio — streams the
+// head_leader's reference clip straight through our server. A raw Google
+// Drive link doesn't reliably work as an <audio> src (confirmation pages,
+// missing CORS headers...), so we fetch it server-side and pipe the bytes
+// through instead — works every time, regardless of Drive's quirks.
+router.get("/samples/:sampleId/reference-audio", async (req, res) => {
+  try {
+    const sampleResult = await pool.query(`SELECT audio_url FROM recording_samples WHERE id = $1`, [req.params.sampleId]);
+    if (!sampleResult.rows.length || !sampleResult.rows[0].audio_url) {
+      return res.status(404).json({ error: "مفيش سامبل مرجعي للجملة دي" });
+    }
+    const match = sampleResult.rows[0].audio_url.match(/\/file\/d\/([^/]+)/);
+    if (!match) return res.status(404).json({ error: "رابط السامبل غير صالح" });
+    const fileId = match[1];
+
+    const authClient = await getAuthorizedClient();
+    const drive = google.drive({ version: "v3", auth: authClient });
+    const meta = await drive.files.get({ fileId, fields: "mimeType, name" });
+    const fileStream = await drive.files.get({ fileId, alt: "media" }, { responseType: "stream" });
+
+    res.setHeader("Content-Type", meta.data.mimeType || "audio/mpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    fileStream.data.pipe(res);
+  } catch (err) {
+    console.error(err);
+    if (err.code === "DRIVE_NOT_CONNECTED") {
+      return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
+    }
+    res.status(500).json({ error: "تعذر تشغيل السامبل" });
+  }
+});
+
 // GET /api/studio/talent/tasks/:id/fake-names — names from the pool that
 // NOBODY has reserved yet for this task.
 router.get("/tasks/:id/fake-names", async (req, res) => {

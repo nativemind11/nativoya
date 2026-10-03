@@ -29,19 +29,9 @@
       <input type="text" id="t-title" placeholder="مثال: جمل الأخبار — دفعة 1" required>
     </div>
 
-    <div class="studio-grid cols-2">
-      <div class="studio-field">
-        <label for="t-quantity">الكمية المطلوبة (كام شخص)</label>
-        <input type="number" id="t-quantity" min="1" value="10" required>
-      </div>
-      <div class="studio-field">
-        <label for="t-difficulty">الصعوبة</label>
-        <select id="t-difficulty">
-          <option value="easy">سهلة</option>
-          <option value="medium" selected>متوسطة</option>
-          <option value="hard">صعبة</option>
-        </select>
-      </div>
+    <div class="studio-field">
+      <label for="t-quantity">الكمية المطلوبة (كام شخص)</label>
+      <input type="number" id="t-quantity" min="1" value="10" required>
     </div>
 
     <div class="studio-grid cols-2">
@@ -224,7 +214,6 @@
     try {
       createdTask = await NMStudio.apiCreateTask({
         title, quantity,
-        difficulty: document.getElementById("t-difficulty").value,
         sampleRate: document.getElementById("t-sample-rate").value,
         bitDepth: document.getElementById("t-bit-depth").value,
         format: document.getElementById("t-format").value,

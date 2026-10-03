@@ -89,6 +89,7 @@
 <script src="../js/waveform.js"></script>
 <script src="../js/studio-talent.js"></script>
 <script>
+  const API_BASE_URL = "https://nativoya.vercel.app";
   const token = new URLSearchParams(location.search).get("session");
   if (!token) location.href = "tasks.html";
   NMTalent.requireLogin(location.pathname + location.search);
@@ -151,7 +152,7 @@
     const refWrap = document.getElementById("reference-audio-wrap");
     if (s.audio_url) {
       refWrap.classList.remove("hidden");
-      document.getElementById("reference-audio").src = toPlayableUrl(s.audio_url);
+      document.getElementById("reference-audio").src = `${API_BASE_URL}/api/studio/talent/samples/${s.id}/reference-audio`;
     } else {
       refWrap.classList.add("hidden");
     }
@@ -160,14 +161,6 @@
     document.getElementById("prev-btn").disabled = currentIndex === 0;
     document.getElementById("next-btn").disabled = currentIndex === samples.length - 1;
     updateProgress();
-  }
-
-  // The head_leader's uploaded reference clips are stored as normal Drive
-  // webViewLink URLs (https://drive.google.com/file/d/ID/view) — not
-  // directly playable in an <audio> tag, so swap to the direct-download form.
-  function toPlayableUrl(url) {
-    const match = url.match(/\/file\/d\/([^/]+)/);
-    return match ? `https://drive.google.com/uc?export=download&id=${match[1]}` : url;
   }
 
   function resetRecorderUi() {
