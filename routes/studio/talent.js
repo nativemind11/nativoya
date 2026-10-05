@@ -163,7 +163,8 @@ router.get("/sessions/:token", requireStudioAuth, requireStudioRole("talent"), a
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
 
     const samples = await pool.query(`
-      SELECT s.*, ss.audio_file_url, ss.duration AS recorded_duration, ss.retakes, ss.completed_at
+      SELECT s.*, ss.audio_file_url, ss.duration AS recorded_duration, ss.retakes, ss.completed_at,
+        ss.qa_status, ss.qa_reason
       FROM recording_samples s
       LEFT JOIN recording_session_samples ss ON ss.sample_id = s.id AND ss.session_id = $1
       WHERE s.task_id = $2
@@ -187,8 +188,14 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
-    if (session.status !== "in_progress") {
-      return res.status(400).json({ error: "الجلسة دي خلصت بالفعل، مينفعش تعدّل فيها" });
+
+    const existingCheck = await pool.query(
+      `SELECT * FROM recording_session_samples WHERE session_id = $1 AND sample_id = $2`,
+      [session.id, req.params.sampleId]
+    );
+    const isRework = session.status === "rejected" && existingCheck.rows.length && existingCheck.rows[0].qa_status === "rejected";
+    if (session.status !== "in_progress" && !isRework) {
+      return res.status(400).json({ error: "الجملة دي مش محتاجة إعادة، أو الجلسة اتسلّمت بالفعل ومش في وضع الإعادة" });
     }
 
     const taskResult = await pool.query(`SELECT * FROM recording_tasks WHERE id = $1`, [session.task_id]);
@@ -205,16 +212,13 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
     const audioUrl = uploaded.id ? `drive:${uploaded.id}` : null; // internal reference, resolved again at zip time
     const duration = req.body.duration ? Number(req.body.duration) : null;
 
-    const existing = await pool.query(
-      `SELECT * FROM recording_session_samples WHERE session_id = $1 AND sample_id = $2`,
-      [session.id, req.params.sampleId]
-    );
-    if (existing.rows.length) {
+    if (existingCheck.rows.length) {
       await pool.query(
         `UPDATE recording_session_samples
-         SET audio_file_url = $1, duration = $2, retakes = retakes + 1, completed_at = now()
+         SET audio_file_url = $1, duration = $2, retakes = retakes + 1, completed_at = now(),
+             qa_status = 'pending', qa_reason = NULL
          WHERE id = $3`,
-        [audioUrl, duration, existing.rows[0].id]
+        [audioUrl, duration, existingCheck.rows[0].id]
       );
     } else {
       await pool.query(
@@ -244,7 +248,9 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
-    if (session.status !== "in_progress") {
+
+    const isResubmit = session.status === "rejected";
+    if (session.status !== "in_progress" && !isResubmit) {
       return res.status(400).json({ error: "الجلسة دي اتسلّمت بالفعل" });
     }
 
@@ -260,6 +266,15 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
       return res.status(400).json({
         error: `لسه مسجّلش كل الجمل (${recordedSamples.rows.length}/${totalSamples.rows[0].count}). كمّل الباقي الأول.`,
       });
+    }
+    if (isResubmit) {
+      const stillRejected = await pool.query(
+        `SELECT COUNT(*) FROM recording_session_samples WHERE session_id = $1 AND qa_status = 'rejected'`,
+        [session.id]
+      );
+      if (Number(stillRejected.rows[0].count) > 0) {
+        return res.status(400).json({ error: "لسه فيه جمل مرفوضة محتاجة إعادة تسجيل قبل ما تقدر تبعت تاني." });
+      }
     }
 
     const authClient = await getAuthorizedClient();
@@ -301,7 +316,8 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
 
     await pool.query(
       `UPDATE recording_sessions
-       SET status = 'submitted', zip_file_url = $1, zip_file_name = $2, updated_at = now()
+       SET status = 'submitted', zip_file_url = $1, zip_file_name = $2, updated_at = now(),
+           rejection_reason = NULL, rework_deadline = NULL
        WHERE id = $3`,
       [zipFileUrl, zipFileName, session.id]
     );

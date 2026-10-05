@@ -58,7 +58,7 @@
       wrap.innerHTML = `
         <div class="studio-table-wrap">
           <table class="studio-table">
-            <thead><tr><th>المهمة</th><th>الليدر</th><th>الاسم المستعار</th><th>التقدّم</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>المهمة</th><th>الليدر</th><th>الاسم المستعار</th><th>التقدّم</th><th>الحالة</th><th></th></tr></thead>
             <tbody>
               ${sessions.map(s => `
                 <tr>
@@ -66,8 +66,13 @@
                   <td><span class="studio-code">${s.leader_code}</span></td>
                   <td>${escapeHtml(s.fake_name)}</td>
                   <td>${s.recorded_count} / ${s.sample_count}</td>
-                  <td><span class="studio-pill ${STATUS_CLASS[s.status] || ""}">${STATUS_LABELS[s.status] || s.status}</span>
-                      ${s.status === "in_progress" ? `<a href="recording.html?session=${s.session_token}" class="studio-btn studio-btn-secondary" style="padding:4px 10px; font-size:0.75rem; margin-inline-start:8px;">كمّل</a>` : ""}
+                  <td>
+                    <span class="studio-pill ${STATUS_CLASS[s.status] || ""}">${STATUS_LABELS[s.status] || s.status}</span>
+                    ${s.status === "rejected" ? `<div class="studio-hint" style="margin-top:4px; max-width:260px;">⚠️ ${escapeHtml(s.rejection_reason || "")}</div>` : ""}
+                  </td>
+                  <td>
+                    ${s.status === "in_progress" ? `<a href="recording.html?session=${s.session_token}" class="studio-btn studio-btn-secondary" style="padding:4px 10px; font-size:0.75rem;">كمّل</a>` : ""}
+                    ${s.status === "rejected" ? `<a href="recording.html?session=${s.session_token}" class="studio-btn studio-btn-primary" style="padding:4px 10px; font-size:0.75rem;">🔁 إعادة التسجيل</a>` : ""}
                   </td>
                 </tr>`).join("")}
             </tbody>

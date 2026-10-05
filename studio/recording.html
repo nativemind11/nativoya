@@ -35,6 +35,10 @@
   <div id="loading-box" class="studio-card text-center"><p class="studio-hint mb-0">جاري تحميل الجلسة...</p></div>
 
   <div id="recorder-box" class="hidden">
+    <div id="rework-banner" class="hidden studio-card" style="background:#3A1A00; border-color:var(--studio-warn); margin-bottom:16px;">
+      <p class="mb-0" style="color:var(--studio-warn); font-weight:700;">⚠️ التاسك ده محتاج إعادة لبعض الجمل بس</p>
+      <p class="studio-hint mb-0" id="rework-reason-text" style="margin-top:4px;"></p>
+    </div>
     <div class="rec-progress-track"><div class="rec-progress-fill" id="progress-fill" style="width:0%;"></div></div>
     <p class="studio-hint text-center" id="progress-text">0 / 0</p>
 
@@ -95,8 +99,10 @@
   NMTalent.requireLogin(location.pathname + location.search);
 
   let session = null;
-  let samples = [];
+  let samples = [];       // all samples (used for the zip/progress math)
+  let activeSamples = []; // the ones actually shown for recording right now
   let currentIndex = 0;
+  let reworkMode = false;
 
   let mediaRecorder = null;
   let recordedChunks = [];
@@ -115,13 +121,26 @@
       document.getElementById("fake-name-pill").textContent = `🎭 ${session.fake_name}`;
       document.getElementById("loading-box").classList.add("hidden");
 
-      if (session.status !== "in_progress") {
+      if (session.status === "rejected") {
+        reworkMode = true;
+        activeSamples = samples.filter(s => s.qa_status === "rejected");
+        document.getElementById("rework-banner").classList.remove("hidden");
+        document.getElementById("rework-reason-text").textContent = session.rejection_reason || "في تسجيلات محتاجة إعادة.";
+      } else if (session.status !== "in_progress") {
+        document.getElementById("done-box").classList.remove("hidden");
+        return;
+      } else {
+        activeSamples = samples;
+      }
+
+      if (!activeSamples.length) {
+        // shouldn't normally happen, but guards against an empty rework list
         document.getElementById("done-box").classList.remove("hidden");
         return;
       }
 
       document.getElementById("recorder-box").classList.remove("hidden");
-      currentIndex = samples.findIndex(s => !s.audio_file_url);
+      currentIndex = activeSamples.findIndex(s => !s.audio_file_url || s.qa_status === "rejected");
       if (currentIndex === -1) currentIndex = 0;
       renderSample();
       updateProgress();
@@ -130,23 +149,25 @@
     }
   }
 
+  function isSampleDone(s) { return !!s.audio_file_url && s.qa_status !== "rejected"; }
+
   function updateProgress() {
-    const done = samples.filter(s => s.audio_file_url).length;
-    document.getElementById("progress-fill").style.width = `${(done / samples.length) * 100}%`;
-    document.getElementById("progress-text").textContent = `${done} / ${samples.length}`;
-    document.getElementById("sample-dots").innerHTML = samples.map((s, i) =>
-      `<span class="rec-sample-dot ${s.audio_file_url ? "done" : ""} ${i === currentIndex ? "current" : ""}"></span>`
+    const done = activeSamples.filter(isSampleDone).length;
+    document.getElementById("progress-fill").style.width = `${(done / activeSamples.length) * 100}%`;
+    document.getElementById("progress-text").textContent = `${done} / ${activeSamples.length}`;
+    document.getElementById("sample-dots").innerHTML = activeSamples.map((s, i) =>
+      `<span class="rec-sample-dot ${isSampleDone(s) ? "done" : ""} ${i === currentIndex ? "current" : ""}"></span>`
     ).join("");
     const submitBtn = document.getElementById("submit-btn");
-    submitBtn.disabled = done < samples.length;
-    document.getElementById("submit-hint").textContent = done < samples.length
-      ? `خلّص باقي الجمل (${samples.length - done} لسه) عشان تقدر تسلّم.`
-      : "كل الجمل اتسجّلت! جاهز تسلّم.";
+    submitBtn.disabled = done < activeSamples.length;
+    document.getElementById("submit-hint").textContent = done < activeSamples.length
+      ? `خلّص باقي الجمل (${activeSamples.length - done} لسه) عشان تقدر ت${reworkMode ? "بعت تاني" : "سلّم"}.`
+      : (reworkMode ? "كل الجمل المطلوبة اتسجّلت! جاهز تبعتها تاني." : "كل الجمل اتسجّلت! جاهز تسلّم.");
   }
 
   function renderSample() {
-    const s = samples[currentIndex];
-    document.getElementById("sample-number").textContent = `جملة ${currentIndex + 1} من ${samples.length}`;
+    const s = activeSamples[currentIndex];
+    document.getElementById("sample-number").textContent = `جملة ${currentIndex + 1} من ${activeSamples.length}`;
     document.getElementById("sentence-text").textContent = s.sentence_name;
 
     const refWrap = document.getElementById("reference-audio-wrap");
@@ -159,7 +180,7 @@
 
     resetRecorderUi();
     document.getElementById("prev-btn").disabled = currentIndex === 0;
-    document.getElementById("next-btn").disabled = currentIndex === samples.length - 1;
+    document.getElementById("next-btn").disabled = currentIndex === activeSamples.length - 1;
     updateProgress();
   }
 
@@ -275,10 +296,11 @@
     btn.disabled = true; btn.textContent = "جاري الحفظ...";
     try {
       const file = new File([recordedBlob], `sample-${currentIndex + 1}.webm`, { type: recordedBlob.type });
-      await NMTalent.uploadSampleAudio(token, samples[currentIndex].id, file, elapsedSeconds);
-      samples[currentIndex].audio_file_url = "uploaded";
+      await NMTalent.uploadSampleAudio(token, activeSamples[currentIndex].id, file, elapsedSeconds);
+      activeSamples[currentIndex].audio_file_url = "uploaded";
+      activeSamples[currentIndex].qa_status = "pending";
       updateProgress();
-      if (currentIndex < samples.length - 1) { currentIndex++; renderSample(); }
+      if (currentIndex < activeSamples.length - 1) { currentIndex++; renderSample(); }
       else resetRecorderUi();
     } catch (err) {
       errorBox.textContent = err.message;

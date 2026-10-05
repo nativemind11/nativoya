@@ -21,10 +21,23 @@
   <div class="studio-eyebrow">لوحة المراجعة</div>
   <h1 class="studio-title">التسليمات اللي محتاجة مراجعة</h1>
 
-  <div class="studio-card" style="margin-top:18px;">
-    <div class="studio-empty">
-      <div class="icon">✅</div>
-      <p>لسه مفيش تسليمات — المراجعة (سماع الملفات، قبول/رفض) بتتفعّل في مرحلة الـ QA.</p>
+  <div class="studio-card" style="margin-top:18px;" id="pending-wrap">
+    <p class="studio-hint">جاري التحميل...</p>
+  </div>
+
+  <!-- quick "reject fully" reason prompt -->
+  <div id="reject-overlay" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;">
+    <div class="studio-card" style="max-width:420px; width:100%;">
+      <h3 style="margin-top:0;">رفض التسليم كله</h3>
+      <div class="studio-field">
+        <label for="reject-reason-input">السبب (اختياري)</label>
+        <textarea id="reject-reason-input" rows="3"></textarea>
+      </div>
+      <p class="studio-error" id="reject-error"></p>
+      <div style="display:flex; gap:10px;">
+        <button type="button" class="studio-btn studio-btn-secondary studio-btn-block" id="reject-cancel">إلغاء</button>
+        <button type="button" class="studio-btn studio-btn-danger studio-btn-block" id="reject-confirm">تأكيد الرفض</button>
+      </div>
     </div>
   </div>
 </main>
@@ -38,6 +51,93 @@
     NMStudio.logout();
     location.href = "login.html";
   });
+
+  const GENDER_LABELS = { male: "ذكر", female: "أنثى" };
+  let rejectTargetId = null;
+
+  async function loadPending() {
+    const wrap = document.getElementById("pending-wrap");
+    try {
+      const sessions = await NMStudio.apiGetPendingReviews();
+      if (!sessions.length) {
+        wrap.innerHTML = `<div class="studio-empty"><div class="icon">✅</div><p>مفيش تسليمات منتظرة المراجعة دلوقتي.</p></div>`;
+        return;
+      }
+      wrap.innerHTML = `
+        <div class="studio-table-wrap">
+          <table class="studio-table">
+            <thead><tr><th>المهمة</th><th>الليدر</th><th>الاسم المستعار</th><th>النوع</th><th>الجمل</th><th></th></tr></thead>
+            <tbody>
+              ${sessions.map(s => `
+                <tr id="row-${s.id}">
+                  <td>${escapeHtml(s.task_title)}</td>
+                  <td><span class="studio-code">${s.leader_code}</span></td>
+                  <td>${escapeHtml(s.fake_name)}</td>
+                  <td>${GENDER_LABELS[s.gender] || s.gender}</td>
+                  <td>${s.sample_count}</td>
+                  <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <a href="qa-review.html?session=${s.id}" class="studio-btn studio-btn-secondary" style="padding:5px 10px; font-size:0.75rem;">🎧 دخول</a>
+                    <button class="studio-btn studio-btn-primary" style="padding:5px 10px; font-size:0.75rem;" onclick="quickApprove('${s.id}')">✅ قبول</button>
+                    <button class="studio-btn studio-btn-danger" style="padding:5px 10px; font-size:0.75rem;" onclick="openRejectPrompt('${s.id}')">❌ رفض تمامًا</button>
+                    <a href="qa-review.html?session=${s.id}" class="studio-btn studio-btn-secondary" style="padding:5px 10px; font-size:0.75rem;">⚠️ رفض مع سبب</a>
+                  </td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`;
+    } catch (err) {
+      wrap.innerHTML = `<div class="studio-empty"><p>${err.message}</p></div>`;
+    }
+  }
+
+  async function quickApprove(sessionId) {
+    if (!confirm("متأكد إنك عايز تقبل التسليم ده بكل تسجيلاته؟")) return;
+    try {
+      await NMStudio.apiApproveSession(sessionId);
+      document.getElementById(`row-${sessionId}`).remove();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function openRejectPrompt(sessionId) {
+    rejectTargetId = sessionId;
+    document.getElementById("reject-reason-input").value = "";
+    document.getElementById("reject-error").style.display = "none";
+    document.getElementById("reject-overlay").classList.remove("hidden");
+  }
+
+  document.getElementById("reject-cancel").addEventListener("click", () => {
+    document.getElementById("reject-overlay").classList.add("hidden");
+  });
+
+  document.getElementById("reject-confirm").addEventListener("click", async () => {
+    const errorBox = document.getElementById("reject-error");
+    errorBox.style.display = "none";
+    const btn = document.getElementById("reject-confirm");
+    btn.disabled = true; btn.textContent = "جاري الرفض...";
+    try {
+      const reason = document.getElementById("reject-reason-input").value.trim();
+      await NMStudio.apiRejectAllSession(rejectTargetId, reason || "التسجيل كله محتاج إعادة");
+      document.getElementById(`row-${rejectTargetId}`).remove();
+      document.getElementById("reject-overlay").classList.add("hidden");
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "تأكيد الرفض";
+    }
+  });
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  window.quickApprove = quickApprove;
+  window.openRejectPrompt = openRejectPrompt;
+  loadPending();
 </script>
 </body>
 </html>

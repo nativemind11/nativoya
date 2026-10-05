@@ -124,10 +124,41 @@
     return apiFetch(`/api/studio/headleader/tasks/${taskId}`);
   }
 
+  // ---- qa: review queue -----------------------------------------------
+  function apiGetPendingReviews() { return apiFetch("/api/studio/qa/pending"); }
+  function apiGetReviewDetail(sessionId) { return apiFetch(`/api/studio/qa/sessions/${sessionId}`); }
+  function apiApproveSession(sessionId) {
+    return apiFetch(`/api/studio/qa/sessions/${sessionId}/approve`, { method: "POST" });
+  }
+  function apiRejectAllSession(sessionId, reason) {
+    return apiFetch(`/api/studio/qa/sessions/${sessionId}/reject-all`, {
+      method: "POST", body: JSON.stringify({ reason }),
+    });
+  }
+  function apiSubmitReview(sessionId, decisions) {
+    return apiFetch(`/api/studio/qa/sessions/${sessionId}/review`, {
+      method: "POST", body: JSON.stringify({ decisions }),
+    });
+  }
+  // A plain <audio src="..."> can't send an Authorization header, and this
+  // endpoint needs one (it's QA-only) — so we fetch it ourselves with the
+  // token attached and hand back a blob: URL the <audio> tag CAN use.
+  async function qaFetchSampleAudioUrl(sessionSampleId) {
+    const token = authToken();
+    const res = await fetch(`${API_BASE_URL}/api/studio/qa/samples/${sessionSampleId}/audio`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("تعذر تحميل التسجيل الصوتي");
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  }
+
   window.NMStudio = {
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
     apiCreateTask, apiUploadScript, apiUploadFakeNames, apiUploadSampleAudio, apiUploadBulkSampleAudio, apiPublishTask,
     apiGetMyTasks, apiGetTaskDetail, apiGetLeaders,
+    apiGetPendingReviews, apiGetReviewDetail, apiApproveSession, apiRejectAllSession,
+    apiSubmitReview, qaFetchSampleAudioUrl,
   };
 })();

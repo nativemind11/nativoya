@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مراجعة التسليم — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+<style>
+  .qa-row { display: flex; align-items: center; gap: 14px; padding: 14px; border-bottom: 1px solid var(--studio-border); flex-wrap: wrap; }
+  .qa-row:last-child { border-bottom: none; }
+  .qa-row audio { flex: 1; min-width: 220px; }
+  .qa-verdict-btns { display: flex; gap: 6px; }
+  .qa-verdict-btn { padding: 6px 12px; font-size: 0.8rem; border-radius: 8px; border: 1px solid var(--studio-border); background: var(--studio-surface-2); color: var(--studio-text-muted); cursor: pointer; }
+  .qa-verdict-btn.active.approve { background: var(--studio-accent); color: #04211D; border-color: var(--studio-accent); }
+  .qa-verdict-btn.active.reject { background: var(--studio-danger); color: #2A0507; border-color: var(--studio-danger); }
+  .qa-reason-input { width: 100%; margin-top: 8px; display: none; }
+</style>
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <a href="dashboard-qa.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
+  <nav><a href="dashboard-qa.html">← رجوع للقايمة</a></nav>
+</header>
+
+<main class="studio-shell wide">
+  <div id="loading-box" class="studio-card text-center"><p class="studio-hint mb-0">جاري التحميل...</p></div>
+
+  <div id="content-box" class="hidden">
+    <div class="studio-eyebrow" id="task-title">—</div>
+    <h1 class="studio-title" id="session-summary">—</h1>
+
+    <div class="studio-card" id="samples-card" style="padding:0;"></div>
+
+    <div class="studio-card" style="margin-top:18px; text-align:center;">
+      <p class="studio-hint" id="submit-hint">حدّد قرار (قبول/رفض) لكل جملة قبل ما تقدر تبعت.</p>
+      <p class="studio-error" id="submit-error"></p>
+      <button class="studio-btn studio-btn-primary studio-btn-block" id="submit-review-btn" disabled>📨 إرسال المراجعة</button>
+    </div>
+  </div>
+</main>
+
+<script src="../js/studio-shared.js"></script>
+<script>
+  const user = NMStudio.requireStudioRole("qa");
+  const sessionId = new URLSearchParams(location.search).get("session");
+  if (!sessionId) location.href = "dashboard-qa.html";
+
+  let samples = [];
+  const verdicts = {}; // sessionSampleId -> 'approved' | 'rejected'
+
+  async function load() {
+    try {
+      const data = await NMStudio.apiGetReviewDetail(sessionId);
+      samples = data.samples;
+      document.getElementById("task-title").textContent = data.session.task_title;
+      document.getElementById("session-summary").textContent =
+        `${data.session.fake_name} — ${data.session.leader_code} — ${samples.length} جملة`;
+      renderSamples();
+      document.getElementById("loading-box").classList.add("hidden");
+      document.getElementById("content-box").classList.remove("hidden");
+    } catch (err) {
+      document.getElementById("loading-box").innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
+    }
+  }
+
+  function renderSamples() {
+    const wrap = document.getElementById("samples-card");
+    wrap.innerHTML = samples.map((s, i) => `
+      <div class="qa-row" id="qa-row-${s.id}">
+        <strong>#${i + 1}</strong>
+        <div style="flex:2; min-width:160px;">
+          <div>${escapeHtml(s.sentence_name)}</div>
+          <audio controls preload="none" id="audio-${s.id}"></audio>
+        </div>
+        <div class="qa-verdict-btns">
+          <button type="button" class="qa-verdict-btn approve" onclick="setVerdict('${s.id}', 'approved')">✅ قبول</button>
+          <button type="button" class="qa-verdict-btn reject" onclick="setVerdict('${s.id}', 'rejected')">❌ رفض</button>
+        </div>
+        <textarea class="studio-field qa-reason-input" id="reason-${s.id}" placeholder="سبب الرفض..." rows="2"></textarea>
+      </div>`).join("");
+
+    // lazy-load each clip's audio as a blob (the endpoint needs auth, which
+    // a plain <audio src> can't send)
+    samples.forEach(async (s) => {
+      try {
+        const url = await NMStudio.qaFetchSampleAudioUrl(s.id);
+        const el = document.getElementById(`audio-${s.id}`);
+        if (el) el.src = url;
+      } catch (_) { /* leave the player empty — they can still make a call without it, though unlikely needed */ }
+    });
+  }
+
+  function setVerdict(sessionSampleId, verdict) {
+    verdicts[sessionSampleId] = verdict;
+    const row = document.getElementById(`qa-row-${sessionSampleId}`);
+    row.querySelectorAll(".qa-verdict-btn").forEach(b => b.classList.remove("active"));
+    row.querySelector(verdict === "approved" ? ".approve" : ".reject").classList.add("active");
+    document.getElementById(`reason-${sessionSampleId}`).style.display = verdict === "rejected" ? "block" : "none";
+    updateSubmitState();
+  }
+
+  function updateSubmitState() {
+    const allDecided = samples.every(s => verdicts[s.id]);
+    document.getElementById("submit-review-btn").disabled = !allDecided;
+    document.getElementById("submit-hint").textContent = allDecided
+      ? "كل الجمل اتحدّد لها قرار. جاهز تبعت."
+      : `لسه محتاج قرار لـ ${samples.length - Object.keys(verdicts).length} جملة.`;
+  }
+
+  document.getElementById("submit-review-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("submit-error");
+    errorBox.style.display = "none";
+    const decisions = samples.map(s => ({
+      sessionSampleId: s.id,
+      status: verdicts[s.id],
+      reason: verdicts[s.id] === "rejected" ? document.getElementById(`reason-${s.id}`).value.trim() : null,
+    }));
+    const btn = document.getElementById("submit-review-btn");
+    btn.disabled = true; btn.textContent = "جاري الإرسال...";
+    try {
+      await NMStudio.apiSubmitReview(sessionId, decisions);
+      location.href = "dashboard-qa.html";
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+      btn.disabled = false; btn.textContent = "📨 إرسال المراجعة";
+    }
+  });
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  window.setVerdict = setVerdict;
+  load();
+</script>
+</body>
+</html>
