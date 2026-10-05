@@ -114,6 +114,12 @@
   function apiPublishTask(taskId) {
     return apiFetch(`/api/studio/headleader/tasks/${taskId}/publish`, { method: "POST" });
   }
+  function apiCreateQaReviewer(payload) {
+    return apiFetch("/api/studio/headleader/qa-reviewers", { method: "POST", body: JSON.stringify(payload) });
+  }
+  function apiGetQaReviewers() {
+    return apiFetch("/api/studio/headleader/qa-reviewers");
+  }
   function apiGetLeaders() {
     return apiFetch("/api/studio/headleader/leaders");
   }
@@ -157,7 +163,7 @@
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
     apiCreateTask, apiUploadScript, apiUploadFakeNames, apiUploadSampleAudio, apiUploadBulkSampleAudio, apiPublishTask,
-    apiGetMyTasks, apiGetTaskDetail, apiGetLeaders,
+    apiGetMyTasks, apiGetTaskDetail, apiGetLeaders, apiCreateQaReviewer, apiGetQaReviewers,
     apiGetPendingReviews, apiGetReviewDetail, apiApproveSession, apiRejectAllSession,
     apiSubmitReview, qaFetchSampleAudioUrl,
   };

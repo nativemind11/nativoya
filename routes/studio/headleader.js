@@ -1,4 +1,5 @@
 const express = require("express");
+const bcrypt = require("bcryptjs");
 const multer = require("multer");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
@@ -10,6 +11,41 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 router.use(requireStudioAuth, requireStudioRole("head_leader"));
+
+// POST /api/studio/headleader/qa-reviewers — create a QA reviewer account.
+// No public signup for these — only a head_leader can create one.
+router.post("/qa-reviewers", async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!name || !email || !password) return res.status(400).json({ error: "الاسم والإيميل وكلمة المرور مطلوبين" });
+  if (password.length < 6) return res.status(400).json({ error: "كلمة المرور لازم تكون 6 أحرف على الأقل" });
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      `INSERT INTO studio_qa_reviewers (name, email, password_hash, created_by)
+       VALUES ($1, $2, $3, $4) RETURNING id, name, email, created_at`,
+      [name, email, passwordHash, req.studioUser.id]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ error: "فيه حساب بالإيميل ده بالفعل" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر إنشاء الحساب" });
+  }
+});
+
+// GET /api/studio/headleader/qa-reviewers — list them.
+router.get("/qa-reviewers", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, created_at FROM studio_qa_reviewers ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "تعذر تحميل قائمة المراجعين" });
+  }
+});
 
 // GET /api/studio/headleader/leaders — every registered leader, so the
 // publish-task page can show a pick-list instead of making the head_leader

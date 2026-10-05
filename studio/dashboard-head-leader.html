@@ -29,6 +29,31 @@
   <div class="studio-card" id="tasks-wrap">
     <div class="studio-empty"><p>جاري التحميل...</p></div>
   </div>
+
+  <div class="studio-card" style="margin-top:18px;">
+    <h3 style="margin-top:0;">مراجعي QA</h3>
+    <p class="studio-subtitle">اعمل حساب لأي حد عايزه يراجع التسليمات. مفيش تسجيل عام لحسابات الـ QA — إنت اللي بتعملهم.</p>
+
+    <div class="studio-grid cols-3" style="align-items:end;">
+      <div class="studio-field">
+        <label for="qa-name">الاسم</label>
+        <input type="text" id="qa-name">
+      </div>
+      <div class="studio-field">
+        <label for="qa-email">الإيميل</label>
+        <input type="email" id="qa-email">
+      </div>
+      <div class="studio-field">
+        <label for="qa-password">كلمة المرور</label>
+        <input type="password" id="qa-password" minlength="6">
+      </div>
+    </div>
+    <p class="studio-error" id="qa-create-error"></p>
+    <p class="studio-success" id="qa-create-success"></p>
+    <button class="studio-btn studio-btn-primary" id="qa-create-btn">+ إضافة مراجع QA</button>
+
+    <div id="qa-reviewers-list" style="margin-top:18px;"></div>
+  </div>
 </main>
 
 <script src="../js/studio-shared.js"></script>
@@ -81,6 +106,52 @@
   }
 
   loadTasks();
+
+  async function loadQaReviewers() {
+    const wrap = document.getElementById("qa-reviewers-list");
+    try {
+      const reviewers = await NMStudio.apiGetQaReviewers();
+      wrap.innerHTML = reviewers.length
+        ? `<div class="studio-table-wrap"><table class="studio-table">
+            <thead><tr><th>الاسم</th><th>الإيميل</th></tr></thead>
+            <tbody>${reviewers.map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td></tr>`).join("")}</tbody>
+          </table></div>`
+        : `<p class="studio-hint mb-0">لسه معملتش أي حساب مراجع.</p>`;
+    } catch (err) {
+      wrap.innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
+    }
+  }
+  loadQaReviewers();
+
+  document.getElementById("qa-create-btn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("qa-create-error");
+    const successBox = document.getElementById("qa-create-success");
+    errorBox.style.display = "none"; successBox.style.display = "none";
+    const name = document.getElementById("qa-name").value.trim();
+    const email = document.getElementById("qa-email").value.trim();
+    const password = document.getElementById("qa-password").value;
+    if (!name || !email || !password) {
+      errorBox.textContent = "املا كل الحقول.";
+      errorBox.style.display = "block";
+      return;
+    }
+    const btn = document.getElementById("qa-create-btn");
+    btn.disabled = true; btn.textContent = "جاري الإضافة...";
+    try {
+      await NMStudio.apiCreateQaReviewer({ name, email, password });
+      successBox.textContent = "✓ اتعمل الحساب بنجاح";
+      successBox.style.display = "block";
+      document.getElementById("qa-name").value = "";
+      document.getElementById("qa-email").value = "";
+      document.getElementById("qa-password").value = "";
+      loadQaReviewers();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false; btn.textContent = "+ إضافة مراجع QA";
+    }
+  });
 </script>
 </body>
 </html>
