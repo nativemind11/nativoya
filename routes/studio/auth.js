@@ -1,8 +1,11 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, TABLES } = require("../../config/studioAuth");
+const mailer = require("../../config/mailer");
+const { passwordResetEmail } = require("../../config/emailTemplates");
 
 const router = express.Router();
 
@@ -116,6 +119,81 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تسجيل الدخول، حاول تاني" });
+  }
+});
+
+// POST /api/studio/auth/forgot-password  body: { email, studioRole }
+// Works the same for all 4 account types — studioRole picks which table.
+// Always the same generic response so this can't be used to probe which
+// emails have accounts.
+router.post("/forgot-password", async (req, res) => {
+  const { email, studioRole } = req.body;
+  const table = TABLES[studioRole];
+  const genericOk = { message: "لو الإيميل ده مسجل عندنا، هيوصله رابط استرجاع كلمة المرور خلال دقايق." };
+  if (!table) return res.status(400).json({ error: "نوع الحساب غير معروف" });
+  if (!email) return res.status(400).json({ error: "الإيميل مطلوب" });
+
+  try {
+    const result = await pool.query(`SELECT id, name, email FROM ${table} WHERE email = $1`, [email]);
+    if (!result.rows.length) return res.json(genericOk);
+    const account = result.rows[0];
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await pool.query(
+      `UPDATE ${table} SET reset_token_hash = $1, reset_token_expires_at = $2 WHERE id = $3`,
+      [tokenHash, expiresAt, account.id]
+    );
+
+    const frontendUrl = process.env.FRONTEND_URL || "https://nativoya.click";
+    const resetUrl = `${frontendUrl}/studio/reset-password.html?token=${rawToken}&role=${studioRole}`;
+
+    await mailer.sendMail({
+      to: account.email,
+      subject: "استرجاع كلمة المرور — Nativoya Studio",
+      html: passwordResetEmail({ firstName: account.name, resetUrl }),
+    });
+
+    res.json(genericOk);
+  } catch (err) {
+    console.error(err);
+    if (err.code === "EMAIL_NOT_CONFIGURED") {
+      return res.status(503).json({ error: "خدمة إرسال الإيميلات لسه مش متصلة بالسيرفر." });
+    }
+    res.status(500).json({ error: "تعذر إرسال رابط الاسترجاع، حاول تاني بعد شوية." });
+  }
+});
+
+// POST /api/studio/auth/reset-password  body: { token, newPassword, studioRole }
+router.post("/reset-password", async (req, res) => {
+  const { token, newPassword, studioRole } = req.body;
+  const table = TABLES[studioRole];
+  if (!table) return res.status(400).json({ error: "نوع الحساب غير معروف" });
+  if (!token || !newPassword) return res.status(400).json({ error: "البيانات ناقصة" });
+  if (newPassword.length < 6) return res.status(400).json({ error: "كلمة المرور لازم تكون 6 أحرف على الأقل" });
+
+  try {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const result = await pool.query(
+      `SELECT id FROM ${table} WHERE reset_token_hash = $1 AND reset_token_expires_at > now()`,
+      [tokenHash]
+    );
+    if (!result.rows.length) {
+      return res.status(400).json({ error: "رابط الاسترجاع ده غير صحيح أو منتهي الصلاحية. اطلب رابط جديد." });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      `UPDATE ${table} SET password_hash = $1, reset_token_hash = NULL, reset_token_expires_at = NULL WHERE id = $2`,
+      [passwordHash, result.rows[0].id]
+    );
+
+    res.json({ message: "تم تغيير كلمة المرور بنجاح. تقدر تدخل بيها دلوقتي." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "تعذر تغيير كلمة المرور، حاول تاني بعد شوية." });
   }
 });
 
