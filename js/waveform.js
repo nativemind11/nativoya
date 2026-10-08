@@ -57,6 +57,47 @@ class WaveformVisualizer {
     }
   }
 
+  // mSpeech-style rolling waveform: one centred bar per ~33ms that scrolls
+  // right-to-left, driven by the recorder's real input level (0..1 peak).
+  startRolling(getLevel) {
+    this.stopVisualizing();
+    this.isRecording = true;
+    this.history = [];
+    this._getLevel = getLevel;
+    this._lastPush = 0;
+    const step = (ts) => {
+      this.animationId = requestAnimationFrame(step);
+      if (ts - this._lastPush >= 33) {
+        this._lastPush = ts;
+        // sqrt gives quiet speech visible height without hiding loud peaks
+        this.history.push(Math.min(1, Math.sqrt(Math.max(0, this._getLevel()))));
+        const maxBars = Math.floor(this.width / (this.barWidth + this.barGap));
+        if (this.history.length > maxBars) this.history.shift();
+      }
+      this.drawRolling();
+    };
+    this.animationId = requestAnimationFrame(step);
+  }
+
+  drawRolling() {
+    this.ctx.fillStyle = this.backgroundColor;
+    this.ctx.fillRect(0, 0, this.width, this.height);
+    const mid = this.height / 2;
+    const slot = this.barWidth + this.barGap;
+    const startX = this.width - this.history.length * slot;
+    for (let i = 0; i < this.history.length; i++) {
+      const v = this.history[i];
+      const h = Math.max(2, v * this.height * 0.95);
+      this.ctx.fillStyle = v > 0.9 ? "#EF4444" : this.barColorActive; // red when near clipping
+      this.ctx.fillRect(startX + i * slot, mid - h / 2, this.barWidth, h);
+    }
+  }
+
+  reset() {
+    this.history = [];
+    this.clear();
+  }
+
   animate() {
     this.animationId = requestAnimationFrame(() => this.animate());
 

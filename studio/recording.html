@@ -28,6 +28,16 @@
   .rec-sample-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--studio-border); display: inline-block; margin: 0 2px; }
   .rec-sample-dot.done { background: var(--studio-accent); }
   .rec-sample-dot.current { outline: 2px solid var(--studio-text); outline-offset: 2px; }
+  .rec-sample-dot.queued { background: var(--studio-warn); }
+  .rec-spec { font-family: var(--studio-mono); font-size: 0.95rem; color: var(--studio-accent); margin: 6px 0 4px; }
+  .rec-meter { height: 8px; background: var(--studio-surface-2); border-radius: 999px; overflow: hidden; margin: 10px 0 14px; }
+  .rec-meter-fill { height: 100%; width: 0%; background: var(--studio-accent); transition: width 0.06s linear; }
+  .rec-meter-fill.hot { background: var(--studio-danger); }
+  .rec-note { font-size: 0.88rem; line-height: 1.7; margin: 6px 0 0; }
+  .rec-note.warn { color: var(--studio-warn); }
+  .rec-note.bad { color: var(--studio-danger); }
+  .rec-note.ok { color: var(--studio-accent); }
+  .rec-banner { margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--studio-warn); background: #3A1A00; color: var(--studio-warn); font-weight: 700; font-size: 0.92rem; }
 </style>
 </head>
 <body class="studio">
@@ -46,6 +56,22 @@
       <p class="mb-0" style="color:var(--studio-warn); font-weight:700;">⚠️ التاسك ده محتاج إعادة لبعض الجمل بس</p>
       <p class="studio-hint mb-0" id="rework-reason-text" style="margin-top:4px;"></p>
     </div>
+    <div id="pending-banner" class="hidden rec-banner"></div>
+
+    <div class="studio-card" id="setup-card" style="margin-bottom:16px;">
+      <div class="studio-eyebrow">إعدادات التسجيل المطلوبة</div>
+      <div class="rec-spec" id="spec-line">—</div>
+      <p class="studio-hint rec-note" id="device-line"></p>
+      <div class="studio-field" style="margin-top:12px;">
+        <label for="mic-select">الميكروفون</label>
+        <select id="mic-select"><option value="">الافتراضي</option></select>
+      </div>
+      <div class="rec-meter"><div class="rec-meter-fill" id="meter-fill"></div></div>
+      <button type="button" class="studio-btn studio-btn-secondary" id="mic-test-btn">🎚️ اختبار الميكروفون والضوضاء</button>
+      <div id="mic-test-result" class="rec-note"></div>
+      <p class="studio-error" id="setup-error"></p>
+    </div>
+
     <div class="rec-progress-track"><div class="rec-progress-fill" id="progress-fill" style="width:0%;"></div></div>
     <p class="studio-hint text-center" id="progress-text">0 / 0</p>
 
@@ -77,6 +103,7 @@
         </div>
       </div>
 
+      <div id="quality-box" class="rec-note"></div>
       <p class="studio-error" id="rec-error"></p>
 
       <div class="rec-nav-row">
@@ -101,7 +128,10 @@
 
 </main>
 
+<script src="../js/wav-engine.js"></script>
+<script src="../js/wav-recorder.js"></script>
 <script src="../js/waveform.js"></script>
+<script src="../js/studio-queue.js"></script>
 <script src="../js/studio-talent.js"></script>
 <script>
   const API_BASE_URL = "https://nativoya.vercel.app";
@@ -109,234 +139,518 @@
   if (!token) location.href = "tasks.html";
   NMTalent.requireLogin(location.pathname + location.search);
 
+  const $ = (id) => document.getElementById(id);
+
   let session = null;
-  let samples = [];       // all samples (used for the zip/progress math)
-  let activeSamples = []; // the ones actually shown for recording right now
+  let settings = null;     // the task's recording settings (the single source of truth)
+  let samples = [];        // all samples (used for the zip/progress math)
+  let activeSamples = [];  // the ones actually shown for recording right now
   let currentIndex = 0;
   let reworkMode = false;
 
-  let mediaRecorder = null;
-  let recordedChunks = [];
-  let recordedBlob = null;
-  let stream = null;
-  let audioCtx = null;
+  let rec = null;          // StudioRecorder
+  let lastResult = null;   // result of the take waiting for "use / retake"
+  let isRecording = false;
+  let currentPeak = 0;
   let waveform = null;
-  let timerInterval = null;
-  let elapsedSeconds = 0;
+  let timerHandle = null;
+  let startedAt = 0;
+  let idleHandle = null;
+  let mp3Ready = true;
 
+  // ------------------------------------------------------------------ messages
+  const QUALITY_TEXT = {
+    silent: "مفيش صوت اتسجل. اتأكد إن الميكروفون شغال وقريب منك، وسجّل تاني.",
+    too_short: "التسجيل قصير جدًا. اقرأ الجملة كاملة وسجّل تاني.",
+    clipping: "الصوت عالي لدرجة التشويه. ابعد عن الميكروفون أو وطّي صوتك وسجّل تاني.",
+    clipping_light: "فيه شوية تشويه في أعلى الصوت. يفضّل تبعد شوية عن الميكروفون.",
+    too_quiet: "الصوت واطي. قرّب من الميكروفون شوية.",
+    noisy: "فيه ضوضاء في المكان. لو تقدر جرّب مكان أهدى.",
+    long_lead: "فيه صمت طويل في أول التسجيل.",
+    long_tail: "فيه صمت طويل في آخر التسجيل.",
+  };
+  const NOISE_TEXT = {
+    excellent: ["ok", "المكان هادي جدًا — ممتاز."],
+    good: ["ok", "المكان هادي — كويس."],
+    noisy: ["warn", "فيه ضوضاء ملحوظة. يفضّل مكان أهدى."],
+    very_noisy: ["bad", "الضوضاء عالية جدًا. غيّر المكان قبل ما تسجّل."],
+  };
+
+  function fmtSpec(s) {
+    const ch = s.channels === "stereo" ? "Stereo" : "Mono";
+    return s.format === "mp3"
+      ? `${s.sampleRate.toLocaleString()} Hz · MP3 · ${ch}`
+      : `${s.sampleRate.toLocaleString()} Hz · ${s.bitDepth}-bit · WAV · ${ch}`;
+  }
+
+  function setNote(el, level, text) {
+    el.className = `rec-note ${level}`;
+    el.textContent = text;
+  }
+
+  // ---------------------------------------------------------------- session
   async function loadSession() {
     try {
       const data = await NMTalent.getSession(token);
       session = data.session;
       samples = data.samples;
-      document.getElementById("fake-name-pill").textContent = `🎭 ${session.fake_name}`;
-      document.getElementById("loading-box").classList.add("hidden");
+      const rs = session.recording_settings || {};
+      settings = {
+        sampleRate: Number(rs.sampleRate) || 16000,
+        bitDepth: Number(rs.bitDepth) || 16,
+        format: String(rs.format || "wav").toLowerCase(),
+        channels: rs.channels === "stereo" ? "stereo" : "mono",
+      };
+      $("fake-name-pill").textContent = `🎭 ${session.fake_name}`;
+      $("loading-box").classList.add("hidden");
 
       if (session.status === "rejected") {
         reworkMode = true;
         activeSamples = samples.filter(s => s.qa_status === "rejected");
-        document.getElementById("rework-banner").classList.remove("hidden");
-        document.getElementById("rework-reason-text").textContent = session.rejection_reason || "في تسجيلات محتاجة إعادة.";
+        $("rework-banner").classList.remove("hidden");
+        $("rework-reason-text").textContent = session.rejection_reason || "في تسجيلات محتاجة إعادة.";
       } else if (session.status !== "in_progress") {
-        document.getElementById("done-box").classList.remove("hidden");
+        $("done-box").classList.remove("hidden");
         return;
       } else {
         activeSamples = samples;
       }
 
-      if (!activeSamples.length) {
-        // shouldn't normally happen, but guards against an empty rework list
-        document.getElementById("done-box").classList.remove("hidden");
-        return;
-      }
+      if (!activeSamples.length) { $("done-box").classList.remove("hidden"); return; }
 
-      document.getElementById("recorder-box").classList.remove("hidden");
-      currentIndex = activeSamples.findIndex(s => !s.audio_file_url || s.qa_status === "rejected");
+      $("recorder-box").classList.remove("hidden");
+      $("spec-line").textContent = fmtSpec(settings);
+      if (!StudioRecorder.isSupported()) {
+        showSetupError("المتصفح ده مش بيدعم التسجيل. استخدم Chrome أو Safari أو Firefox بآخر إصدار.");
+        $("main-record-btn").disabled = true;
+        $("mic-test-btn").disabled = true;
+      }
+      if (settings.format === "mp3") await prepareMp3();
+
+      // anything left on this device from a previous visit that never reached the server
+      const leftovers = await StudioQueue.pendingFor(token);
+      leftovers.forEach((it) => { const s = samples.find(x => x.id === it.sampleId); if (s) s.queued = true; });
+
+      currentIndex = activeSamples.findIndex(s => !isSampleDone(s) && !s.queued);
       if (currentIndex === -1) currentIndex = 0;
       renderSample();
       updateProgress();
+      if (leftovers.length) flushPending();
     } catch (err) {
-      document.getElementById("loading-box").innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
+      $("loading-box").innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
     }
   }
 
-  function isSampleDone(s) { return !!s.audio_file_url && s.qa_status !== "rejected"; }
+  function isSampleDone(s) { return !!s.audio_file_url && s.qa_status !== "rejected" && !s.queued; }
 
   function updateProgress() {
     const done = activeSamples.filter(isSampleDone).length;
-    document.getElementById("progress-fill").style.width = `${(done / activeSamples.length) * 100}%`;
-    document.getElementById("progress-text").textContent = `${done} / ${activeSamples.length}`;
-    document.getElementById("sample-dots").innerHTML = activeSamples.map((s, i) =>
-      `<span class="rec-sample-dot ${isSampleDone(s) ? "done" : ""} ${i === currentIndex ? "current" : ""}"></span>`
+    const queued = activeSamples.filter(s => s.queued).length;
+    $("progress-fill").style.width = `${(done / activeSamples.length) * 100}%`;
+    $("progress-text").textContent = `${done} / ${activeSamples.length}`;
+    $("sample-dots").innerHTML = activeSamples.map((s, i) =>
+      `<span class="rec-sample-dot ${isSampleDone(s) ? "done" : (s.queued ? "queued" : "")} ${i === currentIndex ? "current" : ""}"></span>`
     ).join("");
-    const submitBtn = document.getElementById("submit-btn");
-    submitBtn.disabled = done < activeSamples.length;
-    document.getElementById("submit-hint").textContent = done < activeSamples.length
-      ? `خلّص باقي الجمل (${activeSamples.length - done} لسه) عشان تقدر ت${reworkMode ? "بعت تاني" : "سلّم"}.`
-      : (reworkMode ? "كل الجمل المطلوبة اتسجّلت! جاهز تبعتها تاني." : "كل الجمل اتسجّلت! جاهز تسلّم.");
+    const submitBtn = $("submit-btn");
+    const allDone = done === activeSamples.length;
+    submitBtn.disabled = !allDone;
+    $("submit-hint").textContent = queued
+      ? `فيه ${queued} تسجيل لسه بيترفع للسيرفر — استنى لحظة.`
+      : (!allDone
+        ? `خلّص باقي الجمل (${activeSamples.length - done} لسه) عشان تقدر ت${reworkMode ? "بعت تاني" : "سلّم"}.`
+        : (reworkMode ? "كل الجمل المطلوبة اتسجّلت! جاهز تبعتها تاني." : "كل الجمل اتسجّلت! جاهز تسلّم."));
+    const banner = $("pending-banner");
+    if (queued) {
+      banner.textContent = `📡 ${queued} تسجيل محفوظ على جهازك ومستني اتصال النت — هيترفع لوحده أول ما النت يرجع. متقفلش الصفحة لحد ما يخلص.`;
+      banner.classList.remove("hidden");
+    } else {
+      banner.classList.add("hidden");
+    }
   }
 
   function renderSample() {
     const s = activeSamples[currentIndex];
-    document.getElementById("sample-number").textContent = `جملة ${currentIndex + 1} من ${activeSamples.length}`;
-    document.getElementById("sentence-text").textContent = s.sentence_name;
+    $("sample-number").textContent = `جملة ${currentIndex + 1} من ${activeSamples.length}`;
+    $("sentence-text").textContent = s.sentence_name;
 
-    const refWrap = document.getElementById("reference-audio-wrap");
+    const refWrap = $("reference-audio-wrap");
     if (s.audio_url) {
       refWrap.classList.remove("hidden");
-      document.getElementById("reference-audio").src = `${API_BASE_URL}/api/studio/talent/samples/${s.id}/reference-audio`;
+      $("reference-audio").src = `${API_BASE_URL}/api/studio/talent/samples/${s.id}/reference-audio`;
     } else {
       refWrap.classList.add("hidden");
     }
 
     resetRecorderUi();
-    document.getElementById("prev-btn").disabled = currentIndex === 0;
-    document.getElementById("next-btn").disabled = currentIndex === activeSamples.length - 1;
+    $("prev-btn").disabled = currentIndex === 0 || isRecording;
+    $("next-btn").disabled = currentIndex === activeSamples.length - 1 || isRecording;
     updateProgress();
   }
 
   function resetRecorderUi() {
-    recordedBlob = null;
-    document.getElementById("playback-controls").classList.add("hidden");
-    document.getElementById("main-record-btn").classList.remove("hidden");
-    document.getElementById("rec-hint").classList.remove("hidden");
-    document.getElementById("rec-hint").textContent = "دوس عشان تبدأ التسجيل";
-    document.getElementById("rec-error").style.display = "none";
+    lastResult = null;
+    $("playback-controls").classList.add("hidden");
+    $("main-record-btn").classList.remove("hidden");
+    $("rec-hint").classList.remove("hidden");
+    $("rec-hint").textContent = "دوس عشان تبدأ التسجيل";
+    $("rec-error").style.display = "none";
+    $("quality-box").textContent = "";
+    $("quality-box").className = "rec-note";
   }
 
-  document.getElementById("prev-btn").addEventListener("click", () => { currentIndex--; renderSample(); });
-  document.getElementById("next-btn").addEventListener("click", () => { currentIndex++; renderSample(); });
+  $("prev-btn").addEventListener("click", () => { currentIndex--; renderSample(); });
+  $("next-btn").addEventListener("click", () => { currentIndex++; renderSample(); });
 
-  const mainBtn = document.getElementById("main-record-btn");
+  // ------------------------------------------------------------ recorder setup
+  function showSetupError(msg) {
+    const el = $("setup-error");
+    el.textContent = msg;
+    el.style.display = msg ? "block" : "none";
+  }
+
+  function getRecorder() {
+    if (!rec) {
+      rec = new StudioRecorder(settings);
+      rec.onLevel = (_rms, peak) => {
+        currentPeak = peak;
+        const fill = $("meter-fill");
+        fill.style.width = `${Math.min(100, Math.sqrt(peak) * 100)}%`;
+        fill.classList.toggle("hot", peak > 0.9);
+      };
+      rec.onDeviceLost = () => {
+        if (isRecording) { stopRecording(); }
+        showSetupError("الميكروفون اتفصل أو الإذن اتسحب. وصّله تاني وجرّب.");
+        rec.close();
+      };
+    }
+    return rec;
+  }
+
+  async function ensureOpen() {
+    const r = getRecorder();
+    if (r.isOpen()) return r;
+    showSetupError("");
+    const saved = localStorage.getItem("studio_mic_id") || undefined;
+    let info;
+    try {
+      info = await r.open(saved);
+    } catch (err) {
+      if (saved && (err.name === "OverconstrainedError" || err.name === "NotFoundError")) {
+        localStorage.removeItem("studio_mic_id");
+        info = await r.open(undefined); // saved mic is gone — fall back to default
+      } else {
+        throw err;
+      }
+    }
+    describeDevice(info);
+    await populateMics();
+    return r;
+  }
+
+  function describeDevice(info) {
+    const line = $("device-line");
+    const label = info.deviceLabel ? `${info.deviceLabel} — ` : "";
+    if (info.deviceRate < settings.sampleRate) {
+      setNote(line, "warn", `${label}جهازك بيسجل بـ ${info.deviceRate.toLocaleString()} Hz وده أقل من المطلوب (${settings.sampleRate.toLocaleString()} Hz). التسجيل هيتحوّل للصيغة المطلوبة بس مش هيحتوي ترددات أعلى من اللي جهازك بيلتقطها.`);
+    } else if (info.deviceRate === settings.sampleRate) {
+      setNote(line, "ok", `${label}جهازك بيسجل بـ ${info.deviceRate.toLocaleString()} Hz — مطابق للمطلوب تمامًا.`);
+    } else {
+      setNote(line, "ok", `${label}جهازك بيسجل بـ ${info.deviceRate.toLocaleString()} Hz وهيتحوّل بدقة عالية لـ ${settings.sampleRate.toLocaleString()} Hz.`);
+    }
+  }
+
+  async function populateMics() {
+    try {
+      const mics = await StudioRecorder.listMics();
+      const sel = $("mic-select");
+      const saved = localStorage.getItem("studio_mic_id") || "";
+      sel.innerHTML = `<option value="">الافتراضي</option>` + mics.map(m =>
+        `<option value="${m.id}" ${m.id === saved ? "selected" : ""}>${m.label}</option>`).join("");
+    } catch (_) { /* labels optional */ }
+  }
+
+  $("mic-select").addEventListener("change", async (e) => {
+    if (isRecording) return;
+    const id = e.target.value;
+    if (id) localStorage.setItem("studio_mic_id", id); else localStorage.removeItem("studio_mic_id");
+    try {
+      showSetupError("");
+      const info = await getRecorder().open(id || undefined);
+      describeDevice(info);
+    } catch (err) { showSetupError(micErrorText(err)); }
+  });
+
+  function micErrorText(err) {
+    if (err && (err.name === "NotAllowedError" || err.name === "SecurityError")) {
+      return "محتاجين إذن الميكروفون عشان تقدر تسجّل. وافق على الإذن من المتصفح وجرّب تاني.";
+    }
+    if (err && err.name === "NotFoundError") return "مفيش ميكروفون متوصّل بالجهاز.";
+    if (err && err.name === "NotReadableError") return "الميكروفون مشغول في برنامج تاني. اقفل البرامج التانية وجرّب.";
+    return "تعذر تشغيل الميكروفون. جرّب تحدّث الصفحة.";
+  }
+
+  // idle: release the mic (and its indicator light) when nothing happens for a while
+  function touch() {
+    clearTimeout(idleHandle);
+    idleHandle = setTimeout(() => { if (rec && !isRecording) rec.close(); }, 90000);
+  }
+  window.addEventListener("pagehide", () => { if (rec) rec.close(); });
+
+  // ------------------------------------------------------------- mic / noise test
+  $("mic-test-btn").addEventListener("click", async () => {
+    if (isRecording) return;
+    const btn = $("mic-test-btn");
+    const out = $("mic-test-result");
+    btn.disabled = true;
+    try {
+      const r = await ensureOpen();
+      setNote(out, "", "🤫 اسكت تمامًا لمدة ثانيتين...");
+      const quiet = await r.measure(2000);
+      setNote(out, "", "🗣️ دلوقتي قول أي جملة بصوتك العادي...");
+      const talk = await r.measure(3000);
+
+      if (quiet.peakDb < -75 && talk.peakDb < -60) {
+        setNote(out, "bad", "الميكروفون مش بيبعت أي صوت. اتأكد إنه مش مكتوم وإنك اخترت الميكروفون الصح.");
+        return;
+      }
+      const noiseClass = WavEngine.classifyNoise(quiet.rmsDb);
+      const [noiseLevel, noiseMsg] = NOISE_TEXT[noiseClass];
+      const lines = [noiseMsg];
+      let level = noiseLevel;
+      if (talk.peakDb < -30) { lines.push("صوتك واطي — قرّب من الميكروفون."); if (level === "ok") level = "warn"; }
+      else if (talk.peakDb > -3) { lines.push("صوتك عالي ومعرّض للتشويه — ابعد شوية."); if (level === "ok") level = "warn"; }
+      else lines.push("مستوى صوتك مناسب.");
+      const snr = talk.rmsDb - quiet.rmsDb;
+      lines.push(`الفرق بين صوتك والضوضاء: ${Math.round(snr)} dB ${snr >= 25 ? "(ممتاز)" : snr >= 15 ? "(مقبول)" : "(ضعيف)"}.`);
+      if (snr < 15 && level !== "bad") level = "warn";
+      setNote(out, level, lines.join(" "));
+    } catch (err) {
+      showSetupError(micErrorText(err));
+      out.textContent = "";
+    } finally {
+      btn.disabled = false;
+      touch();
+    }
+  });
+
+  // ------------------------------------------------------------------ MP3 (rare)
+  async function prepareMp3() {
+    mp3Ready = false;
+    try {
+      if (typeof lamejs === "undefined") {
+        await new Promise((resolve, reject) => {
+          const sc = document.createElement("script");
+          sc.src = "https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js";
+          sc.onload = resolve; sc.onerror = reject;
+          document.head.appendChild(sc);
+        });
+      }
+      // smoke-test the encoder now, so the talent finds out BEFORE recording, not after
+      const probe = new lamejs.Mp3Encoder(1, 16000, 128);
+      probe.encodeBuffer(new Int16Array(1152));
+      mp3Ready = true;
+    } catch (err) {
+      console.error("MP3 encoder unavailable:", err);
+      showSetupError("المهمة دي محتاجة تسجيل MP3 ومشغّل التحويل مش متاح دلوقتي. جرّب تحدّث الصفحة، ولو المشكلة استمرت كلّم الليدر بتاعك.");
+      $("main-record-btn").disabled = true;
+    }
+  }
+
+  // ------------------------------------------------------------------ recording
+  const mainBtn = $("main-record-btn");
   mainBtn.addEventListener("click", () => {
     if (mainBtn.classList.contains("recording")) stopRecording();
     else startRecording();
   });
 
-  async function startRecording() {
-    const errorBox = document.getElementById("rec-error");
-    errorBox.style.display = "none";
-    try {
-      const settings = (session && session.recording_settings) || {};
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: settings.channels === "stereo" ? 2 : 1,
-          sampleRate: settings.sampleRate || 16000,
-        },
-      });
-    } catch (err) {
-      errorBox.textContent = "محتاجين إذن الميكروفون عشان تقدر تسجّل. وافق على الإذن من المتصفح وجرّب تاني.";
-      errorBox.style.display = "block";
-      return;
-    }
-
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaStreamSource(stream);
-    const analyser = audioCtx.createAnalyser();
-    source.connect(analyser);
-    if (!waveform) {
-      waveform = new WaveformVisualizer(document.getElementById("waveform-canvas"), {
-        barColor: "#2DD4BF", barColorActive: "#F5A623", backgroundColor: "#14171C",
-      });
-    }
-    waveform.setAnalyser(analyser);
-    waveform.startVisualizing();
-
-    const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find(t => MediaRecorder.isTypeSupported(t)) || "";
-    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-    recordedChunks = [];
-    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = onRecordingStopped;
-    mediaRecorder.start();
-
-    elapsedSeconds = 0;
-    document.getElementById("rec-timer").classList.remove("hidden");
-    updateTimerText();
-    timerInterval = setInterval(() => { elapsedSeconds++; updateTimerText(); }, 1000);
-
-    mainBtn.classList.remove("idle"); mainBtn.classList.add("recording");
-    setMicIcon(true);
-    document.getElementById("rec-hint").textContent = "بتسجّل دلوقتي — دوس تاني عشان توقف";
-  }
-
   const MIC_ICON_PATH = "M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z";
   const STOP_ICON_PATH = "M6 6h12v12H6z";
-  function setMicIcon(isRecording) {
-    const svg = document.getElementById("main-record-icon");
-    svg.innerHTML = `<path d="${isRecording ? STOP_ICON_PATH : MIC_ICON_PATH}"/>`;
+  function setMicIcon(recording) {
+    $("main-record-icon").innerHTML = `<path d="${recording ? STOP_ICON_PATH : MIC_ICON_PATH}"/>`;
   }
 
   function updateTimerText() {
-    const m = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
-    const s = String(elapsedSeconds % 60).padStart(2, "0");
-    document.getElementById("rec-timer-text").textContent = `${m}:${s}`;
+    const secs = Math.floor((performance.now() - startedAt) / 1000);
+    $("rec-timer-text").textContent =
+      `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
   }
 
-  function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  async function startRecording() {
+    $("rec-error").style.display = "none";
+    clearTimeout(idleHandle);
+    let r;
+    try {
+      r = await ensureOpen();
+    } catch (err) {
+      $("rec-error").textContent = micErrorText(err);
+      $("rec-error").style.display = "block";
+      return;
+    }
+    if (!waveform) {
+      waveform = new WaveformVisualizer($("waveform-canvas"), {
+        barColor: "#2DD4BF", barColorActive: "#2DD4BF", backgroundColor: "#14171C", barWidth: 3, barGap: 2,
+      });
+    }
+    r.onAutoStop = () => {
+      stopRecording();
+      $("rec-error").textContent = `وصلت للحد الأقصى للتسجيل (${r.maxSeconds} ثانية) فاتوقف تلقائيًا.`;
+      $("rec-error").style.display = "block";
+    };
+    isRecording = true;
+    r.start();
+    waveform.startRolling(() => currentPeak);
+
+    startedAt = performance.now();
+    $("rec-timer").classList.remove("hidden");
+    updateTimerText();
+    timerHandle = setInterval(updateTimerText, 250);
+
+    mainBtn.classList.remove("idle"); mainBtn.classList.add("recording");
+    setMicIcon(true);
+    $("rec-hint").textContent = "بتسجّل دلوقتي — دوس تاني عشان توقف";
+    $("prev-btn").disabled = true; $("next-btn").disabled = true;
   }
 
-  function onRecordingStopped() {
-    clearInterval(timerInterval);
-    document.getElementById("rec-timer").classList.add("hidden");
+  async function stopRecording() {
+    if (!isRecording || !rec) return;
+    isRecording = false;
+    clearInterval(timerHandle);
+    $("rec-timer").classList.add("hidden");
     if (waveform) waveform.stopVisualizing();
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    if (audioCtx) audioCtx.close();
-
     mainBtn.classList.remove("recording"); mainBtn.classList.add("idle");
     setMicIcon(false);
     mainBtn.classList.add("hidden");
-    document.getElementById("rec-hint").classList.add("hidden");
+    $("rec-hint").textContent = "جاري تجهيز التسجيل...";
 
-    recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
-    const url = URL.createObjectURL(recordedBlob);
-    document.getElementById("playback-audio").src = url;
-    document.getElementById("playback-controls").classList.remove("hidden");
+    try {
+      lastResult = await rec.stop();
+    } catch (err) {
+      $("rec-hint").classList.add("hidden");
+      mainBtn.classList.remove("hidden");
+      $("rec-error").textContent = err && err.message === "MP3_ENCODER_MISSING"
+        ? "مشغّل MP3 مش متاح. حدّث الصفحة وجرّب تاني."
+        : "تعذر تجهيز التسجيل. جرّب تسجّل تاني.";
+      $("rec-error").style.display = "block";
+      renderSample();
+      return;
+    }
+    $("rec-hint").classList.add("hidden");
+
+    $("playback-audio").src = URL.createObjectURL(lastResult.blob);
+    $("playback-controls").classList.remove("hidden");
+    showQuality(lastResult);
+    $("prev-btn").disabled = currentIndex === 0;
+    $("next-btn").disabled = currentIndex === activeSamples.length - 1;
+    touch();
   }
 
-  document.getElementById("play-btn").addEventListener("click", () => {
-    document.getElementById("playback-audio").play();
-  });
-
-  document.getElementById("retake-btn").addEventListener("click", () => {
-    recordedBlob = null;
-    document.getElementById("playback-controls").classList.add("hidden");
-    document.getElementById("main-record-btn").classList.remove("hidden");
-    document.getElementById("rec-hint").classList.remove("hidden");
-    document.getElementById("rec-hint").textContent = "دوس عشان تبدأ التسجيل";
-  });
-
-  document.getElementById("confirm-btn").addEventListener("click", async () => {
-    if (!recordedBlob) return;
-    const btn = document.getElementById("confirm-btn");
-    const errorBox = document.getElementById("rec-error");
-    errorBox.style.display = "none";
-    btn.disabled = true; btn.textContent = "جاري الحفظ...";
-    try {
-      const file = new File([recordedBlob], `sample-${currentIndex + 1}.webm`, { type: recordedBlob.type });
-      await NMTalent.uploadSampleAudio(token, activeSamples[currentIndex].id, file, elapsedSeconds);
-      activeSamples[currentIndex].audio_file_url = "uploaded";
-      activeSamples[currentIndex].qa_status = "pending";
-      updateProgress();
-      if (currentIndex < activeSamples.length - 1) { currentIndex++; renderSample(); }
-      else resetRecorderUi();
-    } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.style.display = "block";
-    } finally {
-      btn.disabled = false; btn.textContent = "✅ استخدم التسجيل ده";
+  function showQuality(result) {
+    const box = $("quality-box");
+    const errors = result.verdict.filter(v => v.level === "error");
+    const warns = result.verdict.filter(v => v.level === "warn");
+    const confirmBtn = $("confirm-btn");
+    confirmBtn.disabled = errors.length > 0;
+    if (errors.length) {
+      setNote(box, "bad", "❌ " + errors.map(v => QUALITY_TEXT[v.code]).join(" "));
+    } else if (warns.length) {
+      setNote(box, "warn", "⚠️ " + warns.map(v => QUALITY_TEXT[v.code]).join(" ") + " تقدر تكمّل، أو تعيد التسجيل لو حابب.");
+    } else {
+      setNote(box, "ok", `✅ جودة التسجيل كويسة (${result.durationSec.toFixed(1)} ثانية).`);
     }
+  }
+
+  $("play-btn").addEventListener("click", () => { $("playback-audio").play(); });
+
+  $("retake-btn").addEventListener("click", () => {
+    resetRecorderUi();
+    $("confirm-btn").disabled = false;
   });
 
-  document.getElementById("submit-btn").addEventListener("click", async () => {
-    const errorBox = document.getElementById("submit-error");
+  // -------------------------------------------------------------------- upload
+  const uploadFn = (it) => NMTalent.uploadSampleAudio(
+    token, it.sampleId, new File([it.blob], it.filename, { type: it.blob.type }), it.duration
+  );
+
+  $("confirm-btn").addEventListener("click", async () => {
+    if (!lastResult) return;
+    const btn = $("confirm-btn");
+    const errorBox = $("rec-error");
     errorBox.style.display = "none";
-    const btn = document.getElementById("submit-btn");
+    const idx = currentIndex;
+    const sample = activeSamples[idx];
+    const result = lastResult;
+    btn.disabled = true; btn.textContent = "جاري الحفظ...";
+
+    const outcome = await StudioQueue.submit({
+      key: `${token}:${sample.id}`,
+      token,
+      sampleId: sample.id,
+      blob: result.blob,
+      filename: `sample-${idx + 1}.${result.ext}`,
+      duration: result.durationSec,
+    }, uploadFn);
+
+    btn.disabled = false; btn.textContent = "✅ استخدم التسجيل ده";
+    if (outcome.ok) {
+      sample.audio_file_url = "uploaded"; sample.qa_status = "pending"; sample.queued = false;
+    } else if (outcome.permanent) {
+      // the server inspected the file and refused it — the talent must retake
+      errorBox.textContent = outcome.error.message;
+      errorBox.style.display = "block";
+      return;
+    } else {
+      // network never recovered: the take is safe on this device and will be retried
+      sample.audio_file_url = sample.audio_file_url || "queued-local"; sample.queued = true;
+      scheduleFlush();
+    }
+    updateProgress();
+    if (idx < activeSamples.length - 1) { currentIndex = idx + 1; renderSample(); }
+    else resetRecorderUi();
+    touch();
+  });
+
+  // retry whatever is still stored locally
+  let flushing = false, flushTimer = null;
+  async function flushPending() {
+    if (flushing) return;
+    flushing = true;
+    try {
+      await StudioQueue.flush(token, uploadFn, (item, res) => {
+        const s = samples.find(x => x.id === item.sampleId);
+        if (!s) return;
+        if (res.ok) { s.queued = false; s.audio_file_url = "uploaded"; s.qa_status = "pending"; }
+        else if (res.permanent) {
+          s.queued = false; s.audio_file_url = null;
+          $("rec-error").textContent = `تسجيل جملة "${s.sentence_name}" اترفض من السيرفر: ${res.error.message} سجّلها تاني.`;
+          $("rec-error").style.display = "block";
+        }
+      });
+    } finally {
+      flushing = false;
+      updateProgress();
+      if (activeSamples.some(s => s.queued)) scheduleFlush();
+    }
+  }
+  function scheduleFlush() {
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flushPending, 15000);
+  }
+  window.addEventListener("online", flushPending);
+  window.addEventListener("beforeunload", (e) => {
+    if (activeSamples.some(s => s.queued)) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  // -------------------------------------------------------------------- submit
+  $("submit-btn").addEventListener("click", async () => {
+    const errorBox = $("submit-error");
+    errorBox.style.display = "none";
+    const btn = $("submit-btn");
     btn.disabled = true; btn.textContent = "جاري التجهيز والتسليم...";
     try {
       await NMTalent.submitSession(token);
-      document.getElementById("recorder-box").classList.add("hidden");
-      document.getElementById("done-box").classList.remove("hidden");
+      if (rec) rec.close();
+      $("recorder-box").classList.add("hidden");
+      $("done-box").classList.remove("hidden");
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.style.display = "block";

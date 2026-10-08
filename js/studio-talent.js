@@ -50,10 +50,21 @@
     const headers = {};
     const token = authToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE_URL}${path}`, { method: "POST", headers, body: form });
+    let res;
+    try {
+      res = await fetch(`${API_BASE_URL}${path}`, { method: "POST", headers, body: form });
+    } catch (_) {
+      // no status on purpose: the upload queue treats this as a retryable network failure
+      throw new Error("تعذر الاتصال بالسيرفر. اتأكد من اتصالك بالنت.");
+    }
     let data = null;
     try { data = await res.json(); } catch (_) {}
-    if (!res.ok) throw new Error((data && data.error) || "تعذر رفع الملف");
+    if (!res.ok) {
+      const err = new Error((data && data.error) || "تعذر رفع الملف");
+      err.status = res.status;          // 4xx = permanent (rejected), 5xx/none = retryable
+      err.code = data && data.code;     // machine-readable reason, e.g. "wrong_sample_rate"
+      throw err;
+    }
     return data;
   }
 

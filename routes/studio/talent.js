@@ -2,6 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const multer = require("multer");
 const archiver = require("archiver");
+const { validateClip } = require("../../config/audioValidate");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
@@ -201,6 +202,12 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
     const taskResult = await pool.query(`SELECT * FROM recording_tasks WHERE id = $1`, [session.task_id]);
     const task = taskResult.rows[0];
 
+    // The browser is not trusted: parse the real file header and refuse any
+    // clip that doesn't match the task's sample rate / bit depth / channels /
+    // format (or is silent, too short, or not a real WAV/MP3 at all).
+    const check = validateClip(req.file.buffer, task.recording_settings || {});
+    if (!check.ok) return res.status(422).json({ error: check.error, code: check.code });
+
     const authClient = await getAuthorizedClient();
     const drive = google.drive({ version: "v3", auth: authClient });
     const studioRoot = await getOrCreateStudioRootFolder();
@@ -210,7 +217,7 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
 
     const uploaded = await uploadSubmissionFile(talentFolderId, req.file.originalname, req.file.mimetype, req.file.buffer);
     const audioUrl = uploaded.id ? `drive:${uploaded.id}` : null; // internal reference, resolved again at zip time
-    const duration = req.body.duration ? Number(req.body.duration) : null;
+    const duration = Math.round(check.info.duration * 100) / 100; // measured from the file itself, not trusted from the client
 
     if (existingCheck.rows.length) {
       await pool.query(
