@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>التسليم للشركة — Nativoya Studio</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
+<link rel="stylesheet" href="../css/studio.css">
+<style>
+  .dl-task { margin-bottom: 22px; }
+  .dl-task-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .dl-gender-title { margin: 20px 0 10px; font-size: 1rem; }
+  .dl-group { border: 1px solid var(--studio-border); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; background: var(--studio-surface-2); }
+  .dl-group-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .dl-when { font-weight: 700; }
+  .dl-meta { color: var(--studio-text-muted); font-size: 0.84rem; margin-top: 2px; }
+  .dl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dl-actions .studio-btn { padding: 9px 16px; font-size: 0.88rem; }
+  .dl-email { font-family: var(--studio-mono); font-size: 0.82rem; direction: ltr; unicode-bidi: plaintext; }
+  .dl-toast { position: fixed; bottom: 20px; inset-inline: 20px; max-width: 520px; margin-inline: auto; z-index: 50;
+    background: var(--studio-surface); border: 1px solid var(--studio-accent); border-radius: 12px; padding: 14px 16px; font-size: 0.9rem; }
+  .dl-toast.bad { border-color: var(--studio-danger); color: var(--studio-danger); }
+  .dl-toast a { color: var(--studio-accent); font-weight: 700; }
+</style>
+</head>
+<body class="studio">
+
+<header class="studio-header">
+  <div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div>
+  <nav>
+    <a href="dashboard-head-leader.html" class="studio-btn studio-btn-secondary" style="padding:8px 16px;">← اللوحة</a>
+    <a href="#" id="logout-link" class="studio-btn studio-btn-secondary" style="padding:8px 16px;">خروج</a>
+  </nav>
+</header>
+
+<main class="studio-shell wide">
+  <div class="studio-eyebrow">لوحة الهيد ليدر</div>
+  <h1 class="studio-title">التسليم للشركة</h1>
+  <p class="studio-subtitle">التسليمات اللي QA وافق عليها، متقسّمة حسب المهمة والنوع، وتحتها كل مراجع ويوم. دوس "تجميع" عشان كل ملفات الـ ZIP تتجمع في ملف واحد كبير وتنتقل لخانة "تم التسليم".</p>
+
+  <div class="studio-tabs" style="max-width:420px;">
+    <div class="studio-tab active" id="tab-pending">في انتظار التسليم <span id="count-pending"></span></div>
+    <div class="studio-tab" id="tab-delivered">تم التسليم <span id="count-delivered"></span></div>
+  </div>
+
+  <div id="pending-wrap"><div class="studio-card"><div class="studio-empty"><p>جاري التحميل...</p></div></div></div>
+  <div id="delivered-wrap" class="hidden"></div>
+</main>
+
+<div id="toast" class="dl-toast hidden"></div>
+
+<script src="../js/studio-shared.js"></script>
+<script>
+  const user = NMStudio.requireStudioRole("head_leader");
+  document.getElementById("logout-link").addEventListener("click", (e) => {
+    e.preventDefault(); NMStudio.logout(); location.href = "login.html";
+  });
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
+  const TZ = "Africa/Cairo";
+  const GENDER = { male: { label: "👨 ذكور", file: "Male" }, female: { label: "👩 إناث", file: "Female" } };
+  const BRACKET = { child: "طفل", adult: "بالغ", elderly: "مسن" };
+
+  const fmtDay = (day) => new Date(day + "T12:00:00Z").toLocaleDateString("ar-EG", { timeZone: "UTC", weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString("ar-EG", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+  const fmtDateTime = (iso) => new Date(iso).toLocaleString("ar-EG", { timeZone: TZ, dateStyle: "medium", timeStyle: "short" });
+  const fmtSize = (b) => !b ? "" : b >= 1073741824 ? `${(b / 1073741824).toFixed(2)} GB` : `${(b / 1048576).toFixed(1)} MB`;
+
+  function toast(html, bad) {
+    const t = $("toast");
+    t.className = "dl-toast" + (bad ? " bad" : "");
+    t.innerHTML = html;
+    clearTimeout(toast._h);
+    toast._h = setTimeout(() => t.classList.add("hidden"), bad ? 9000 : 12000);
+  }
+
+  // ------------------------------------------------------------- tabs
+  function showTab(name) {
+    $("tab-pending").classList.toggle("active", name === "pending");
+    $("tab-delivered").classList.toggle("active", name === "delivered");
+    $("pending-wrap").classList.toggle("hidden", name !== "pending");
+    $("delivered-wrap").classList.toggle("hidden", name !== "delivered");
+  }
+  $("tab-pending").addEventListener("click", () => showTab("pending"));
+  $("tab-delivered").addEventListener("click", () => showTab("delivered"));
+
+  // ------------------------------------------------------- waiting list
+  let tree = [];
+
+  function groupHtml(g, ti, gender, gi) {
+    const when = `${fmtDay(g.day)}${g.firstAt ? ` · ${fmtTime(g.firstAt)}${g.lastAt !== g.firstAt ? " ← " + fmtTime(g.lastAt) : ""}` : ""}`;
+    return `
+      <div class="dl-group" id="grp-${ti}-${gender}-${gi}">
+        <div class="dl-group-head">
+          <div>
+            <div class="dl-when">📅 ${esc(when)}</div>
+            <div class="dl-meta">مراجع الـ QA: <b>${esc(g.qaName || "غير معروف")}</b> · ${g.sessions.length} تاسك</div>
+          </div>
+          <div class="dl-actions">
+            <button class="studio-btn studio-btn-primary" data-act="collect" data-ref="${ti}|${gender}|${gi}">📦 تجميع (Collect)</button>
+            <button class="studio-btn studio-btn-secondary" data-act="sheet" data-ref="${ti}|${gender}|${gi}">📊 شيت</button>
+          </div>
+        </div>
+        <div class="studio-table-wrap">
+          <table class="studio-table">
+            <thead><tr><th>الإيميل</th><th>الاسم الحقيقي</th><th>الاسم المستعار</th><th>الفئة</th><th>السن</th><th>التسجيلات</th><th>ملف الـ ZIP</th><th>وقت المراجعة</th></tr></thead>
+            <tbody>
+              ${g.sessions.map((s) => `
+                <tr>
+                  <td class="dl-email">${esc(s.email || "—")}</td>
+                  <td>${esc(s.realName || "—")}</td>
+                  <td><span class="studio-code">${esc(s.fakeName)}</span></td>
+                  <td>${esc(BRACKET[s.ageBracket] || s.ageBracket || "")}</td>
+                  <td>${esc(s.age ?? "")}</td>
+                  <td>${esc(s.sampleCount)}</td>
+                  <td class="dl-email">${esc(s.zipFileName || "")}</td>
+                  <td>${esc(fmtTime(s.reviewedAt))}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function renderPending() {
+    const wrap = $("pending-wrap");
+    const total = tree.reduce((n, t) => n + t.total, 0);
+    $("count-pending").textContent = total ? `(${total})` : "";
+    if (!tree.length) {
+      wrap.innerHTML = `<div class="studio-card"><div class="studio-empty"><div class="icon">📭</div><p>مفيش تسليمات معتمدة مستنية. أول ما QA يوافق على تسليمات هتظهر هنا.</p></div></div>`;
+      return;
+    }
+    wrap.innerHTML = tree.map((task, ti) => `
+      <div class="studio-card dl-task">
+        <div class="dl-task-head">
+          <h3 style="margin:0;">${esc(task.title)}</h3>
+          <span class="studio-pill status-pending">${task.total} تاسك مستني التسليم</span>
+        </div>
+        ${["male", "female"].map((gender) => task.genders[gender].length ? `
+          <h4 class="dl-gender-title">${GENDER[gender].label} <span class="studio-hint">(${task.genders[gender].reduce((n, g) => n + g.sessions.length, 0)})</span></h4>
+          ${task.genders[gender].map((g, gi) => groupHtml(g, ti, gender, gi)).join("")}` : "").join("")}
+      </div>`).join("");
+  }
+
+  const groupOf = (ref) => { const [ti, gender, gi] = ref.split("|"); return { task: tree[ti], gender, group: tree[ti].genders[gender][gi] }; };
+  const baseName = (task, gender, g) => `${task.title} - ${GENDER[gender].file} - ${g.qaName || "QA"} - ${g.day}`.replace(/[\\/:*?"<>|]/g, "-");
+
+  $("pending-wrap").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn || btn.disabled) return;
+    const { task, gender, group } = groupOf(btn.dataset.ref);
+    const card = btn.closest(".dl-group");
+
+    if (btn.dataset.act === "sheet") {
+      const old = btn.textContent;
+      btn.disabled = true; btn.textContent = "جاري التجهيز...";
+      try { await NMStudio.downloadGroupSheet(group.params, `Sheet - ${baseName(task, gender, group)}.xlsx`); }
+      catch (err) { toast(esc(err.message), true); }
+      finally { btn.disabled = false; btn.textContent = old; }
+      return;
+    }
+
+    // collect
+    if (!confirm(`هتجمّع ${group.sessions.length} تاسك في ملف ZIP واحد وتنقلهم لخانة "تم التسليم". تكمل؟`)) return;
+    const buttons = card.querySelectorAll("button");
+    buttons.forEach((b) => (b.disabled = true));
+    btn.textContent = "⏳ جاري التجميع… (ممكن ياخد دقايق، متقفلش الصفحة)";
+    try {
+      const { batch } = await NMStudio.apiCollectGroup(group.params);
+      toast(`✅ اتجمّع ${batch.session_count} تاسك. <a href="${esc(batch.zip_file_url)}" target="_blank" rel="noopener">فتح الملف المجمّع</a>`);
+      await loadAll();
+    } catch (err) {
+      toast(esc(err.message), true);
+      buttons.forEach((b) => (b.disabled = false));
+      btn.textContent = "📦 تجميع (Collect)";
+      if (/اتجمّعت قبل/.test(err.message)) loadAll();
+    }
+  });
+
+  // ------------------------------------------------------ delivered archive
+  function renderDelivered(batches) {
+    const wrap = $("delivered-wrap");
+    $("count-delivered").textContent = batches.length ? `(${batches.length})` : "";
+    if (!batches.length) {
+      wrap.innerHTML = `<div class="studio-card"><div class="studio-empty"><div class="icon">🗂️</div><p>لسه مفيش تسليمات اتجمّعت.</p></div></div>`;
+      return;
+    }
+    const byTask = new Map();
+    batches.forEach((b) => { if (!byTask.has(b.task_id)) byTask.set(b.task_id, []); byTask.get(b.task_id).push(b); });
+    wrap.innerHTML = [...byTask.values()].map((list) => `
+      <div class="studio-card dl-task">
+        <h3 style="margin:0 0 10px;">${esc(list[0].task_title)}</h3>
+        <div class="studio-table-wrap">
+          <table class="studio-table">
+            <thead><tr><th>اتسلّم في</th><th>النوع</th><th>مراجع QA</th><th>يوم المراجعة</th><th>التاسكات</th><th>الحجم</th><th></th></tr></thead>
+            <tbody>
+              ${list.map((b) => `
+                <tr>
+                  <td>${b.status === "collecting" ? `<span class="studio-pill status-pending">⏳ قيد التجميع</span>` : esc(fmtDateTime(b.delivered_at))}</td>
+                  <td>${GENDER[b.gender].label}</td>
+                  <td>${esc(b.qa_name || "غير معروف")}</td>
+                  <td>${esc(fmtDay(b.group_day))}</td>
+                  <td>${esc(b.session_count)}</td>
+                  <td>${esc(fmtSize(b.zip_size_bytes))}</td>
+                  <td>${b.status === "delivered" ? `
+                    <div class="dl-actions">
+                      <a class="studio-btn studio-btn-secondary" href="${esc(b.zip_file_url)}" target="_blank" rel="noopener">📦 فتح الـ ZIP</a>
+                      <button class="studio-btn studio-btn-secondary" data-batch="${esc(b.id)}" data-name="${esc(`Sheet - ${b.task_title} - ${GENDER[b.gender].file} - ${b.qa_name || "QA"} - ${b.group_day}`.replace(/[\\/:*?"<>|]/g, "-"))}">📊 شيت</button>
+                    </div>` : ""}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>`).join("");
+  }
+
+  $("delivered-wrap").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-batch]");
+    if (!btn || btn.disabled) return;
+    const old = btn.textContent;
+    btn.disabled = true; btn.textContent = "جاري التجهيز...";
+    try { await NMStudio.downloadBatchSheet(btn.dataset.batch, `${btn.dataset.name}.xlsx`); }
+    catch (err) { toast(esc(err.message), true); }
+    finally { btn.disabled = false; btn.textContent = old; }
+  });
+
+  // ----------------------------------------------------------------- load
+  async function loadAll() {
+    try {
+      const [pending, delivered] = await Promise.all([NMStudio.apiGetPendingDelivery(), NMStudio.apiGetDeliveredBatches()]);
+      tree = pending.tasks;
+      renderPending();
+      renderDelivered(delivered.batches);
+    } catch (err) {
+      $("pending-wrap").innerHTML = `<div class="studio-card"><div class="studio-empty"><p>${esc(err.message)}</p></div></div>`;
+    }
+  }
+  loadAll();
+</script>
+</body>
+</html>

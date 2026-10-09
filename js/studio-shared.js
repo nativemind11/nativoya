@@ -159,6 +159,37 @@
     return URL.createObjectURL(blob);
   }
 
+
+  // ---- head leader: delivery to the buyer -----------------------------
+  function apiGetPendingDelivery() { return apiFetch("/api/studio/delivery/pending"); }
+  function apiGetDeliveredBatches() { return apiFetch("/api/studio/delivery/delivered"); }
+  function apiCollectGroup(group) {
+    return apiFetch("/api/studio/delivery/collect", { method: "POST", body: JSON.stringify(group) });
+  }
+  // Downloads need the Authorization header, which a plain <a href> can't
+  // send — so fetch the file ourselves and save it from a blob: URL.
+  async function downloadWithAuth(path, filename) {
+    const token = authToken();
+    const res = await fetch(`${API_BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) {
+      let msg = "تعذر تحميل الملف";
+      try { msg = (await res.json()).error || msg; } catch (_) {}
+      throw new Error(msg);
+    }
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+  function downloadGroupSheet(group, filename) {
+    const q = new URLSearchParams({ taskId: group.taskId, gender: group.gender, qaReviewerId: group.qaReviewerId || "none", day: group.day });
+    return downloadWithAuth(`/api/studio/delivery/sheet?${q}`, filename);
+  }
+  function downloadBatchSheet(batchId, filename) {
+    return downloadWithAuth(`/api/studio/delivery/batches/${batchId}/sheet`, filename);
+  }
+
   window.NMStudio = {
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
@@ -166,5 +197,6 @@
     apiGetMyTasks, apiGetTaskDetail, apiGetLeaders, apiCreateQaReviewer, apiGetQaReviewers,
     apiGetPendingReviews, apiGetReviewDetail, apiApproveSession, apiRejectAllSession,
     apiSubmitReview, qaFetchSampleAudioUrl,
+    apiGetPendingDelivery, apiGetDeliveredBatches, apiCollectGroup, downloadGroupSheet, downloadBatchSheet,
   };
 })();
