@@ -87,6 +87,16 @@
   }
 
   function getMySessions() { return apiFetch("/api/studio/talent/me/sessions"); }
+  function getMyFeedback() { return apiFetch("/api/studio/feedback/mine"); }
+  // "باقي 7 ساعات و 20 دقيقة" / "المهلة خلصت من 3 ساعات"
+  function timeLeft(iso) {
+    if (!iso) return { text: "", overdue: false };
+    const ms = new Date(iso).getTime() - Date.now();
+    const abs = Math.abs(ms);
+    const h = Math.floor(abs / 3600000), m = Math.floor((abs % 3600000) / 60000);
+    const span = h ? `${h} ساعة${m ? ` و ${m} دقيقة` : ""}` : `${Math.max(m, 1)} دقيقة`;
+    return ms >= 0 ? { text: `باقي ${span}`, overdue: false } : { text: `المهلة خلصت من ${span}`, overdue: true };
+  }
 
   function getTasks() { return apiFetch("/api/studio/talent/tasks"); }
   function getTaskDetail(taskId) { return apiFetch(`/api/studio/talent/tasks/${taskId}`); }
@@ -115,6 +125,6 @@
     createSession, getSession, uploadSampleAudio, submitSession,
     saveSessionToken, loadSessionToken,
     authToken, currentTalent, saveSession, logout, requireLogin,
-    signup, login, getMySessions,
+    signup, login, getMySessions, getMyFeedback, timeLeft,
   };
 })();

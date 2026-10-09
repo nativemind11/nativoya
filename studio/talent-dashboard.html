@@ -22,6 +22,8 @@
   <div class="studio-eyebrow">حسابي</div>
   <h1 class="studio-title">My Tasks</h1>
 
+  <div class="studio-card hidden" id="feedback-wrap" style="border-color:var(--studio-warn); margin-bottom:16px;"></div>
+
   <div class="studio-card" id="sessions-wrap">
     <p class="studio-hint">جاري التحميل...</p>
   </div>
@@ -83,13 +85,40 @@
     }
   }
 
+  // Feedback the buyer sent on delivered work: exactly which recordings to redo.
+  async function loadFeedback() {
+    const wrap = document.getElementById("feedback-wrap");
+    try {
+      const { items } = await NMTalent.getMyFeedback();
+      const active = items.filter(i => i.status !== "reworked");
+      if (!active.length) return;
+      wrap.innerHTML = `
+        <h3 style="margin-top:0;">📩 فيدباك من الشركة على شغلك</h3>
+        <p class="studio-hint">الشركة طلبت إعادة تسجيلات معيّنة. سجّلها تاني قبل المهلة.</p>
+        ${active.map(i => {
+          const t = NMTalent.timeLeft(i.rework_deadline);
+          return `
+          <div style="border-top:1px solid var(--studio-border); padding:12px 0; display:flex; gap:12px; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+            <div>
+              <b>${escapeHtml(i.task_title)}</b>
+              <div style="margin:6px 0;">التسجيلات المطلوبة: ${(i.recording_numbers || []).map(n => `<span class="studio-code" style="margin:0 2px;">${n}</span>`).join("")}</div>
+              ${i.issue_description ? `<div class="studio-hint">المشكلة: ${escapeHtml(i.issue_description)}</div>` : ""}
+              <div style="margin-top:4px; font-weight:700; color:${t.overdue ? "var(--studio-danger)" : "var(--studio-warn)"};">⏰ ${escapeHtml(t.text)}</div>
+            </div>
+            ${i.session_status === "rejected" ? `<a href="recording.html?session=${encodeURIComponent(i.session_token)}" class="studio-btn studio-btn-primary" style="padding:8px 16px;">🔁 إعادة التسجيل</a>` : ""}
+          </div>`;
+        }).join("")}`;
+      wrap.classList.remove("hidden");
+    } catch (_) { /* the main table below still works without this card */ }
+  }
+
   function escapeHtml(s) {
     const div = document.createElement("div");
     div.textContent = s;
     return div.innerHTML;
   }
 
-  if (talent) loadSessions();
+  if (talent) { loadSessions(); loadFeedback(); }
 </script>
 </body>
 </html>

@@ -31,18 +31,25 @@ function httpError(status, message) {
 // updated_at for sessions approved before qa_reviewed_at was tracked.
 const DAY_EXPR = `to_char(COALESCE(rs.qa_reviewed_at, rs.updated_at) AT TIME ZONE '${TZ}', 'YYYY-MM-DD')`;
 
-const SELECT_SESSIONS = `
+// zipExpr/extraJoin let the archive read the ZIP name that was delivered at the
+// time (studio_delivery_batch_sessions) instead of the session's current one.
+function sessionsSelect(zipExpr = "rs.zip_file_name", extraJoin = "") {
+  return `
   SELECT rs.id, rs.task_id, t.title AS task_title, rs.gender, rs.age_bracket, rs.age, rs.fake_name,
-         rs.zip_file_name, rs.zip_file_url, rs.qa_reviewer_id, qa.name AS qa_name,
+         ${zipExpr} AS zip_file_name, rs.zip_file_url, rs.qa_reviewer_id, qa.name AS qa_name,
          COALESCE(rs.qa_reviewed_at, rs.updated_at) AS reviewed_at,
          ${DAY_EXPR} AS group_day,
          tal.name AS real_name, tal.email, tal.whatsapp, l.leader_code,
-         (SELECT COUNT(*)::int FROM recording_session_samples ss WHERE ss.session_id = rs.id) AS sample_count
+         (SELECT COUNT(*)::int FROM recording_session_samples ss WHERE ss.session_id = rs.id) AS sample_count,
+         EXISTS (SELECT 1 FROM studio_feedback_items f WHERE f.session_id = rs.id AND f.status = 'reworked') AS is_redelivery
   FROM recording_sessions rs
   JOIN recording_tasks t ON t.id = rs.task_id
   JOIN studio_leaders l ON l.id = rs.leader_id
   LEFT JOIN studio_talents tal ON tal.id = rs.talent_id
-  LEFT JOIN studio_qa_reviewers qa ON qa.id = rs.qa_reviewer_id`;
+  LEFT JOIN studio_qa_reviewers qa ON qa.id = rs.qa_reviewer_id
+  ${extraJoin}`;
+}
+const SELECT_SESSIONS = sessionsSelect();
 
 const WAITING = `rs.status = 'approved' AND rs.delivery_batch_id IS NULL AND rs.zip_file_url IS NOT NULL`;
 
@@ -68,8 +75,20 @@ async function fetchGroupRows(db, params) {
 }
 
 async function fetchBatchRows(db, batchId) {
-  const r = await db.query(`${SELECT_SESSIONS} WHERE rs.delivery_batch_id = $1 ORDER BY reviewed_at ASC`, [batchId]);
+  const sql = sessionsSelect("COALESCE(bs.zip_file_name, rs.zip_file_name)", "JOIN studio_delivery_batch_sessions bs ON bs.session_id = rs.id");
+  const r = await db.query(`${sql} WHERE bs.batch_id = $1 ORDER BY reviewed_at ASC`, [batchId]);
   return r.rows;
+}
+
+/** The batch itself (task, gender, QA, day) — used for the archive sheet's header info. */
+async function fetchBatchMeta(db, batchId) {
+  const r = await db.query(
+    `SELECT b.id, b.gender, b.group_day::text AS group_day, b.status, t.title AS task_title, qa.name AS qa_name
+     FROM studio_delivery_batches b
+     JOIN recording_tasks t ON t.id = b.task_id
+     LEFT JOIN studio_qa_reviewers qa ON qa.id = b.qa_reviewer_id
+     WHERE b.id = $1`, [batchId]);
+  return r.rows[0] || null;
 }
 
 /** A collect that died mid-way (timeout, crash) must not hide sessions forever. */
@@ -114,7 +133,7 @@ function buildPendingTree(rows) {
     g.sessions.push({
       id: r.id, fakeName: r.fake_name, realName: r.real_name, email: r.email, whatsapp: r.whatsapp,
       ageBracket: r.age_bracket, age: r.age, zipFileName: r.zip_file_name, leaderCode: r.leader_code,
-      sampleCount: r.sample_count, reviewedAt: r.reviewed_at,
+      sampleCount: r.sample_count, reviewedAt: r.reviewed_at, isRedelivery: !!r.is_redelivery,
     });
   }
   const sortGroups = (m) => [...m.values()].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : (a.qaName || "").localeCompare(b.qaName || "")));
@@ -214,13 +233,32 @@ async function collectGroup({ db, storage, params, headLeaderId }) {
       fileName,
       entries: sessions.map((s, i) => ({ name: names[i], session: s })),
     });
-    const done = await db.query(
-      `UPDATE studio_delivery_batches
-       SET status = 'delivered', zip_file_name = $2, zip_file_url = $3, zip_size_bytes = $4, delivered_at = now(), error = NULL
-       WHERE id = $1 RETURNING id, session_count, zip_file_name, zip_file_url, zip_size_bytes, delivered_at`,
-      [batch.id, fileName, saved.url, saved.size || null]
-    );
-    return done.rows[0];
+    // Mark delivered AND write the permanent membership record in one
+    // transaction. The membership comes from the list captured at claim time,
+    // so a session that is sent back for feedback while the ZIP was building
+    // is still recorded as part of what this ZIP actually contained.
+    const fin = await db.connect();
+    try {
+      await fin.query("BEGIN");
+      await fin.query(
+        `INSERT INTO studio_delivery_batch_sessions (batch_id, session_id, zip_file_name)
+         SELECT $1, x.id, x.zip FROM unnest($2::uuid[], $3::text[]) AS x(id, zip) ON CONFLICT DO NOTHING`,
+        [batch.id, sessions.map((x) => x.id), sessions.map((x, i) => names[i])]
+      );
+      const done = await fin.query(
+        `UPDATE studio_delivery_batches
+         SET status = 'delivered', zip_file_name = $2, zip_file_url = $3, zip_size_bytes = $4, delivered_at = now(), error = NULL
+         WHERE id = $1 RETURNING id, session_count, zip_file_name, zip_file_url, zip_size_bytes, delivered_at`,
+        [batch.id, fileName, saved.url, saved.size || null]
+      );
+      await fin.query("COMMIT");
+      return done.rows[0];
+    } catch (e) {
+      try { await fin.query("ROLLBACK"); } catch (_) {}
+      throw e;
+    } finally {
+      fin.release();
+    }
   } catch (err) {
     // put every session back in the waiting list — nothing is lost or hidden
     await db.query(`UPDATE recording_sessions SET delivery_batch_id = NULL WHERE delivery_batch_id = $1`, [batch.id]);
@@ -342,7 +380,7 @@ async function buildSheet(rows, meta) {
 }
 
 module.exports = {
-  fetchPending, fetchGroupRows, fetchBatchRows, releaseStaleBatches, buildPendingTree, listDelivered,
+  fetchPending, fetchGroupRows, fetchBatchRows, fetchBatchMeta, releaseStaleBatches, buildPendingTree, listDelivered,
   collectGroup, createArchiveStorage, buildSheet, deliveryBaseName, uniqueZipNames, sanitizeFileName,
   GENDER_LABEL, TZ,
 };

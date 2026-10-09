@@ -55,6 +55,7 @@
     <div id="rework-banner" class="hidden studio-card" style="background:#3A1A00; border-color:var(--studio-warn); margin-bottom:16px;">
       <p class="mb-0" style="color:var(--studio-warn); font-weight:700;">⚠️ التاسك ده محتاج إعادة لبعض الجمل بس</p>
       <p class="studio-hint mb-0" id="rework-reason-text" style="margin-top:4px;"></p>
+      <p class="mb-0" id="rework-deadline-text" style="margin-top:6px; font-weight:700;"></p>
     </div>
     <div id="pending-banner" class="hidden rec-banner"></div>
 
@@ -209,6 +210,7 @@
         activeSamples = samples.filter(s => s.qa_status === "rejected");
         $("rework-banner").classList.remove("hidden");
         $("rework-reason-text").textContent = session.rejection_reason || "في تسجيلات محتاجة إعادة.";
+        showReworkDeadline(session.rework_deadline);
       } else if (session.status !== "in_progress") {
         $("done-box").classList.remove("hidden");
         return;
@@ -239,6 +241,19 @@
     } catch (err) {
       $("loading-box").innerHTML = `<p class="studio-error" style="display:block;">${err.message}</p>`;
     }
+  }
+
+  // The 12h rework countdown. It informs — it never blocks the talent from finishing.
+  function showReworkDeadline(iso) {
+    const el = $("rework-deadline-text");
+    if (!iso) { el.textContent = ""; return; }
+    const tick = () => {
+      const t = NMTalent.timeLeft(iso);
+      el.textContent = `⏰ ${t.text}`;
+      el.style.color = t.overdue ? "var(--studio-danger)" : "var(--studio-warn)";
+    };
+    tick();
+    setInterval(tick, 30000);
   }
 
   function isSampleDone(s) { return !!s.audio_file_url && s.qa_status !== "rejected" && !s.queued; }

@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const multer = require("multer");
 const archiver = require("archiver");
 const { validateClip } = require("../../config/audioValidate");
+const { markAcknowledged, markReworked } = require("../../config/studioFeedback");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
@@ -172,6 +173,8 @@ router.get("/sessions/:token", requireStudioAuth, requireStudioRole("talent"), a
       ORDER BY s.order_index
     `, [session.id, session.task_id]);
 
+    // opening the rework screen counts as "seen" for any company feedback on this session
+    if (session.status === "rejected") markAcknowledged(pool, session.id).catch((e) => console.error("[feedback ack]", e.message));
     res.json({ session, samples: samples.rows });
   } catch (err) {
     console.error(err);
@@ -329,6 +332,7 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
       [zipFileUrl, zipFileName, session.id]
     );
 
+    if (isResubmit) await markReworked(pool, session.id).catch((e) => console.error("[feedback reworked]", e.message));
     res.json({ ok: true, zipFileName });
   } catch (err) {
     console.error(err);

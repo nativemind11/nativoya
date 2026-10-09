@@ -66,9 +66,10 @@ router.get("/sheet", async (req, res) => {
 router.get("/batches/:id/sheet", async (req, res) => {
   if (!UUID.test(req.params.id)) return res.status(400).json({ error: "رقم غير صحيح" });
   try {
-    const rows = await D.fetchBatchRows(pool, req.params.id);
+    const batch = await D.fetchBatchMeta(pool, req.params.id);
+    const rows = batch ? await D.fetchBatchRows(pool, req.params.id) : [];
     if (!rows.length) return res.status(404).json({ error: "التجميع ده مش موجود" });
-    sendXlsx(res, await D.buildSheet(rows, { taskTitle: rows[0].task_title, gender: rows[0].gender, qaName: rows[0].qa_name, day: rows[0].group_day }));
+    sendXlsx(res, await D.buildSheet(rows, { taskTitle: batch.task_title, gender: batch.gender, qaName: batch.qa_name, day: batch.group_day }));
   } catch (err) {
     console.error("[delivery:batch-sheet]", err);
     res.status(500).json({ error: "تعذر إنشاء الشيت" });

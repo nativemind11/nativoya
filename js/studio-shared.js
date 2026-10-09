@@ -190,6 +190,27 @@
     return downloadWithAuth(`/api/studio/delivery/batches/${batchId}/sheet`, filename);
   }
 
+
+  // ---- company feedback (Phase 7) --------------------------------------
+  // The spreadsheet travels with every step, the mapping rides along as fields.
+  function apiFeedbackParse(file) { return apiUploadFile("/api/studio/feedback/parse", file); }
+  function apiFeedbackPreview(file, mapping) { return apiUploadFile("/api/studio/feedback/preview", file, mapping); }
+  function apiFeedbackApply(file, mapping) { return apiUploadFile("/api/studio/feedback/apply", file, mapping); }
+  function apiFeedbackItems(taskId) {
+    return apiFetch(`/api/studio/feedback/items${taskId ? `?taskId=${encodeURIComponent(taskId)}` : ""}`);
+  }
+  function apiMyFeedback() { return apiFetch("/api/studio/feedback/mine"); }
+
+  // "باقي 7 ساعات و 20 دقيقة" / "المهلة خلصت من 3 ساعات"
+  function timeLeft(iso) {
+    if (!iso) return { text: "", overdue: false };
+    const ms = new Date(iso).getTime() - Date.now();
+    const abs = Math.abs(ms);
+    const h = Math.floor(abs / 3600000), m = Math.floor((abs % 3600000) / 60000);
+    const span = h ? `${h} ساعة${m ? ` و ${m} دقيقة` : ""}` : `${Math.max(m, 1)} دقيقة`;
+    return ms >= 0 ? { text: `باقي ${span}`, overdue: false } : { text: `المهلة خلصت من ${span}`, overdue: true };
+  }
+
   window.NMStudio = {
     authToken, currentUser, currentRole, login, leaderSignup, logout,
     apiFetch, refreshMe, requireStudioRole,
@@ -198,5 +219,6 @@
     apiGetPendingReviews, apiGetReviewDetail, apiApproveSession, apiRejectAllSession,
     apiSubmitReview, qaFetchSampleAudioUrl,
     apiGetPendingDelivery, apiGetDeliveredBatches, apiCollectGroup, downloadGroupSheet, downloadBatchSheet,
+    apiFeedbackParse, apiFeedbackPreview, apiFeedbackApply, apiFeedbackItems, apiMyFeedback, timeLeft,
   };
 })();
