@@ -3,6 +3,7 @@ const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const D = require("../../config/studioDelivery");
 const { driveStorage } = require("../../config/studioDeliveryStorage");
+const blob = require("../../config/studioBlob");
 const S = require("../../config/studioStorage");
 
 const router = express.Router();
@@ -90,6 +91,24 @@ router.post("/collect", async (req, res) => {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     if (err.code === "DRIVE_NOT_CONNECTED") return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
     res.status(500).json({ error: "تعذر التجميع — المجموعة رجعت لقايمة الانتظار، جرّب تاني." });
+  }
+});
+
+// GET /api/studio/delivery/batches/:id/download — a link for the big ZIP.
+// Bucket files are private, so this hands back a short-lived signed link (a plain
+// <a href> can't carry the login token); legacy Drive ZIPs return their Drive link.
+router.get("/batches/:id/download", async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT zip_file_url, zip_file_name, zip_purged_at FROM studio_delivery_batches WHERE id = $1 AND status = 'delivered'`, [req.params.id]);
+    if (!r.rows.length || !r.rows[0].zip_file_url) return res.status(404).json({ error: "الملف ده مش موجود" });
+    const b = r.rows[0];
+    if (b.zip_purged_at) return res.status(410).json({ error: "الملف ده اتمسح من التخزين. موجود على جهازك." });
+    const url = blob.isBlobRef(b.zip_file_url) ? await blob.presignGet(b.zip_file_url, b.zip_file_name || "delivery.zip", 3600) : b.zip_file_url;
+    res.json({ url });
+  } catch (err) {
+    console.error("[delivery:download]", err);
+    res.status(500).json({ error: "تعذر تجهيز رابط التنزيل" });
   }
 });
 

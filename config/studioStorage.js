@@ -19,6 +19,7 @@
  */
 const { google } = require("googleapis");
 const { getAuthorizedClient } = require("./googleDrive");
+const blob = require("./studioBlob");
 
 const AUTO_THRESHOLD = 0.8;  // start cleaning when Drive is 80 % full
 const TARGET = 0.6;          // ...and stop once it is back under 60 %
@@ -37,6 +38,7 @@ const is404 = (e) => e && (e.code === 404 || e.status === 404 || (e.response && 
 
 /** Deletes one Drive file for good. Already-gone counts as success. */
 async function deleteDriveFile(drive, ref) {
+  if (blob.isBlobRef(ref)) return blob.remove(ref);   // bucket object: no Drive client needed
   const fileId = fileIdFromRef(ref);
   if (!fileId) return false;
   try {

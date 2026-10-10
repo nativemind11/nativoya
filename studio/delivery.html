@@ -83,6 +83,14 @@
     toast._h = setTimeout(() => t.classList.add("hidden"), bad ? 9000 : 12000);
   }
 
+  // the "open the merged file" link inside the success toast
+  $("toast").addEventListener("click", async (e) => {
+    const a = e.target.closest("[data-open-zip]");
+    if (!a) return;
+    e.preventDefault();
+    try { await NMStudio.openBatchZip(a.dataset.openZip); } catch (err) { toast(esc(err.message), true); }
+  });
+
   // ------------------------------------------------------------- tabs
   function showTab(name) {
     $("tab-pending").classList.toggle("active", name === "pending");
@@ -176,7 +184,7 @@
     btn.textContent = "⏳ جاري التجميع… (ممكن ياخد دقايق، متقفلش الصفحة)";
     try {
       const { batch } = await NMStudio.apiCollectGroup(group.params);
-      toast(`✅ اتجمّع ${batch.session_count} تاسك. <a href="${esc(batch.zip_file_url)}" target="_blank" rel="noopener">فتح الملف المجمّع</a>`);
+      toast(`✅ اتجمّع ${batch.session_count} تاسك. <a href="#" data-open-zip="${esc(batch.id)}">فتح الملف المجمّع</a>`);
       await loadAll();
     } catch (err) {
       toast(esc(err.message), true);
@@ -215,7 +223,7 @@
                     <div class="dl-actions">
                       ${b.zip_purged_at
                         ? `<span class="studio-pill status-approved" title="اتحذف من درايف عشان المساحة. موجود على جهازك.">🗄️ على جهازك بس</span>`
-                        : `<a class="studio-btn studio-btn-secondary" href="${esc(b.zip_file_url)}" target="_blank" rel="noopener">📦 فتح الـ ZIP</a>
+                        : `<button class="studio-btn studio-btn-secondary" data-open-zip="${esc(b.id)}">📦 فتح الـ ZIP</button>
                            ${b.downloaded_at
                              ? `<span class="studio-pill status-approved" title="${esc(fmtDateTime(b.downloaded_at))}">✅ اتنزّل</span> <button class="studio-btn studio-btn-secondary" data-undo="${esc(b.id)}" title="تراجع">↩️</button>`
                              : `<button class="studio-btn studio-btn-primary" data-dl="${esc(b.id)}">⬇️ نزّلت الملف</button>`}`}
@@ -236,6 +244,12 @@
       mark.disabled = true;
       try { await NMStudio.apiMarkDownloaded(mark.dataset.dl || mark.dataset.undo, !undo); await loadAll(); }
       catch (err) { toast(esc(err.message), true); mark.disabled = false; }
+      return;
+    }
+    const zipBtn = e.target.closest("[data-open-zip]");
+    if (zipBtn) {
+      e.preventDefault();
+      try { await NMStudio.openBatchZip(zipBtn.dataset.openZip); } catch (err) { toast(esc(err.message), true); }
       return;
     }
     const btn = e.target.closest("button[data-batch]");

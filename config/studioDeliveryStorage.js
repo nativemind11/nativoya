@@ -8,6 +8,8 @@ const { google } = require("googleapis");
 const { getAuthorizedClient, shareWithAnyone } = require("./googleDrive");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("./studioDrive");
 const { createArchiveStorage } = require("./studioDelivery");
+const blob = require("./studioBlob");
+const crypto = require("crypto");
 
 function fileIdFromUrl(url) {
   const m = String(url || "").match(/\/file\/d\/([^/?#]+)/) || String(url || "").match(/[-\w]{25,}/);
@@ -20,8 +22,10 @@ async function driveClient() {
   return google.drive({ version: "v3", auth });
 }
 
-// Streams one session's ZIP down from Drive (never buffered in memory).
+// Streams one session's ZIP down from storage (never buffered in memory).
+// Bucket refs and legacy Drive refs both work.
 async function openSessionZip(session) {
+  if (blob.isBlobRef(session.zip_file_url)) return (await blob.getStream(session.zip_file_url)).stream;
   const drive = await driveClient();
   const res = await drive.files.get({ fileId: fileIdFromUrl(session.zip_file_url), alt: "media" }, { responseType: "stream" });
   return res.data;
@@ -29,6 +33,12 @@ async function openSessionZip(session) {
 
 // Streams the merged archive straight up to  <task folder>/Delivered/.
 async function uploadStream({ task, fileName, stream }) {
+  if (blob.enabled()) {
+    // unique key: two deliveries can share the same display name (same task/gender/QA/day after a feedback round)
+    const key = `studio/${task.id}/delivered/${Date.now()}-${crypto.randomBytes(3).toString("hex")}-${blob.seg(fileName)}`;
+    const saved = await blob.putStream(key, stream, "application/zip");
+    return { url: saved.ref, size: saved.size };
+  }
   const drive = await driveClient();
   const root = await getOrCreateStudioRootFolder();
   const taskFolder = await getOrCreateSubfolder(drive, root, `${task.title} — ${task.id.slice(0, 8)}`);

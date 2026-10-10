@@ -10,6 +10,7 @@ const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
 const { deleteQuietly } = require("../../config/studioStorage");
+const blob = require("../../config/studioBlob");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 
 const router = express.Router();
@@ -245,15 +246,24 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
     const check = validateClip(req.file.buffer, task.recording_settings || {});
     if (!check.ok) return res.status(422).json({ error: check.error, code: check.code });
 
-    const authClient = await getAuthorizedClient();
-    const drive = google.drive({ version: "v3", auth: authClient });
-    const studioRoot = await getOrCreateStudioRootFolder();
-    const taskFolderId = await getOrCreateSubfolder(drive, studioRoot, `${task.title} — ${task.id.slice(0, 8)}`);
-    const sessionsFolderId = await getOrCreateSubfolder(drive, taskFolderId, "_sessions (working files)");
-    const talentFolderId = await getOrCreateSubfolder(drive, sessionsFolderId, session.fake_name);
+    let drive = null;   // only created when something on Google Drive has to be touched
+    let audioUrl;
+    if (blob.enabled()) {
+      // Bucket storage: one PUT, no Drive calls at all. A fresh key per take, so a retake never overwrites the old one.
+      const ext = String((task.recording_settings && task.recording_settings.format) || "wav").toLowerCase();
+      const key = `studio/${task.id}/sessions/${session.id}/clips/${blob.seg(req.params.sampleId)}-${Date.now()}.${blob.seg(ext)}`;
+      audioUrl = (await blob.putBuffer(key, req.file.buffer, req.file.mimetype || "audio/wav")).ref;
+    } else {
+      const authClient = await getAuthorizedClient();
+      drive = google.drive({ version: "v3", auth: authClient });
+      const studioRoot = await getOrCreateStudioRootFolder();
+      const taskFolderId = await getOrCreateSubfolder(drive, studioRoot, `${task.title} — ${task.id.slice(0, 8)}`);
+      const sessionsFolderId = await getOrCreateSubfolder(drive, taskFolderId, "_sessions (working files)");
+      const talentFolderId = await getOrCreateSubfolder(drive, sessionsFolderId, session.fake_name);
 
-    const uploaded = await uploadSubmissionFile(talentFolderId, req.file.originalname, req.file.mimetype, req.file.buffer);
-    const audioUrl = uploaded.id ? `drive:${uploaded.id}` : null; // internal reference, resolved again at zip time
+      const uploaded = await uploadSubmissionFile(talentFolderId, req.file.originalname, req.file.mimetype, req.file.buffer);
+      audioUrl = uploaded.id ? `drive:${uploaded.id}` : null; // internal reference, resolved again at zip time
+    }
     const duration = Math.round(check.info.duration * 100) / 100; // measured from the file itself, not trusted from the client
 
     if (existingCheck.rows.length) {
@@ -266,7 +276,9 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
       );
       // the clip this one replaces is garbage now — free its space (never blocks the upload)
       if (existingCheck.rows[0].audio_file_url && existingCheck.rows[0].audio_file_url !== audioUrl) {
-        await deleteQuietly(drive, existingCheck.rows[0].audio_file_url);
+        const old = existingCheck.rows[0].audio_file_url;
+        if (!blob.isBlobRef(old) && !drive) drive = google.drive({ version: "v3", auth: await getAuthorizedClient() });
+        await deleteQuietly(drive, old);
       }
     } else {
       await pool.query(
@@ -331,18 +343,33 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
       }
     }
 
-    const authClient = await getAuthorizedClient();
-    const drive = google.drive({ version: "v3", auth: authClient });
+    // With bucket storage the ZIP is streamed straight up to the bucket (flat memory);
+    // otherwise (Google Drive) it is built in memory first. Clips that were recorded
+    // before the move are still on Drive, so a Drive client is created only when needed.
+    const useBlob = blob.enabled();
+    let drive = null;
+    const ensureDrive = async () => {
+      if (!drive) drive = google.drive({ version: "v3", auth: await getAuthorizedClient() });
+      return drive;
+    };
+    const zipFileName = `${session.fake_name}-${session.gender}-${session.age_bracket}-${session.age || "NA"}.zip`;
+    const zipKey = `studio/${task.id}/sessions/${session.id}/${blob.seg(zipFileName)}`;
 
-    // Build the zip in memory by streaming each clip down from Drive.
+    // Build the zip by streaming each clip down from storage.
     // level 1: audio barely shrinks, and level 9 on hundreds of clips only burns CPU time.
     const archive = archiver("zip", { zlib: { level: 1 } });
     const chunks = [];
-    archive.on("data", (chunk) => chunks.push(chunk));
-    const archiveFinished = new Promise((resolve, reject) => {
-      archive.on("end", resolve);
-      archive.on("error", reject);
-    });
+    let archiveFinished;
+    if (useBlob) {
+      archiveFinished = blob.putStream(zipKey, archive, "application/zip");
+    } else {
+      archive.on("data", (chunk) => chunks.push(chunk));
+      archiveFinished = new Promise((resolve, reject) => {
+        archive.on("end", resolve);
+        archive.on("error", reject);
+      });
+    }
+    archiveFinished.catch(() => {});   // surfaced below; avoids an unhandled rejection while we stream
 
     // After the delivered audio was cleaned off Drive (config/studioStorage.js) only the
     // clips recorded since then still exist, so a re-submission is a PARTIAL ZIP holding
@@ -365,28 +392,37 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
     // parallel windows (each retried on a transient Drive error) and append in order.
     const ext = (task.recording_settings.format || "wav").toLowerCase();
     const rows = samplesWithNames.rows;
-    for (let i = 0; i < rows.length; i += DOWNLOAD_CONCURRENCY) {
-      const windowRows = rows.slice(i, i + DOWNLOAD_CONCURRENCY);
-      const buffers = await Promise.all(windowRows.map((row) => withRetry(async () => {
-        const fileId = row.audio_file_url.replace("drive:", "");
-        const fileStream = await drive.files.get({ fileId, alt: "media" }, { responseType: "stream" });
-        return streamToBuffer(fileStream.data);
-      })));
-      windowRows.forEach((row, j) => {
-        archive.append(buffers[j], { name: `${String(row.order_index + 1).padStart(2, "0")}.${ext}` });
-      });
+    try {
+      for (let i = 0; i < rows.length; i += DOWNLOAD_CONCURRENCY) {
+        const windowRows = rows.slice(i, i + DOWNLOAD_CONCURRENCY);
+        const buffers = await Promise.all(windowRows.map((row) => withRetry(async () => {
+          const d = blob.isBlobRef(row.audio_file_url) ? null : await ensureDrive();
+          const { stream } = await blob.getStream(row.audio_file_url, { drive: d });
+          return streamToBuffer(stream);
+        })));
+        windowRows.forEach((row, j) => {
+          archive.append(buffers[j], { name: `${String(row.order_index + 1).padStart(2, "0")}.${ext}` });
+        });
+      }
+    } catch (e) {
+      archive.destroy(e);   // also aborts a half-finished bucket upload
+      throw e;
     }
     archive.finalize();
     await archiveFinished;
-    const zipBuffer = Buffer.concat(chunks);
 
-    const zipFileName = `${session.fake_name}-${session.gender}-${session.age_bracket}-${session.age || "NA"}.zip`;
-
-    const studioRoot = await getOrCreateStudioRootFolder();
-    const taskFolderId = await getOrCreateSubfolder(drive, studioRoot, `${task.title} — ${task.id.slice(0, 8)}`);
-    const qaFolderId = await getOrCreateSubfolder(drive, taskFolderId, `${leader.leader_code} - QA Reviews`);
-    const uploadedZip = await uploadSubmissionFile(qaFolderId, zipFileName, "application/zip", zipBuffer);
-    const zipFileUrl = uploadedZip.webViewLink || `https://drive.google.com/file/d/${uploadedZip.id}/view`;
+    let zipFileUrl;
+    if (useBlob) {
+      zipFileUrl = blob.refFor(zipKey);
+    } else {
+      const zipBuffer = Buffer.concat(chunks);
+      const d = await ensureDrive();
+      const studioRoot = await getOrCreateStudioRootFolder();
+      const taskFolderId = await getOrCreateSubfolder(d, studioRoot, `${task.title} — ${task.id.slice(0, 8)}`);
+      const qaFolderId = await getOrCreateSubfolder(d, taskFolderId, `${leader.leader_code} - QA Reviews`);
+      const uploadedZip = await uploadSubmissionFile(qaFolderId, zipFileName, "application/zip", zipBuffer);
+      zipFileUrl = uploadedZip.webViewLink || `https://drive.google.com/file/d/${uploadedZip.id}/view`;
+    }
 
     const oldZipUrl = session.zip_file_url;
     await pool.query(
@@ -398,7 +434,10 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
       [zipFileUrl, zipFileName, session.id, isPartial ? samplesWithNames.rows.length : null]
     );
     // the ZIP from the previous submission is superseded — free its space (never blocks the submit)
-    if (oldZipUrl && oldZipUrl !== zipFileUrl) await deleteQuietly(drive, oldZipUrl);
+    if (oldZipUrl && oldZipUrl !== zipFileUrl) {
+      const d = blob.isBlobRef(oldZipUrl) ? null : await ensureDrive().catch(() => null);
+      await deleteQuietly(d, oldZipUrl);
+    }
 
     if (isResubmit) await markReworked(pool, session.id).catch((e) => console.error("[feedback reworked]", e.message));
     res.json({ ok: true, zipFileName });

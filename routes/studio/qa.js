@@ -4,6 +4,7 @@ const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
+const blob = require("../../config/studioBlob");
 
 const router = express.Router();
 router.use(requireStudioAuth, requireStudioRole("qa"));
@@ -69,15 +70,11 @@ router.get("/samples/:sessionSampleId/audio", async (req, res) => {
     if (!result.rows.length || !result.rows[0].audio_file_url) {
       return res.status(404).json({ error: "مفيش تسجيل هنا" });
     }
-    const fileId = result.rows[0].audio_file_url.replace("drive:", "");
+    const { stream, contentType } = await blob.getStream(result.rows[0].audio_file_url);
 
-    const authClient = await getAuthorizedClient();
-    const drive = google.drive({ version: "v3", auth: authClient });
-    const meta = await drive.files.get({ fileId, fields: "mimeType" });
-    const fileStream = await drive.files.get({ fileId, alt: "media" }, { responseType: "stream" });
-
-    res.setHeader("Content-Type", meta.data.mimeType || "audio/webm");
-    fileStream.data.pipe(res);
+    res.setHeader("Content-Type", contentType || "audio/webm");
+    stream.on("error", (e) => { console.error("[qa audio stream]", e.message); res.destroy(e); });
+    stream.pipe(res);
   } catch (err) {
     console.error(err);
     if (err.code === "DRIVE_NOT_CONNECTED") {
@@ -187,7 +184,8 @@ async function finalizeSession(sessionId, qaReviewerId, rejectedSampleIds, unifo
     // Only on a genuine full approval do we move the zip into the
     // head_leader's gendered "Approved" folder — a rejected/partial session
     // stays in the QA folder since it isn't final yet.
-    if (!anyRejected && session.zip_file_url) {
+    // (Files in the bucket have no folders to move between — the DB status is the "approved" marker.)
+    if (!anyRejected && session.zip_file_url && !blob.isBlobRef(session.zip_file_url)) {
       try {
         const authClient = await getAuthorizedClient();
         const drive = google.drive({ version: "v3", auth: authClient });

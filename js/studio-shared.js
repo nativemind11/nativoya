@@ -163,6 +163,15 @@
   // ---- head leader: delivery to the buyer -----------------------------
   function apiGetPendingDelivery() { return apiFetch("/api/studio/delivery/pending"); }
   function apiGetDeliveredBatches() { return apiFetch("/api/studio/delivery/delivered"); }
+  // Opens the big ZIP: asks the server for a (signed) link, then opens it in a new tab.
+  // Done in a click handler so the new tab isn't blocked as a popup.
+  async function openBatchZip(batchId) {
+    const win = window.open("", "_blank");
+    try {
+      const { url } = await apiFetch(`/api/studio/delivery/batches/${encodeURIComponent(batchId)}/download`);
+      if (win) win.location.href = url; else window.location.href = url;
+    } catch (err) { if (win) win.close(); throw err; }
+  }
   function apiGetStorage() { return apiFetch("/api/studio/delivery/storage"); }
   function apiMarkDownloaded(batchId, downloaded) {
     return apiFetch(`/api/studio/delivery/batches/${encodeURIComponent(batchId)}/downloaded`, { method: "POST", body: JSON.stringify({ downloaded: downloaded !== false }) });
@@ -223,7 +232,7 @@
     apiGetMyTasks, apiGetTaskDetail, apiGetLeaders, apiCreateQaReviewer, apiGetQaReviewers,
     apiGetPendingReviews, apiGetReviewDetail, apiApproveSession, apiRejectAllSession,
     apiSubmitReview, qaFetchSampleAudioUrl,
-    apiGetPendingDelivery, apiGetDeliveredBatches, apiGetStorage, apiMarkDownloaded, apiPurgeStorage, apiCollectGroup, downloadGroupSheet, downloadBatchSheet,
+    apiGetPendingDelivery, apiGetDeliveredBatches, openBatchZip, apiGetStorage, apiMarkDownloaded, apiPurgeStorage, apiCollectGroup, downloadGroupSheet, downloadBatchSheet,
     apiFeedbackParse, apiFeedbackPreview, apiFeedbackApply, apiFeedbackItems, apiMyFeedback, timeLeft,
   };
 })();
