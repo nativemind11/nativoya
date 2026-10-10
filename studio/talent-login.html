@@ -1,120 +1,14 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>حسابك — Nativoya Studio</title>
-<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
-<link rel="stylesheet" href="../css/studio.css">
-<script src="../js/studio-i18n-dict.js"></script>
-<script src="../js/studio-i18n.js"></script>
+<title>Studio has moved</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://gigversestudio.click/talent-login.html">
+<script>location.replace("https://gigversestudio.click/talent-login.html" + location.search + location.hash);</script>
+<noscript><meta http-equiv="refresh" content="0;url=https://gigversestudio.click/talent-login.html"></noscript>
 </head>
-<body class="studio">
-
-<header class="studio-header">
-  <a href="tasks.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
-</header>
-
-<main class="studio-shell">
-  <div class="studio-card">
-    <div class="studio-tabs" id="mode-tabs">
-      <div class="studio-tab active" data-mode="login">عندي حساب</div>
-      <div class="studio-tab" data-mode="signup">حساب جديد</div>
-    </div>
-
-    <!-- login -->
-    <form id="login-form">
-      <div class="studio-eyebrow">تسجيل الدخول</div>
-      <h1 class="studio-title">أهلاً بيك تاني</h1>
-      <div class="studio-field">
-        <label for="l-email">البريد الإلكتروني</label>
-        <input type="email" id="l-email" required>
-      </div>
-      <div class="studio-field">
-        <label for="l-password">كلمة المرور</label>
-        <input type="password" id="l-password" required>
-      </div>
-      <p class="text-center" style="margin:-4px 0 14px;"><a href="forgot-password.html" style="font-size:0.85rem; color:var(--studio-text-muted);">نسيت كلمة المرور؟</a></p>
-      <p class="studio-error" id="login-error"></p>
-      <button type="submit" class="studio-btn studio-btn-primary studio-btn-block" id="login-btn">دخول</button>
-    </form>
-
-    <!-- signup -->
-    <form id="signup-form" class="hidden">
-      <div class="studio-eyebrow">حساب جديد</div>
-      <h1 class="studio-title">يلا نبدأ</h1>
-      <div class="studio-field">
-        <label for="s-name">اسمك الحقيقي</label>
-        <input type="text" id="s-name" required>
-      </div>
-      <div class="studio-field">
-        <label for="s-email">البريد الإلكتروني</label>
-        <input type="email" id="s-email" required>
-      </div>
-      <div class="studio-field">
-        <label for="s-whatsapp">رقم واتساب</label>
-        <input type="tel" id="s-whatsapp" required>
-      </div>
-      <div class="studio-field">
-        <label for="s-password">كلمة المرور</label>
-        <input type="password" id="s-password" minlength="6" required>
-      </div>
-      <p class="studio-error" id="signup-error"></p>
-      <button type="submit" class="studio-btn studio-btn-primary studio-btn-block" id="signup-btn" style="margin-top:12px;">إنشاء الحساب</button>
-    </form>
-  </div>
-</main>
-
-<script src="../js/studio-talent.js"></script>
-<script>
-  const returnTo = new URLSearchParams(location.search).get("return") || "tasks.html";
-
-  document.querySelectorAll("#mode-tabs .studio-tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll("#mode-tabs .studio-tab").forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      const mode = tab.dataset.mode;
-      document.getElementById("login-form").classList.toggle("hidden", mode !== "login");
-      document.getElementById("signup-form").classList.toggle("hidden", mode !== "signup");
-    });
-  });
-
-  document.getElementById("login-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errorBox = document.getElementById("login-error");
-    const btn = document.getElementById("login-btn");
-    errorBox.style.display = "none";
-    btn.disabled = true; btn.textContent = "جاري الدخول...";
-    try {
-      await NMTalent.login(document.getElementById("l-email").value, document.getElementById("l-password").value);
-      location.href = returnTo;
-    } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.style.display = "block";
-      btn.disabled = false; btn.textContent = "دخول";
-    }
-  });
-
-  document.getElementById("signup-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errorBox = document.getElementById("signup-error");
-    const btn = document.getElementById("signup-btn");
-    errorBox.style.display = "none";
-    btn.disabled = true; btn.textContent = "جاري الإنشاء...";
-    try {
-      await NMTalent.signup(
-        document.getElementById("s-name").value,
-        document.getElementById("s-email").value,
-        document.getElementById("s-password").value,
-        document.getElementById("s-whatsapp").value
-      );
-      location.href = returnTo;
-    } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.style.display = "block";
-      btn.disabled = false; btn.textContent = "إنشاء الحساب";
-    }
-  });
-</script>
+<body style="font-family:system-ui,Arial;background:#0B0D10;color:#E8EAED;text-align:center;padding-top:20vh">
+<p>Studio moved to <a style="color:#2DD4BF" href="https://gigversestudio.click/talent-login.html">gigversestudio.click</a></p>
 </body>
 </html>

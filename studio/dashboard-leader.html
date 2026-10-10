@@ -1,95 +1,14 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>لوحة الليدر — Nativoya Studio</title>
-<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
-<link rel="stylesheet" href="../css/studio.css">
-<script src="../js/studio-i18n-dict.js"></script>
-<script src="../js/studio-i18n.js"></script>
+<title>Studio has moved</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://gigversestudio.click/dashboard-leader.html">
+<script>location.replace("https://gigversestudio.click/dashboard-leader.html" + location.search + location.hash);</script>
+<noscript><meta http-equiv="refresh" content="0;url=https://gigversestudio.click/dashboard-leader.html"></noscript>
 </head>
-<body class="studio">
-
-<header class="studio-header">
-  <div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div>
-  <nav>
-    <span id="leader-name" class="studio-text-muted" style="color:var(--studio-text-muted);"></span>
-    <a href="#" id="logout-link" class="studio-btn studio-btn-secondary" style="padding:8px 16px;">خروج</a>
-  </nav>
-</header>
-
-<main class="studio-shell wide">
-  <div class="studio-card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
-    <div>
-      <div class="studio-eyebrow">كود الليدر بتاعك</div>
-      <div class="studio-code" style="font-size:1.3rem;" id="leader-code">—</div>
-    </div>
-    <p class="studio-subtitle" style="margin:0; max-width:360px;">شارك الكود ده مع أي تاسك تختار تشتغل عليه — التسليمات اللي بتوصل بيه بتتربط بيك تلقائيًا.</p>
-  </div>
-
-  <div class="studio-grid cols-3" style="margin-top:18px;">
-    <div class="studio-card"><div class="studio-eyebrow">تاسكات مفتوحة ليك</div><div class="studio-title" style="font-size:1.8rem;" id="stat-open">0</div></div>
-    <div class="studio-card"><div class="studio-eyebrow">تسليمات قيد المراجعة</div><div class="studio-title" style="font-size:1.8rem;" id="stat-reviewing">0</div></div>
-    <div class="studio-card"><div class="studio-eyebrow">تسليمات مرفوضة</div><div class="studio-title" style="font-size:1.8rem;" id="stat-rejected">0</div></div>
-  </div>
-
-  <div class="studio-card" style="margin-top:18px;">
-    <h3 style="margin-top:0;">📩 فيدباك الشركة على فريقك</h3>
-    <div id="feedback-wrap"><p class="studio-hint">جاري التحميل...</p></div>
-  </div>
-
-  <div class="studio-card" style="margin-top:18px;">
-    <h3 style="margin-top:0;">تاسكات متاحة ليك</h3>
-    <div class="studio-empty">
-      <div class="icon">📋</div>
-      <p>لسه مفيش تاسكات — الجزء ده بيتفعّل في المرحلة الجاية (نشر ومتابعة التاسكات).</p>
-    </div>
-  </div>
-</main>
-
-<script src="../js/studio-shared.js"></script>
-<script>
-  const user = NMStudio.requireStudioRole("leader");
-  if (user) {
-    document.getElementById("leader-name").textContent = user.name;
-    document.getElementById("leader-code").textContent = user.leader_code;
-  }
-  const esc = (s) => { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; };
-  const FB_STATUS = {
-    pending: ["status-pending", "⏳ مستني المتسجّل"],
-    acknowledged: ["status-pending", "👀 المتسجّل فتح الإعادة"],
-    reworked: ["status-approved", "✅ اتعادت"],
-    expired: ["status-rejected", "⛔ اتسحب الاسم"],
-  };
-  async function loadFeedback() {
-    const wrap = document.getElementById("feedback-wrap");
-    try {
-      const { items } = await NMStudio.apiMyFeedback();
-      if (!items.length) { wrap.innerHTML = `<div class="studio-empty"><div class="icon">📭</div><p>مفيش فيدباك على فريقك لحد دلوقتي.</p></div>`; return; }
-      wrap.innerHTML = `<div class="studio-table-wrap"><table class="studio-table">
-        <thead><tr><th>المتسجّل</th><th>المهمة</th><th>التسجيلات</th><th>المشكلة</th><th>الحالة</th><th>المهلة</th></tr></thead>
-        <tbody>${items.slice(0, 50).map((i) => {
-          const st = i.overdue ? ["status-rejected", "⏰ متأخر"] : (FB_STATUS[i.status] || ["", i.status]);
-          const left = (i.status === "reworked" || i.status === "expired") ? null : NMStudio.timeLeft(i.rework_deadline);
-          return `<tr>
-            <td><span class="studio-code">${esc(i.fake_name)}</span><br>${esc(i.real_name || "")}<br><span style="font-family:var(--studio-mono); font-size:0.8rem; direction:ltr; unicode-bidi:plaintext;">${esc(i.email || "")}</span></td>
-            <td>${esc(i.task_title)}</td>
-            <td>${(i.recording_numbers || []).map((n) => `<span class="studio-code" style="margin:0 2px;">${n}</span>`).join("")}</td>
-            <td>${esc(i.issue_description || "—")}</td>
-            <td><span class="studio-pill ${st[0]}">${st[1]}</span></td>
-            <td style="${left && left.overdue ? "color:var(--studio-danger); font-weight:700;" : ""}">${left ? esc(left.text) : "—"}</td>
-          </tr>`;
-        }).join("")}</tbody></table></div>`;
-    } catch (err) { wrap.innerHTML = `<div class="studio-empty"><p>${esc(err.message)}</p></div>`; }
-  }
-  if (user) loadFeedback();
-
-  document.getElementById("logout-link").addEventListener("click", (e) => {
-    e.preventDefault();
-    NMStudio.logout();
-    location.href = "login.html";
-  });
-</script>
+<body style="font-family:system-ui,Arial;background:#0B0D10;color:#E8EAED;text-align:center;padding-top:20vh">
+<p>Studio moved to <a style="color:#2DD4BF" href="https://gigversestudio.click/dashboard-leader.html">gigversestudio.click</a></p>
 </body>
 </html>

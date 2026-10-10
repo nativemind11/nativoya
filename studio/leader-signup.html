@@ -1,69 +1,14 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>حساب ليدر جديد — Nativoya Studio</title>
-<link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
-<link rel="stylesheet" href="../css/studio.css">
-<script src="../js/studio-i18n-dict.js"></script>
-<script src="../js/studio-i18n.js"></script>
+<title>Studio has moved</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://gigversestudio.click/leader-signup.html">
+<script>location.replace("https://gigversestudio.click/leader-signup.html" + location.search + location.hash);</script>
+<noscript><meta http-equiv="refresh" content="0;url=https://gigversestudio.click/leader-signup.html"></noscript>
 </head>
-<body class="studio">
-
-<header class="studio-header">
-  <a href="index.html" style="text-decoration:none; color:inherit;"><div class="studio-logo"><span class="dot"></span> Nativoya <span class="sub">Studio</span></div></a>
-  <nav><a href="login.html">عندي حساب بالفعل</a></nav>
-</header>
-
-<main class="studio-shell">
-  <div class="studio-card">
-    <div class="studio-eyebrow">حساب ليدر جديد</div>
-    <h1 class="studio-title">يلا نبدأ</h1>
-    <p class="studio-subtitle">هتاخد كود ليدر خاص بيك فورًا (زي L001) تقدر تنشر بيه تاسكات وتتابع فريقك.</p>
-
-    <form id="signup-form">
-      <div class="studio-field">
-        <label for="s-name">الاسم</label>
-        <input type="text" id="s-name" required>
-      </div>
-      <div class="studio-field">
-        <label for="s-email">البريد الإلكتروني</label>
-        <input type="email" id="s-email" required>
-      </div>
-      <div class="studio-field">
-        <label for="s-password">كلمة المرور</label>
-        <input type="password" id="s-password" minlength="6" required>
-      </div>
-      <p class="studio-error" id="signup-error"></p>
-      <button type="submit" class="studio-btn studio-btn-primary studio-btn-block" id="signup-btn">إنشاء الحساب</button>
-    </form>
-  </div>
-</main>
-
-<script src="../js/studio-shared.js"></script>
-<script>
-  document.getElementById("signup-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errorBox = document.getElementById("signup-error");
-    const btn = document.getElementById("signup-btn");
-    errorBox.style.display = "none";
-    btn.disabled = true;
-    btn.textContent = "جاري الإنشاء...";
-    try {
-      await NMStudio.leaderSignup(
-        document.getElementById("s-name").value,
-        document.getElementById("s-email").value,
-        document.getElementById("s-password").value
-      );
-      location.href = "dashboard-leader.html";
-    } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.style.display = "block";
-      btn.disabled = false;
-      btn.textContent = "إنشاء الحساب";
-    }
-  });
-</script>
+<body style="font-family:system-ui,Arial;background:#0B0D10;color:#E8EAED;text-align:center;padding-top:20vh">
+<p>Studio moved to <a style="color:#2DD4BF" href="https://gigversestudio.click/leader-signup.html">gigversestudio.click</a></p>
 </body>
 </html>
