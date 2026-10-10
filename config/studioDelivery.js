@@ -40,7 +40,8 @@ function sessionsSelect(zipExpr = "rs.zip_file_name", extraJoin = "") {
          COALESCE(rs.qa_reviewed_at, rs.updated_at) AS reviewed_at,
          ${DAY_EXPR} AS group_day,
          tal.name AS real_name, tal.email, tal.whatsapp, l.leader_code,
-         (SELECT COUNT(*)::int FROM recording_session_samples ss WHERE ss.session_id = rs.id) AS sample_count,
+         COALESCE(rs.zip_partial_count, (SELECT COUNT(*)::int FROM recording_session_samples ss WHERE ss.session_id = rs.id)) AS sample_count,
+         rs.zip_partial_count IS NOT NULL AS is_partial,
          EXISTS (SELECT 1 FROM studio_feedback_items f WHERE f.session_id = rs.id AND f.status = 'reworked') AS is_redelivery
   FROM recording_sessions rs
   JOIN recording_tasks t ON t.id = rs.task_id
@@ -133,7 +134,7 @@ function buildPendingTree(rows) {
     g.sessions.push({
       id: r.id, fakeName: r.fake_name, realName: r.real_name, email: r.email, whatsapp: r.whatsapp,
       ageBracket: r.age_bracket, age: r.age, zipFileName: r.zip_file_name, leaderCode: r.leader_code,
-      sampleCount: r.sample_count, reviewedAt: r.reviewed_at, isRedelivery: !!r.is_redelivery,
+      sampleCount: r.sample_count, reviewedAt: r.reviewed_at, isRedelivery: !!r.is_redelivery, isPartial: !!r.is_partial,
     });
   }
   const sortGroups = (m) => [...m.values()].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : (a.qaName || "").localeCompare(b.qaName || "")));
@@ -148,6 +149,7 @@ async function listDelivered(db) {
   const r = await db.query(`
     SELECT b.id, b.task_id, t.title AS task_title, b.gender, b.group_day::text AS group_day, b.status,
            b.session_count, b.zip_file_name, b.zip_file_url, b.zip_size_bytes, b.created_at, b.delivered_at,
+           b.downloaded_at, b.zip_purged_at,
            qa.name AS qa_name
     FROM studio_delivery_batches b
     JOIN recording_tasks t ON t.id = b.task_id

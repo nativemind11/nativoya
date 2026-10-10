@@ -3,6 +3,7 @@ const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const D = require("../../config/studioDelivery");
 const { driveStorage } = require("../../config/studioDeliveryStorage");
+const S = require("../../config/studioStorage");
 
 const router = express.Router();
 router.use(requireStudioAuth, requireStudioRole("head_leader"));
@@ -89,6 +90,53 @@ router.post("/collect", async (req, res) => {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     if (err.code === "DRIVE_NOT_CONNECTED") return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
     res.status(500).json({ error: "تعذر التجميع — المجموعة رجعت لقايمة الانتظار، جرّب تاني." });
+  }
+});
+
+// GET /api/studio/delivery/storage — Drive usage + how much can be freed.
+router.get("/storage", async (req, res) => {
+  try {
+    res.json(await S.getStatus({ repo: S.makeRepo(pool), drive: await S.driveClient() }));
+  } catch (err) {
+    console.error("[delivery:storage]", err);
+    if (err.code === "DRIVE_NOT_CONNECTED") return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
+    res.status(500).json({ error: "تعذر قراءة المساحة" });
+  }
+});
+
+// POST /api/studio/delivery/batches/:id/downloaded — the head leader confirms the
+// big ZIP is safely on his own device. Body { downloaded: false } undoes it
+// (only while the ZIP is still on Drive). Nothing is deleted without this.
+router.post("/batches/:id/downloaded", async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(400).json({ error: "رقم غير صحيح" });
+  const undo = req.body && req.body.downloaded === false;
+  try {
+    const r = await pool.query(
+      undo
+        ? `UPDATE studio_delivery_batches SET downloaded_at = NULL WHERE id = $1 AND status = 'delivered' AND zip_purged_at IS NULL RETURNING id, downloaded_at, zip_purged_at`
+        : `UPDATE studio_delivery_batches SET downloaded_at = COALESCE(downloaded_at, now()) WHERE id = $1 AND status = 'delivered' RETURNING id, downloaded_at, zip_purged_at`,
+      [req.params.id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: undo ? "مينفعش تتراجع — الملف اتحذف من درايف أو التجميع مش موجود." : "التجميع ده مش موجود أو لسه ماتسلّمش." });
+    res.json({ ok: true, batch: r.rows[0] });
+  } catch (err) {
+    console.error("[delivery:downloaded]", err);
+    res.status(500).json({ error: "تعذر الحفظ" });
+  }
+});
+
+// POST /api/studio/delivery/storage/purge — body { mode: "auto" | "manual" }.
+// "auto" only acts when Drive is >= 80 % full. Both stop after ~40 s and can be
+// called again to continue.
+router.post("/storage/purge", async (req, res) => {
+  const mode = req.body && req.body.mode === "auto" ? "auto" : "manual";
+  try {
+    const out = await S.runPurge({ repo: S.makeRepo(pool), drive: await S.driveClient(), mode });
+    res.json({ ok: true, ...out });
+  } catch (err) {
+    console.error("[delivery:purge]", err);
+    if (err.code === "DRIVE_NOT_CONNECTED") return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
+    res.status(500).json({ error: "تعذر تنظيف المساحة" });
   }
 });
 

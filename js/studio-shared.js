@@ -163,6 +163,11 @@
   // ---- head leader: delivery to the buyer -----------------------------
   function apiGetPendingDelivery() { return apiFetch("/api/studio/delivery/pending"); }
   function apiGetDeliveredBatches() { return apiFetch("/api/studio/delivery/delivered"); }
+  function apiGetStorage() { return apiFetch("/api/studio/delivery/storage"); }
+  function apiMarkDownloaded(batchId, downloaded) {
+    return apiFetch(`/api/studio/delivery/batches/${encodeURIComponent(batchId)}/downloaded`, { method: "POST", body: JSON.stringify({ downloaded: downloaded !== false }) });
+  }
+  function apiPurgeStorage(mode) { return apiFetch("/api/studio/delivery/storage/purge", { method: "POST", body: JSON.stringify({ mode }) }); }
   function apiCollectGroup(group) {
     return apiFetch("/api/studio/delivery/collect", { method: "POST", body: JSON.stringify(group) });
   }
@@ -218,7 +223,7 @@
     apiGetMyTasks, apiGetTaskDetail, apiGetLeaders, apiCreateQaReviewer, apiGetQaReviewers,
     apiGetPendingReviews, apiGetReviewDetail, apiApproveSession, apiRejectAllSession,
     apiSubmitReview, qaFetchSampleAudioUrl,
-    apiGetPendingDelivery, apiGetDeliveredBatches, apiCollectGroup, downloadGroupSheet, downloadBatchSheet,
+    apiGetPendingDelivery, apiGetDeliveredBatches, apiGetStorage, apiMarkDownloaded, apiPurgeStorage, apiCollectGroup, downloadGroupSheet, downloadBatchSheet,
     apiFeedbackParse, apiFeedbackPreview, apiFeedbackApply, apiFeedbackItems, apiMyFeedback, timeLeft,
   };
 })();

@@ -9,6 +9,7 @@ const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
+const { deleteQuietly } = require("../../config/studioStorage");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 
 const router = express.Router();
@@ -237,6 +238,10 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
          WHERE id = $3`,
         [audioUrl, duration, existingCheck.rows[0].id]
       );
+      // the clip this one replaces is garbage now — free its space (never blocks the upload)
+      if (existingCheck.rows[0].audio_file_url && existingCheck.rows[0].audio_file_url !== audioUrl) {
+        await deleteQuietly(drive, existingCheck.rows[0].audio_file_url);
+      }
     } else {
       await pool.query(
         `INSERT INTO recording_session_samples (session_id, sample_id, audio_file_url, duration, completed_at)
@@ -250,6 +255,10 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
     console.error(err);
     if (err.code === "DRIVE_NOT_CONNECTED") {
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
+    }
+    if (/storageQuotaExceeded|quota/i.test(String((err.errors && err.errors[0] && err.errors[0].reason) || err.message))) {
+      console.error("[storage] DRIVE FULL — head leader must download + clean from the delivery page");
+      return res.status(503).json({ error: "السيرفر مش قادر يستقبل تسجيلات دلوقتي. بلّغ الإدارة وحاول بعد شوية — تسجيلك محفوظ على جهازك." });
     }
     res.status(500).json({ error: "تعذر رفع التسجيل" });
   }
@@ -308,12 +317,21 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
       archive.on("error", reject);
     });
 
+    // After the delivered audio was cleaned off Drive (config/studioStorage.js) only the
+    // clips recorded since then still exist, so a re-submission is a PARTIAL ZIP holding
+    // exactly those recordings (same numbering: 03.wav = recording 3).
     const samplesWithNames = await pool.query(`
       SELECT ss.audio_file_url, s.order_index, s.sentence_name
       FROM recording_session_samples ss
       JOIN recording_samples s ON s.id = ss.sample_id
-      WHERE ss.session_id = $1 ORDER BY s.order_index
+      JOIN recording_sessions rs ON rs.id = ss.session_id
+      WHERE ss.session_id = $1 AND (rs.audio_purged_at IS NULL OR ss.completed_at > rs.audio_purged_at)
+      ORDER BY s.order_index
     `, [session.id]);
+    const isPartial = !!session.audio_purged_at;
+    if (isPartial && !samplesWithNames.rows.length) {
+      return res.status(400).json({ error: "مفيش تسجيلات معادة تتسلّم." });
+    }
 
     for (const row of samplesWithNames.rows) {
       const fileId = row.audio_file_url.replace("drive:", "");
@@ -333,13 +351,17 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
     const uploadedZip = await uploadSubmissionFile(qaFolderId, zipFileName, "application/zip", zipBuffer);
     const zipFileUrl = uploadedZip.webViewLink || `https://drive.google.com/file/d/${uploadedZip.id}/view`;
 
+    const oldZipUrl = session.zip_file_url;
     await pool.query(
       `UPDATE recording_sessions
        SET status = 'submitted', zip_file_url = $1, zip_file_name = $2, updated_at = now(),
-           rejection_reason = NULL, rework_deadline = NULL
+           rejection_reason = NULL, rework_deadline = NULL,
+           files_on_drive = true, zip_partial_count = $4
        WHERE id = $3`,
-      [zipFileUrl, zipFileName, session.id]
+      [zipFileUrl, zipFileName, session.id, isPartial ? samplesWithNames.rows.length : null]
     );
+    // the ZIP from the previous submission is superseded — free its space (never blocks the submit)
+    if (oldZipUrl && oldZipUrl !== zipFileUrl) await deleteQuietly(drive, oldZipUrl);
 
     if (isResubmit) await markReworked(pool, session.id).catch((e) => console.error("[feedback reworked]", e.message));
     res.json({ ok: true, zipFileName });
