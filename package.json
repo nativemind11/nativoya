@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "migrate": "psql \"$DATABASE_URL\" -f db/schema.sql",
-    "test": "node --test tests/audio.test.js tests/recorder.test.js tests/delivery.test.js tests/delivery-http.test.js tests/delivery-ui.test.js tests/feedback.test.js tests/feedback-http.test.js tests/feedback-ui.test.js"
+    "test": "node --test tests/audio.test.js tests/recorder.test.js tests/delivery.test.js tests/delivery-http.test.js tests/delivery-ui.test.js tests/feedback.test.js tests/feedback-http.test.js tests/feedback-ui.test.js tests/expiry.test.js"
   },
   "dependencies": {
     "archiver": "^6.0.2",

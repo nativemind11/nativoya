@@ -365,7 +365,7 @@ router.get("/tasks", async (req, res) => {
       SELECT t.*,
         (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id) AS sample_count,
         (SELECT COUNT(*) FROM recording_task_leaders WHERE task_id = t.id) AS leader_count,
-        (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id) AS submission_count,
+        (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status <> 'expired') AS submission_count,
         (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status = 'approved' AND gender = 'male') AS approved_male_count,
         (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status = 'approved' AND gender = 'female') AS approved_female_count
       FROM recording_tasks t

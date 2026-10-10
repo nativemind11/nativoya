@@ -176,10 +176,10 @@ async function finalizeSession(sessionId, qaReviewerId, rejectedSampleIds, unifo
 
     await client.query(
       `UPDATE recording_sessions
-       SET status = $1, rejection_reason = $2, rework_deadline = $3,
+       SET status = $1, rejection_reason = $2, rework_deadline = $3, rework_enforced = $6,
            qa_reviewer_id = $4, qa_reviewed_at = now(), updated_at = now()
        WHERE id = $5`,
-      [newStatus, aggregateReason, reworkDeadline, qaReviewerId, sessionId]
+      [newStatus, aggregateReason, reworkDeadline, qaReviewerId, sessionId, !!reworkDeadline]
     );
 
     await client.query("COMMIT");

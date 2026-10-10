@@ -121,6 +121,13 @@
     </div>
   </div>
 
+  <div id="expired-box" class="hidden studio-card text-center" style="border-color:var(--studio-danger);">
+    <div style="font-size:2.6rem;">⛔</div>
+    <h2 class="studio-title">انتهت مهلة الإعادة</h2>
+    <p class="studio-subtitle">الـ 12 ساعة خلصت من غير ما التسجيلات المطلوبة تتسلّم، فالاسم اتسحب منك واتاح لحد تاني. تقدر تبدأ تسجيل جديد من قايمة المهام.</p>
+    <a href="tasks.html" class="studio-btn studio-btn-primary">قايمة المهام</a>
+  </div>
+
   <div id="done-box" class="hidden studio-card text-center">
     <div style="font-size:2.6rem;">🎉</div>
     <h2 class="studio-title">تم التسليم بنجاح!</h2>
@@ -205,6 +212,10 @@
       $("fake-name-pill").textContent = `🎭 ${session.fake_name}`;
       $("loading-box").classList.add("hidden");
 
+      if (session.status === "expired") {
+        $("expired-box").classList.remove("hidden");
+        return;
+      }
       if (session.status === "rejected") {
         reworkMode = true;
         activeSamples = samples.filter(s => s.qa_status === "rejected");
@@ -249,7 +260,7 @@
     if (!iso) { el.textContent = ""; return; }
     const tick = () => {
       const t = NMTalent.timeLeft(iso);
-      el.textContent = `⏰ ${t.text}`;
+      el.textContent = t.overdue ? `⏰ ${t.text}` : `⏰ ${t.text} — لو خلصت من غير تسليم، الاسم بيتسحب منك ويتاح لحد تاني.`;
       el.style.color = t.overdue ? "var(--studio-danger)" : "var(--studio-warn)";
     };
     tick();

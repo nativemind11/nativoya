@@ -4,6 +4,7 @@ const multer = require("multer");
 const archiver = require("archiver");
 const { validateClip } = require("../../config/audioValidate");
 const { markAcknowledged, markReworked } = require("../../config/studioFeedback");
+const { safeExpire } = require("../../config/studioExpiry");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
@@ -20,10 +21,11 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 // GET /api/studio/talent/tasks — published tasks open for recording.
 router.get("/tasks", async (req, res) => {
   try {
+    await safeExpire(pool);
     const result = await pool.query(`
       SELECT t.id, t.title, t.difficulty, t.quantity, t.recording_settings,
         (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id) AS sample_count,
-        (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id) AS submission_count
+        (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status <> 'expired') AS submission_count
       FROM recording_tasks t
       WHERE t.status = 'published'
       ORDER BY t.published_at DESC
@@ -94,10 +96,11 @@ router.get("/samples/:sampleId/reference-audio", async (req, res) => {
 // NOBODY has reserved yet for this task.
 router.get("/tasks/:id/fake-names", async (req, res) => {
   try {
+    await safeExpire(pool);
     const taskResult = await pool.query(`SELECT fake_names FROM recording_tasks WHERE id = $1`, [req.params.id]);
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
 
-    const taken = await pool.query(`SELECT fake_name FROM recording_sessions WHERE task_id = $1`, [req.params.id]);
+    const taken = await pool.query(`SELECT fake_name FROM recording_sessions WHERE task_id = $1 AND status <> 'expired'`, [req.params.id]);
     const takenSet = new Set(taken.rows.map(r => r.fake_name));
     const available = taskResult.rows[0].fake_names.filter(n => !takenSet.has(n));
     res.json(available);
@@ -119,6 +122,7 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
   if (!["child", "adult", "elderly"].includes(ageBracket)) return res.status(400).json({ error: "الفئة العمرية غير صحيحة" });
 
   try {
+    await safeExpire(pool);
     const taskResult = await pool.query(`SELECT * FROM recording_tasks WHERE id = $1 AND status = 'published'`, [taskId]);
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش متاحة" });
     if (!taskResult.rows[0].fake_names.includes(fakeName)) {
@@ -155,6 +159,7 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
 // GET /api/studio/talent/sessions/:token — resume: session + samples + what's recorded so far.
 router.get("/sessions/:token", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
   try {
+    await safeExpire(pool);
     const sessionResult = await pool.query(`
       SELECT rs.*, t.recording_settings, t.title AS task_title
       FROM recording_sessions rs JOIN recording_tasks t ON t.id = rs.task_id
@@ -188,10 +193,12 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
   if (!req.file) return res.status(400).json({ error: "لازم ترفع تسجيل صوتي" });
 
   try {
+    await safeExpire(pool);
     const sessionResult = await pool.query(`SELECT * FROM recording_sessions WHERE session_token = $1`, [req.params.token]);
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
+    if (session.status === "expired") return res.status(410).json({ error: "انتهت مهلة الإعادة والاسم اتسحب منك. ممكن تبدأ تسجيل جديد من قايمة المهام." });
 
     const existingCheck = await pool.query(
       `SELECT * FROM recording_session_samples WHERE session_id = $1 AND sample_id = $2`,
@@ -254,10 +261,12 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
 // to that leader code's QA folder, and marks the session submitted.
 router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
   try {
+    await safeExpire(pool);
     const sessionResult = await pool.query(`SELECT * FROM recording_sessions WHERE session_token = $1`, [req.params.token]);
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
+    if (session.status === "expired") return res.status(410).json({ error: "انتهت مهلة الإعادة والاسم اتسحب منك. ممكن تبدأ تسجيل جديد من قايمة المهام." });
 
     const isResubmit = session.status === "rejected";
     if (session.status !== "in_progress" && !isResubmit) {
@@ -347,6 +356,7 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
 // recorded, across every task/leader they've worked with.
 router.get("/me/sessions", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
   try {
+    await safeExpire(pool);
     const result = await pool.query(`
       SELECT rs.*, t.title AS task_title, l.leader_code,
         (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id) AS sample_count,

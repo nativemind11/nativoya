@@ -48,6 +48,8 @@ async function feedbackPage() {
                      recording_numbers: [2, 4], issue_description: "echo", status: "pending", overdue: false, rework_deadline: FUTURE, created_at: new Date().toISOString() },
                    { id: "i2", task_id: "t1", task_title: "Task One", fake_name: "Falcon", real_name: "Real Falcon", email: "f@mail.com", leader_code: "L001",
                      recording_numbers: [1], issue_description: "", status: "pending", overdue: true, rework_deadline: PAST, created_at: new Date().toISOString() },
+                   { id: "i4", task_id: "t1", task_title: "Task One", fake_name: "Kite", real_name: "Real Kite", email: "k@mail.com", leader_code: "L001",
+                     recording_numbers: [2], issue_description: "", status: "expired", overdue: false, rework_deadline: PAST, created_at: new Date().toISOString() },
                    { id: "i3", task_id: "t1", task_title: "Task One", fake_name: "Owl", real_name: "Real Owl", email: "o@mail.com", leader_code: "L001",
                      recording_numbers: [3], issue_description: "", status: "reworked", overdue: false, rework_deadline: PAST, reworked_at: new Date().toISOString(), created_at: new Date().toISOString() }];
           return { ok: true, sessions: 1, samples: 2, items: 1, skipped: [{ row: 4 }], reworkHours: 12 }; },
@@ -103,10 +105,11 @@ async function feedbackPage() {
   assert.ok(d.getElementById("toast").textContent.includes("اتسجّل فيدباك على 1 متسجّل"));
   assert.ok(d.getElementById("step-map").classList.contains("hidden") && d.getElementById("step-preview").classList.contains("hidden"));
   const rows = d.querySelectorAll("#items-wrap tbody tr");
-  assert.strictEqual(rows.length, 3);
+  assert.strictEqual(rows.length, 4);
+  assert.ok(rows[2].textContent.includes("اتسحب الاسم") && rows[2].textContent.includes("الاسم اتسحب") && !rows[2].querySelector(".fb-late"), "withdrawn is not shown as late");
   assert.ok(rows[0].textContent.includes("مستني المتسجّل") && rows[0].textContent.includes("باقي 11 ساعة"));
   assert.ok(rows[1].textContent.includes("متأخر") && rows[1].querySelector(".fb-late"), "overdue is flagged red");
-  assert.ok(rows[2].textContent.includes("اتعادت"));
+  assert.ok(rows[3].textContent.includes("اتعادت"));
   console.log("ok apply: toast, steps reset, tracking list with pending / overdue / reworked");
 
   // a preview with zero valid rows can't be applied
@@ -123,12 +126,14 @@ async function feedbackPage() {
   const talentItems = [
     { task_title: "Task <b>One</b>", recording_numbers: [2, 4], issue_description: "echo", status: "pending", rework_deadline: FUTURE, session_status: "rejected", session_token: "tok 1" },
     { task_title: "Done task", recording_numbers: [1], issue_description: "", status: "reworked", rework_deadline: PAST, session_status: "submitted", session_token: "tok2" },
+    { task_title: "Gone task", recording_numbers: [3], issue_description: "", status: "expired", rework_deadline: PAST, session_status: "expired", session_token: "tok3" },
   ];
+  const talentSessions = [{ task_title: "Gone task", leader_code: "L001", fake_name: "Eagle", recorded_count: 3, sample_count: 3, status: "expired", session_token: "tok3", rejection_reason: null }];
   const td = new JSDOM(page("talent-dashboard.html"), {
     runScripts: "dangerously", url: "https://example.com/studio/talent-dashboard.html",
     beforeParse(w) {
       w.NMTalent = { requireLogin: () => ({ name: "Sara" }), logout() {}, timeLeft,
-        getMySessions: async () => [], getMyFeedback: async () => ({ items: talentItems }) };
+        getMySessions: async () => talentSessions, getMyFeedback: async () => ({ items: talentItems }) };
     },
   });
   await wait();
@@ -138,7 +143,13 @@ async function feedbackPage() {
   assert.ok(!tw.textContent.includes("Done task"), "reworked items are not shown as to-do");
   assert.strictEqual(tw.querySelector("a").getAttribute("href"), "recording.html?session=tok%201", "link goes to the rework screen (token encoded)");
   assert.ok(tw.innerHTML.includes("Task &lt;b&gt;One&lt;/b&gt;"));
-  console.log("ok talent dashboard: shows only open feedback with recordings, deadline and rework link");
+  assert.ok(tw.textContent.includes("الاسم بيتسحب منك"), "warns up front that the name is withdrawn if the deadline is missed");
+  assert.ok(tw.textContent.includes("Gone task") && tw.textContent.includes("اتسحب منك الاسم"), "a withdrawn one is explained");
+  assert.strictEqual(tw.querySelectorAll("a").length, 1, "no rework link for the withdrawn one");
+  const sw = td.window.document.getElementById("sessions-wrap");
+  assert.ok(sw.textContent.includes("انتهت مهلة الإعادة") && sw.querySelector(".status-rejected"), "sessions table shows the withdrawal");
+  assert.strictEqual(sw.querySelectorAll("a").length, 0, "no continue / redo button on a withdrawn session");
+  console.log("ok talent dashboard: shows only open feedback with recordings, deadline, warning, and explains a withdrawn name");
 
   const td2 = new JSDOM(page("talent-dashboard.html"), {
     runScripts: "dangerously", url: "https://example.com/studio/talent-dashboard.html",
@@ -155,13 +166,16 @@ async function feedbackPage() {
       w.NMStudio = { requireStudioRole: () => ({ name: "Lea", leader_code: "L001" }), logout() {}, timeLeft,
         apiMyFeedback: async () => ({ items: [
           { fake_name: "Eagle", real_name: "Real <i>Eagle</i>", email: "eagle@mail.com", task_title: "Task One", recording_numbers: [2], issue_description: "echo", status: "pending", overdue: true, rework_deadline: PAST },
-          { fake_name: "Owl", real_name: "Real Owl", email: "o@mail.com", task_title: "Task One", recording_numbers: [1], issue_description: "", status: "reworked", overdue: false, rework_deadline: PAST } ] }) };
+          { fake_name: "Owl", real_name: "Real Owl", email: "o@mail.com", task_title: "Task One", recording_numbers: [1], issue_description: "", status: "reworked", overdue: false, rework_deadline: PAST },
+          { fake_name: "Kite", real_name: "Real Kite", email: "k@mail.com", task_title: "Task One", recording_numbers: [2], issue_description: "", status: "expired", overdue: false, rework_deadline: PAST } ] }) };
     },
   });
   await wait();
   const lw = ld.window.document.getElementById("feedback-wrap");
-  assert.strictEqual(lw.querySelectorAll("tbody tr").length, 2);
+  assert.strictEqual(lw.querySelectorAll("tbody tr").length, 3);
   assert.ok(lw.textContent.includes("eagle@mail.com") && lw.textContent.includes("متأخر") && lw.textContent.includes("اتعادت"));
+  const kite = [...lw.querySelectorAll("tbody tr")].find((r) => r.textContent.includes("Kite"));
+  assert.ok(kite.textContent.includes("اتسحب الاسم") && !kite.textContent.includes("المهلة خلصت"), "withdrawn: own label, no countdown");
   assert.ok(lw.innerHTML.includes("Real &lt;i&gt;Eagle&lt;/i&gt;"));
   console.log("ok leader dashboard: team feedback with real names, overdue / reworked, escaped");
   // ------------------------------------------------------------ recording page
@@ -184,6 +198,21 @@ async function feedbackPage() {
   assert.ok(rd.getElementById("rework-deadline-text").textContent.includes("باقي 11 ساعة"), "countdown is shown");
   assert.strictEqual(rd.getElementById("sample-number").textContent, "جملة 1 من 1", "only the recording to redo is offered");
   assert.strictEqual(rd.getElementById("sentence-text").textContent, "S2");
-  console.log("ok recording page: rework banner with the 12h countdown, only the requested recording");
+  assert.ok(rd.getElementById("rework-deadline-text").textContent.includes("الاسم بيتسحب منك"), "warns before the deadline");
+  console.log("ok recording page: rework banner with the 12h countdown + withdrawal warning, only the requested recording");
+
+  const ep = new JSDOM(page("recording.html"), {
+    runScripts: "dangerously", url: "https://example.com/studio/recording.html?session=tok9",
+    beforeParse(w) {
+      w.NMTalent = { requireLogin() {}, timeLeft, getSession: async () => ({ session: { status: "expired", fake_name: "Eagle", recording_settings: {} }, samples: [{ id: "a", order_index: 0, sentence_name: "S1" }] }) };
+      w.StudioRecorder = { isSupported: () => true }; w.StudioQueue = { pendingFor: async () => [] }; w.WavEngine = {}; w.WaveformVisualizer = function () {};
+    },
+  });
+  await wait(100);
+  const ed = ep.window.document;
+  assert.ok(!ed.getElementById("expired-box").classList.contains("hidden"));
+  assert.ok(ed.getElementById("recorder-box").classList.contains("hidden"), "the recorder is not offered");
+  assert.ok(ed.getElementById("done-box").classList.contains("hidden"), "and it is not mistaken for a successful delivery");
+  console.log("ok recording page: a withdrawn session shows the explanation, no recorder");
   process.exit(0);
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });

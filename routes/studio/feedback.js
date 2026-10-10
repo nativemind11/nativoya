@@ -3,6 +3,7 @@ const multer = require("multer");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const F = require("../../config/studioFeedback");
+const { safeExpire } = require("../../config/studioExpiry");
 
 const router = express.Router();
 // 4MB: Vercel rejects larger request bodies anyway, and a feedback sheet is tiny.
@@ -58,6 +59,7 @@ router.post("/preview", ...headLeader, uploadFile, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "ارفع الملف" });
   try {
     const taskId = requireTask(req.body);
+    await safeExpire(pool);
     const sheets = await F.parseSpreadsheet(req.file.buffer, req.file.originalname);
     const { rows, startRow, labelType } = readMapping(req.body, sheets);
     res.json(await F.resolveRows({ db: pool, taskId, labelType, rows, startRow }));
@@ -69,6 +71,7 @@ router.post("/apply", ...headLeader, uploadFile, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "ارفع الملف" });
   try {
     const taskId = requireTask(req.body);
+    await safeExpire(pool);
     const sheets = await F.parseSpreadsheet(req.file.buffer, req.file.originalname);
     const { rows, startRow, labelType } = readMapping(req.body, sheets);
     res.json({ ok: true, ...(await F.applyFeedback({ db: pool, taskId, labelType, rows, startRow, headLeaderId: req.studioUser.id })) });
@@ -79,13 +82,13 @@ router.post("/apply", ...headLeader, uploadFile, async (req, res) => {
 router.get("/items", ...headLeader, async (req, res) => {
   const taskId = req.query.taskId;
   if (taskId && !UUID.test(String(taskId))) return res.status(400).json({ error: "رقم المهمة غير صحيح" });
-  try { res.json({ items: await F.listForHeadLeader(pool, { taskId }) }); }
+  try { await safeExpire(pool); res.json({ items: await F.listForHeadLeader(pool, { taskId }) }); }
   catch (err) { fail(res, err, "تعذر تحميل الفيدباك"); }
 });
 
 // GET /api/studio/feedback/mine — a talent's own feedback / a leader's team feedback.
 router.get("/mine", requireStudioAuth, requireStudioRole("talent", "leader"), async (req, res) => {
-  try { res.json({ items: await F.listMine(pool, req.studioRole, req.studioUser.id) }); }
+  try { await safeExpire(pool); res.json({ items: await F.listMine(pool, req.studioRole, req.studioUser.id) }); }
   catch (err) { fail(res, err, "تعذر تحميل الفيدباك"); }
 });
 

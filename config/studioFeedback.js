@@ -51,6 +51,13 @@ function parseLabel(raw, type) {
   return noExt ? { fakeName: noExt } : { error: "empty" };
 }
 
+/** gender / age bracket / age written in a full zip name, or null for a plain alias. */
+function parseZipAttrs(raw) {
+  const s = String(raw == null ? "" : raw).trim().split(/[\\/]/).pop().replace(/\.zip$/i, "").trim();
+  const m = s.match(ZIP_RE);
+  return m ? { gender: m[2].toLowerCase(), bracket: m[3].toLowerCase(), age: m[4].toLowerCase() } : null;
+}
+
 /**
  * Turns "3", "3, 5, 7", "3-5", "٣ و ٥", "1-3,7", "all" into [1-based numbers].
  */
@@ -186,6 +193,8 @@ const MESSAGES = {
   collecting: "التاسك ده بيتجمّع للتسليم دلوقتي — جرّب بعد ما يخلص.",
   sample_missing: "التسجيل المطلوب مش موجود عند المتسجّل.",
   changed: "حالة التاسك اتغيّرت أثناء التطبيق، اتخطّى.",
+  expired: "المتسجّل ده خلصت مهلة إعادته واتسحب منه الاسم — مينفعش يتعاد.",
+  ambiguous: "الاسم ده اتسحب من متسجّل واتعطى لحد تاني، ومش عارفين تقصد أنهي واحد. استخدم اسم ملف الـ ZIP كامل.",
 };
 const OK_STATUS = new Set(["approved", "rejected"]);
 
@@ -199,7 +208,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
   const sampleCount = (await db.query(`SELECT COUNT(*)::int AS c FROM recording_samples WHERE task_id = $1`, [taskId])).rows[0].c;
 
   const sess = await db.query(
-    `SELECT rs.id, rs.fake_name, rs.status, rs.leader_id, l.leader_code, l.name AS leader_name,
+    `SELECT rs.id, rs.fake_name, rs.status, rs.gender, rs.age_bracket, rs.age, rs.leader_id, l.leader_code, l.name AS leader_name,
             tal.name AS real_name, tal.email, b.status AS batch_status,
             ARRAY(SELECT s.order_index FROM recording_session_samples ss
                   JOIN recording_samples s ON s.id = ss.sample_id WHERE ss.session_id = rs.id) AS have
@@ -208,7 +217,22 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
      LEFT JOIN studio_talents tal ON tal.id = rs.talent_id
      LEFT JOIN studio_delivery_batches b ON b.id = rs.delivery_batch_id
      WHERE rs.task_id = $1`, [taskId]);
-  const byName = new Map(sess.rows.map((r) => [normKey(r.fake_name), r]));
+  // An alias can have several holders once a withdrawn (expired) session's name
+  // was given to someone else. Never guess which one the buyer meant.
+  const byName = new Map();
+  for (const r of sess.rows) {
+    const k = normKey(r.fake_name);
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(r);
+  }
+  const pickSession = (list, attrs) => {
+    if (list.length === 1) return { session: list[0] };
+    if (attrs) {
+      const hit = list.filter((c) => c.gender === attrs.gender && c.age_bracket === attrs.bracket && String(c.age == null ? "na" : c.age) === attrs.age);
+      if (hit.length === 1) return { session: hit[0] };
+    }
+    return { ambiguous: true };
+  };
 
   const results = rows.map((cells, i) => {
     const [labelRaw, numbersRaw, descRaw] = cells;
@@ -221,8 +245,11 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
     if (lab.error) return { ...base, code: "no_label", message: MESSAGES.no_label };
     base.fakeName = lab.fakeName;
 
-    const session = byName.get(normKey(lab.fakeName));
-    if (!session) return { ...base, code: "no_session", message: MESSAGES.no_session };
+    const candidates = byName.get(normKey(lab.fakeName));
+    if (!candidates) return { ...base, code: "no_session", message: MESSAGES.no_session };
+    const picked = pickSession(candidates, parseZipAttrs(labelRaw));
+    if (picked.ambiguous) return { ...base, code: "ambiguous", message: MESSAGES.ambiguous };
+    const session = picked.session;
 
     const num = parseNumbers(numbersRaw, sampleCount);
     if (num.error === "out_of_range") return { ...base, code: "out_of_range", message: MESSAGES.out_of_range(num) };
@@ -311,7 +338,7 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, headLeader
       await client.query(
         `UPDATE recording_sessions
          SET status = 'rejected', rejection_reason = $2,
-             rework_deadline = now() + ($3::int * interval '1 hour'),
+             rework_deadline = now() + ($3::int * interval '1 hour'), rework_enforced = true,
              delivery_batch_id = NULL, updated_at = now()
          WHERE id = $1`,
         [sessionId, `فيدباك من الشركة — ${summary}`.slice(0, 1500), REWORK_HOURS]
@@ -357,7 +384,7 @@ async function markReworked(db, sessionId) {
 const ITEM_SELECT = `
   SELECT f.id, f.task_id, t.title AS task_title, f.fake_name, f.recording_numbers, f.issue_description,
          f.status, f.rework_deadline, f.created_at, f.reworked_at, f.upload_id, f.source_row,
-         (f.status <> 'reworked' AND f.rework_deadline IS NOT NULL AND f.rework_deadline < now()) AS overdue,
+         (f.status NOT IN ('reworked', 'expired') AND f.rework_deadline IS NOT NULL AND f.rework_deadline < now()) AS overdue,
          l.leader_code, l.name AS leader_name, tal.name AS real_name, tal.email,
          rs.session_token, rs.status AS session_status
   FROM studio_feedback_items f
@@ -385,7 +412,7 @@ async function listMine(db, role, userId) {
 }
 
 module.exports = {
-  parseLabel, parseNumbers, parseSpreadsheet, sheetSummary, extractRows, guessColumns, guessHeaderRow,
+  parseLabel, parseZipAttrs, parseNumbers, parseSpreadsheet, sheetSummary, extractRows, guessColumns, guessHeaderRow,
   resolveRows, applyFeedback, markAcknowledged, markReworked, listForHeadLeader, listMine,
   REWORK_HOURS, MAX_ROWS,
 };

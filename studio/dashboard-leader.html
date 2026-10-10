@@ -58,6 +58,7 @@
     pending: ["status-pending", "⏳ مستني المتسجّل"],
     acknowledged: ["status-pending", "👀 المتسجّل فتح الإعادة"],
     reworked: ["status-approved", "✅ اتعادت"],
+    expired: ["status-rejected", "⛔ اتسحب الاسم"],
   };
   async function loadFeedback() {
     const wrap = document.getElementById("feedback-wrap");
@@ -68,7 +69,7 @@
         <thead><tr><th>المتسجّل</th><th>المهمة</th><th>التسجيلات</th><th>المشكلة</th><th>الحالة</th><th>المهلة</th></tr></thead>
         <tbody>${items.slice(0, 50).map((i) => {
           const st = i.overdue ? ["status-rejected", "⏰ متأخر"] : (FB_STATUS[i.status] || ["", i.status]);
-          const left = i.status === "reworked" ? null : NMStudio.timeLeft(i.rework_deadline);
+          const left = (i.status === "reworked" || i.status === "expired") ? null : NMStudio.timeLeft(i.rework_deadline);
           return `<tr>
             <td><span class="studio-code">${esc(i.fake_name)}</span><br>${esc(i.real_name || "")}<br><span style="font-family:var(--studio-mono); font-size:0.8rem; direction:ltr; unicode-bidi:plaintext;">${esc(i.email || "")}</span></td>
             <td>${esc(i.task_title)}</td>

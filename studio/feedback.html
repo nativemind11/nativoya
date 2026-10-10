@@ -40,7 +40,7 @@
 <main class="studio-shell wide">
   <div class="studio-eyebrow">لوحة الهيد ليدر</div>
   <h1 class="studio-title">فيدباك الشركة</h1>
-  <p class="studio-subtitle">ارفع ملف الإكسيل اللي الشركة بعتته، وحدّد أنهي عمود فيه الاسم وأرقام التسجيلات ووصف المشكلة. النظام هيلاقي كل متسجّل وليدره، ويبعتلهم التسجيلات اللي فيها مشكلة <b>بس</b> للإعادة، وبيبدأ عداد <b>12 ساعة</b>.</p>
+  <p class="studio-subtitle">ارفع ملف الإكسيل اللي الشركة بعتته، وحدّد أنهي عمود فيه الاسم وأرقام التسجيلات ووصف المشكلة. النظام هيلاقي كل متسجّل وليدره، ويبعتلهم التسجيلات اللي فيها مشكلة <b>بس</b> للإعادة، وبيبدأ عداد <b>12 ساعة</b>. <b>لو المتسجّل مسلّمش في المهلة، الاسم بيتسحب منه ويتاح لمتسجّل تاني على نفس المهمة.</b></p>
 
   <div class="studio-card fb-step" id="step-upload">
     <h3>1) الملف</h3>
@@ -283,6 +283,7 @@
     pending: ["status-pending", "⏳ مستني المتسجّل"],
     acknowledged: ["status-pending", "👀 المتسجّل فتح الإعادة"],
     reworked: ["status-approved", "✅ اتعادت"],
+    expired: ["status-rejected", "⛔ اتسحب الاسم"],
   };
 
   async function loadItems() {
@@ -300,7 +301,7 @@
           <thead><tr><th>المتسجّل</th><th>الليدر</th><th>التسجيلات</th><th>المشكلة</th><th>اتسجّل في</th><th>الحالة</th><th>المهلة</th></tr></thead>
           <tbody>${list.map((i) => {
             const st = i.overdue ? ["status-rejected", "⏰ متأخر"] : (STATUS[i.status] || ["", i.status]);
-            const left = i.status === "reworked" ? "" : NMStudio.timeLeft(i.rework_deadline);
+            const left = (i.status === "reworked" || i.status === "expired") ? "" : NMStudio.timeLeft(i.rework_deadline);
             return `<tr>
               <td><span class="studio-code">${esc(i.fake_name)}</span><br>${esc(i.real_name || "")}<br><span class="fb-email">${esc(i.email || "")}</span></td>
               <td>${esc(i.leader_code)}</td>
@@ -308,7 +309,7 @@
               <td>${esc(i.issue_description || "—")}</td>
               <td>${esc(new Date(i.created_at).toLocaleString("ar-EG", { timeZone: TZ, dateStyle: "medium", timeStyle: "short" }))}</td>
               <td><span class="studio-pill ${st[0]}">${st[1]}</span></td>
-              <td class="${left && left.overdue ? "fb-late" : ""}">${i.status === "reworked" ? esc(new Date(i.reworked_at).toLocaleString("ar-EG", { timeZone: TZ, dateStyle: "short", timeStyle: "short" })) : esc(left.text)}</td>
+              <td class="${left && left.overdue ? "fb-late" : ""}">${i.status === "reworked" ? esc(new Date(i.reworked_at).toLocaleString("ar-EG", { timeZone: TZ, dateStyle: "short", timeStyle: "short" })) : i.status === "expired" ? "الاسم اتسحب" : esc(left.text)}</td>
             </tr>`;
           }).join("")}</tbody>
         </table></div>`).join("");

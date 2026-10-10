@@ -46,8 +46,9 @@
     reviewing: "بتتراجع دلوقتي",
     approved: "✅ اتقبلت",
     rejected: "❌ محتاجة إعادة",
+    expired: "⛔ انتهت مهلة الإعادة — الاسم اتسحب",
   };
-  const STATUS_CLASS = { approved: "status-approved", rejected: "status-rejected", submitted: "status-pending", reviewing: "status-pending" };
+  const STATUS_CLASS = { approved: "status-approved", rejected: "status-rejected", expired: "status-rejected", submitted: "status-pending", reviewing: "status-pending" };
 
   async function loadSessions() {
     const wrap = document.getElementById("sessions-wrap");
@@ -90,11 +91,12 @@
     const wrap = document.getElementById("feedback-wrap");
     try {
       const { items } = await NMTalent.getMyFeedback();
-      const active = items.filter(i => i.status !== "reworked");
-      if (!active.length) return;
+      const active = items.filter(i => i.status !== "reworked" && i.status !== "expired");
+      const withdrawn = items.filter(i => i.status === "expired");
+      if (!active.length && !withdrawn.length) return;
       wrap.innerHTML = `
         <h3 style="margin-top:0;">📩 فيدباك من الشركة على شغلك</h3>
-        <p class="studio-hint">الشركة طلبت إعادة تسجيلات معيّنة. سجّلها تاني قبل المهلة.</p>
+        ${active.length ? `<p class="studio-hint">الشركة طلبت إعادة تسجيلات معيّنة. سجّلها وسلّمها <b>قبل ما المهلة تخلص</b> — لو خلصت من غير تسليم، الاسم بيتسحب منك ويتاح لحد تاني.</p>` : ""}
         ${active.map(i => {
           const t = NMTalent.timeLeft(i.rework_deadline);
           return `
@@ -107,7 +109,11 @@
             </div>
             ${i.session_status === "rejected" ? `<a href="recording.html?session=${encodeURIComponent(i.session_token)}" class="studio-btn studio-btn-primary" style="padding:8px 16px;">🔁 إعادة التسجيل</a>` : ""}
           </div>`;
-        }).join("")}`;
+        }).join("")}
+        ${withdrawn.map(i => `
+          <div style="border-top:1px solid var(--studio-border); padding:12px 0; color:var(--studio-danger);">
+            ⛔ <b>${escapeHtml(i.task_title)}</b> — المهلة خلصت واتسحب منك الاسم. لو لسه عايز تشتغل على المهمة دي، ابدأ تسجيل جديد من قايمة المهام.
+          </div>`).join("")}`;
       wrap.classList.remove("hidden");
     } catch (_) { /* the main table below still works without this card */ }
   }
