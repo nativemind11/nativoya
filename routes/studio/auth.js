@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, TABLES } = require("../../config/studioAuth");
 const mailer = require("../../config/mailer");
-const { passwordResetEmail } = require("../../config/emailTemplates");
+const { passwordResetEmail, STUDIO_BRAND } = require("../../config/emailTemplates");
 
 const router = express.Router();
 
@@ -147,13 +147,15 @@ router.post("/forgot-password", async (req, res) => {
       [tokenHash, expiresAt, account.id]
     );
 
-    const frontendUrl = process.env.FRONTEND_URL || "https://nativoya.click";
-    const resetUrl = `${frontendUrl}/studio/reset-password.html?token=${rawToken}&role=${studioRole}`;
+    // Studio lives on its own domain now (root path, no /studio/ prefix).
+    const studioUrl = (process.env.STUDIO_URL || "https://gigversestudio.click").replace(/\/+$/, "");
+    const resetUrl = `${studioUrl}/reset-password.html?token=${rawToken}&role=${studioRole}`;
 
     await mailer.sendMail({
       to: account.email,
-      subject: "استرجاع كلمة المرور — Nativoya Studio",
-      html: passwordResetEmail({ firstName: account.name, resetUrl }),
+      subject: "استرجاع كلمة المرور — Studio",
+      fromName: "Studio",
+      html: passwordResetEmail({ firstName: account.name, resetUrl, brand: STUDIO_BRAND }),
     });
 
     res.json(genericOk);

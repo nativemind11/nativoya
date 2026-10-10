@@ -34,9 +34,13 @@ function getTransporter() {
   return transporter;
 }
 
-async function sendMail({ to, subject, html }) {
+async function sendMail({ to, subject, html, fromName }) {
   const t = getTransporter();
-  const from = process.env.EMAIL_FROM || `"Nativoya" <${process.env.SMTP_USER}>`;
+  const base = process.env.EMAIL_FROM || `"Nativoya" <${process.env.SMTP_USER}>`;
+  // fromName lets Studio mails show "Studio" as the sender, same mailbox.
+  const from = !fromName ? base
+    : base.includes("<") ? base.replace(/^[^<]*(?=<)/, `"${fromName}" `)
+    : `"${fromName}" <${base}>`;
   await t.sendMail({ from, to, subject, html });
 }
 

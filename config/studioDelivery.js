@@ -326,7 +326,7 @@ function styleHeader(sheet) {
  */
 async function buildSheet(rows, meta) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Nativoya Studio";
+  wb.creator = "Studio";
   wb.created = new Date();
 
   const del = wb.addWorksheet("Delivery");

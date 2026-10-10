@@ -3,7 +3,27 @@
 // rendering across Gmail/Outlook/Apple Mail — matches the site's colors
 // from css/style.css (--color-primary-blue, --color-accent-purple, etc).
 
-function passwordResetEmail({ firstName, resetUrl }) {
+const NATIVOYA_BRAND = {
+  name: "Nativoya",
+  headerBg: "linear-gradient(90deg,#4C6FF0,#8B5CF6)",
+  headerColor: "#ffffff",
+  buttonBg: "linear-gradient(90deg,#4C6FF0,#8B5CF6)",
+  buttonColor: "#ffffff",
+  linkColor: "#4C6FF0",
+  footer: "© Nativoya — منصة عمل أونلاين لتدريب نماذج الذكاء الاصطناعي",
+};
+// Studio is its own product (own domain) — own name and colors (teal on dark).
+const STUDIO_BRAND = {
+  name: "Studio",
+  headerBg: "#0B0D10",
+  headerColor: "#2DD4BF",
+  buttonBg: "#2DD4BF",
+  buttonColor: "#0B0D10",
+  linkColor: "#0F9E8E",
+  footer: "© Studio",
+};
+
+function passwordResetEmail({ firstName, resetUrl, brand = NATIVOYA_BRAND }) {
   const safeName = String(firstName || "صديقنا").replace(/</g, "&lt;");
   return `
 <!DOCTYPE html>
@@ -15,8 +35,8 @@ function passwordResetEmail({ firstName, resetUrl }) {
       <td align="center">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; background:#FFFFFF; border-radius:18px; overflow:hidden; box-shadow:0 10px 30px rgba(76,111,240,0.10);">
           <tr>
-            <td style="background:linear-gradient(90deg,#4C6FF0,#8B5CF6); padding:28px 32px;" align="center">
-              <span style="font-family:'Baloo 2','Cairo',Arial,sans-serif; font-size:22px; font-weight:800; color:#ffffff; letter-spacing:0.5px;">Nativoya</span>
+            <td style="background:${brand.headerBg}; padding:28px 32px;" align="center">
+              <span style="font-family:'Baloo 2','Cairo',Arial,sans-serif; font-size:22px; font-weight:800; color:${brand.headerColor}; letter-spacing:0.5px;">${brand.name}</span>
             </td>
           </tr>
           <tr>
@@ -24,12 +44,12 @@ function passwordResetEmail({ firstName, resetUrl }) {
               <h1 style="margin:0 0 16px; font-size:20px; color:#12142B; font-family:'Cairo','Baloo 2',Arial,sans-serif;">استرجاع كلمة المرور</h1>
               <p style="margin:0 0 16px; font-size:15px; line-height:1.7; color:#3a3d55;">
                 أهلاً ${safeName} 👋<br>
-                وصلنا طلب لاسترجاع كلمة المرور بتاعة حسابك على Nativoya. دوس على الزرار اللي تحت عشان تختار كلمة مرور جديدة:
+                وصلنا طلب لاسترجاع كلمة المرور بتاعة حسابك على ${brand.name}. دوس على الزرار اللي تحت عشان تختار كلمة مرور جديدة:
               </p>
               <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px auto;">
                 <tr>
-                  <td align="center" style="border-radius:999px; background:linear-gradient(90deg,#4C6FF0,#8B5CF6);">
-                    <a href="${resetUrl}" style="display:inline-block; padding:14px 36px; font-size:15px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:999px; font-family:'Cairo','Baloo 2',Arial,sans-serif;">
+                  <td align="center" style="border-radius:999px; background:${brand.buttonBg};">
+                    <a href="${resetUrl}" style="display:inline-block; padding:14px 36px; font-size:15px; font-weight:700; color:${brand.buttonColor}; text-decoration:none; border-radius:999px; font-family:'Cairo','Baloo 2',Arial,sans-serif;">
                       إعادة تعيين كلمة المرور
                     </a>
                   </td>
@@ -40,13 +60,13 @@ function passwordResetEmail({ firstName, resetUrl }) {
               </p>
               <p style="margin:16px 0 0; font-size:12px; line-height:1.6; color:#9AA0B4; word-break:break-all;">
                 لو الزرار مش شغال، انسخ الرابط ده وحطه في المتصفح:<br>
-                <a href="${resetUrl}" style="color:#4C6FF0;">${resetUrl}</a>
+                <a href="${resetUrl}" style="color:${brand.linkColor};">${resetUrl}</a>
               </p>
             </td>
           </tr>
           <tr>
             <td style="padding:18px 32px; background:#F7F8FD; border-top:1px solid #E1E4F5; text-align:center;">
-              <p style="margin:0; font-size:12px; color:#9AA0B4;">© Nativoya — منصة عمل أونلاين لتدريب نماذج الذكاء الاصطناعي</p>
+              <p style="margin:0; font-size:12px; color:#9AA0B4;">${brand.footer}</p>
             </td>
           </tr>
         </table>
@@ -57,4 +77,4 @@ function passwordResetEmail({ firstName, resetUrl }) {
 </html>`;
 }
 
-module.exports = { passwordResetEmail };
+module.exports = { passwordResetEmail, NATIVOYA_BRAND, STUDIO_BRAND };

@@ -17,7 +17,28 @@ const studioFeedbackRoutes = require("./routes/studio/feedback");
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL || "*" }));
+// Two front-ends talk to this one API: the main site and the Studio (own domain).
+// Extra origins can be added without a code change via ALLOWED_ORIGINS (comma-separated).
+const DEFAULT_ORIGINS = [
+  "https://nativoya.click", "https://www.nativoya.click",
+  "https://gigversestudio.click", "https://www.gigversestudio.click",
+];
+function buildAllowedOrigins() {
+  const extra = [process.env.FRONTEND_URL, process.env.STUDIO_URL, ...(process.env.ALLOWED_ORIGINS || "").split(",")]
+    .map((s) => (s || "").trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+  return { all: extra.includes("*"), set: new Set([...DEFAULT_ORIGINS, ...extra]) };
+}
+const allowed = buildAllowedOrigins();
+const LOCAL_DEV = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+app.use(cors({
+  origin(origin, cb) {
+    // No Origin header = not a browser page (curl, server-to-server) — allow.
+    if (!origin || allowed.all || allowed.set.has(origin)) return cb(null, true);
+    if (process.env.NODE_ENV !== "production" && LOCAL_DEV.test(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+}));
 app.use(express.json());
 
 app.get("/", (req, res) => res.json({ status: "ok", service: "Nativoya API" }));
