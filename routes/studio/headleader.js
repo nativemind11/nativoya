@@ -6,6 +6,7 @@ const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
+const { readLines } = require("../../config/textFile");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -138,8 +139,7 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
     const task = taskResult.rows[0];
 
-    const lines = req.file.buffer.toString("utf-8")
-      .split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const lines = readLines(req.file.buffer);
     if (!lines.length) return res.status(400).json({ error: "الملف فاضي أو مفيهوش جمل" });
 
     const authClient = await getAuthorizedClient();
@@ -150,12 +150,13 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
 
     await client.query("BEGIN");
     await client.query(`DELETE FROM recording_samples WHERE task_id = $1`, [task.id]);
-    for (let i = 0; i < lines.length; i++) {
-      await client.query(
-        `INSERT INTO recording_samples (task_id, sentence_name, order_index) VALUES ($1, $2, $3)`,
-        [task.id, lines[i], i]
-      );
-    }
+    // ONE statement for all sentences (a script can have 600 lines; one round-trip
+    // per line to the database took long enough to hit the server time limit).
+    await client.query(
+      `INSERT INTO recording_samples (task_id, sentence_name, order_index)
+       SELECT $1, x.name, x.ord - 1 FROM unnest($2::text[]) WITH ORDINALITY AS x(name, ord)`,
+      [task.id, lines]
+    );
     await client.query(
       `UPDATE recording_tasks SET script_file_url = $1, script_file_name = $2 WHERE id = $3`,
       [scriptFile.webViewLink || scriptFileSafe(scriptFile), req.file.originalname, task.id]
@@ -171,6 +172,13 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
     console.error(err);
     if (err.code === "DRIVE_NOT_CONNECTED") {
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
+    }
+    const reason = String((err.errors && err.errors[0] && err.errors[0].reason) || err.message || "");
+    if (/invalid_grant/i.test(reason)) {
+      return res.status(503).json({ error: "اتصال جوجل درايف انتهى. اربطه من جديد من لوحة الموقع الرئيسي." });
+    }
+    if (/storageQuotaExceeded|quota/i.test(reason)) {
+      return res.status(503).json({ error: "مساحة جوجل درايف امتلت. نضّف المساحة من صفحة التسليم وجرّب تاني." });
     }
     res.status(500).json({ error: "تعذر رفع ملف السكريبت" });
   } finally {
@@ -206,8 +214,7 @@ router.post("/tasks/:id/fake-names", upload.single("file"), async (req, res) => 
     );
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
 
-    const names = req.file.buffer.toString("utf-8")
-      .split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const names = readLines(req.file.buffer);
     if (!names.length) return res.status(400).json({ error: "الملف فاضي أو مفيهوش أسامي" });
 
     await pool.query(`UPDATE recording_tasks SET fake_names = $1 WHERE id = $2`, [names, req.params.id]);
