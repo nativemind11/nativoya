@@ -36,7 +36,29 @@ async function getOrCreateStudioRootFolder() {
 // A small helper reused by later phases: one subfolder under a given
 // parent, created once and reused after (never creates a duplicate for the
 // same name+parent).
+//
+// Every recorded sentence used to cost 3 folder look-ups on Drive. With hundreds
+// of sentences per talent that burns the Drive API quota, so resolved folder ids
+// are remembered for a few minutes (per server instance) and two simultaneous
+// requests for the same folder share one look-up instead of creating it twice.
+const FOLDER_TTL_MS = 10 * 60 * 1000;
+const folderCache = new Map();   // "parent|name" -> { id, at }
+const folderInFlight = new Map();   // "parent|name" -> Promise<id>
+
 async function getOrCreateSubfolder(drive, parentId, name) {
+  const key = `${parentId}|${name}`;
+  const hit = folderCache.get(key);
+  if (hit && Date.now() - hit.at < FOLDER_TTL_MS) return hit.id;
+  if (folderInFlight.has(key)) return folderInFlight.get(key);
+
+  const p = resolveSubfolder(drive, parentId, name)
+    .then((id) => { folderCache.set(key, { id, at: Date.now() }); return id; })
+    .finally(() => folderInFlight.delete(key));
+  folderInFlight.set(key, p);
+  return p;
+}
+
+async function resolveSubfolder(drive, parentId, name) {
   const existing = await drive.files.list({
     q: `'${parentId}' in parents and name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: "files(id)",

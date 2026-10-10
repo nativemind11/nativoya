@@ -13,6 +13,32 @@ const { deleteQuietly } = require("../../config/studioStorage");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 
 const router = express.Router();
+const DOWNLOAD_CONCURRENCY = 8;
+
+function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const parts = [];
+    stream.on("data", (c) => parts.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    stream.on("end", () => resolve(Buffer.concat(parts)));
+    stream.on("error", reject);
+  });
+}
+
+// Retries a Drive call a couple of times (rate-limit / network blips) before giving up.
+async function withRetry(fn, tries = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try { return await fn(); }
+    catch (err) {
+      lastErr = err;
+      const status = err.code || err.status || (err.response && err.response.status);
+      if (status === 404 || attempt === tries) break;   // a missing file will not come back
+      await new Promise((r) => setTimeout(r, 300 * attempt));
+    }
+  }
+  throw lastErr;
+}
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 // Browsing tasks/fake-names is PUBLIC (no need to log in just to look).
@@ -309,7 +335,8 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
     const drive = google.drive({ version: "v3", auth: authClient });
 
     // Build the zip in memory by streaming each clip down from Drive.
-    const archive = archiver("zip", { zlib: { level: 9 } });
+    // level 1: audio barely shrinks, and level 9 on hundreds of clips only burns CPU time.
+    const archive = archiver("zip", { zlib: { level: 1 } });
     const chunks = [];
     archive.on("data", (chunk) => chunks.push(chunk));
     const archiveFinished = new Promise((resolve, reject) => {
@@ -333,11 +360,21 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
       return res.status(400).json({ error: "مفيش تسجيلات معادة تتسلّم." });
     }
 
-    for (const row of samplesWithNames.rows) {
-      const fileId = row.audio_file_url.replace("drive:", "");
-      const fileStream = await drive.files.get({ fileId, alt: "media" }, { responseType: "stream" });
-      const ext = (task.recording_settings.format || "wav").toLowerCase();
-      archive.append(fileStream.data, { name: `${String(row.order_index + 1).padStart(2, "0")}.${ext}` });
+    // A task can have ~600 sentences. Downloading them one after another from Drive
+    // takes minutes and runs into the serverless time limit, so fetch them in small
+    // parallel windows (each retried on a transient Drive error) and append in order.
+    const ext = (task.recording_settings.format || "wav").toLowerCase();
+    const rows = samplesWithNames.rows;
+    for (let i = 0; i < rows.length; i += DOWNLOAD_CONCURRENCY) {
+      const windowRows = rows.slice(i, i + DOWNLOAD_CONCURRENCY);
+      const buffers = await Promise.all(windowRows.map((row) => withRetry(async () => {
+        const fileId = row.audio_file_url.replace("drive:", "");
+        const fileStream = await drive.files.get({ fileId, alt: "media" }, { responseType: "stream" });
+        return streamToBuffer(fileStream.data);
+      })));
+      windowRows.forEach((row, j) => {
+        archive.append(buffers[j], { name: `${String(row.order_index + 1).padStart(2, "0")}.${ext}` });
+      });
     }
     archive.finalize();
     await archiveFinished;
