@@ -180,7 +180,8 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
     if (/storageQuotaExceeded|quota/i.test(reason)) {
       return res.status(503).json({ error: "مساحة جوجل درايف امتلت. نضّف المساحة من صفحة التسليم وجرّب تاني." });
     }
-    res.status(500).json({ error: "تعذر رفع ملف السكريبت" });
+    // route is head-leader only, so showing the technical reason is safe and lets us diagnose without server logs
+    res.status(500).json({ error: `تعذر رفع ملف السكريبت — السبب: ${reason.slice(0, 160) || "غير معروف"}` });
   } finally {
     client.release();
   }
