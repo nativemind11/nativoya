@@ -107,3 +107,10 @@ body.studio {
 
 .studio-empty { text-align: center; padding: 50px 20px; color: var(--studio-text-muted); }
 .studio-empty .icon { font-size: 2rem; margin-bottom: 10px; }
+
+/* AR / EN switch (js/studio-i18n.js) */
+.studio-lang { display: inline-flex; border: 1px solid var(--studio-border); border-radius: 8px; overflow: hidden; direction: ltr; }
+.studio-lang button { background: transparent; color: var(--studio-text-muted); border: 0; padding: 5px 11px; font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.studio-lang button:hover { color: var(--studio-text); }
+.studio-lang button.active { background: var(--studio-accent); color: #06201C; }
+.studio-lang-floating { position: fixed; top: 12px; inset-inline-end: 12px; z-index: 50; background: var(--studio-surface); }

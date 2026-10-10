@@ -6,6 +6,8 @@
 <title>التسجيل — Nativoya Studio</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo-icon.svg">
 <link rel="stylesheet" href="../css/studio.css">
+<script src="../js/studio-i18n-dict.js"></script>
+<script src="../js/studio-i18n.js"></script>
 <style>
   .rec-progress-track { height: 6px; background: var(--studio-surface-2); border-radius: 999px; overflow: hidden; margin: 14px 0 22px; }
   .rec-progress-fill { height: 100%; background: var(--studio-accent); transition: width 0.25s; }
@@ -283,7 +285,7 @@
     $("submit-hint").textContent = queued
       ? `فيه ${queued} تسجيل لسه بيترفع للسيرفر — استنى لحظة.`
       : (!allDone
-        ? `خلّص باقي الجمل (${activeSamples.length - done} لسه) عشان تقدر ت${reworkMode ? "بعت تاني" : "سلّم"}.`
+        ? (reworkMode ? `خلّص باقي الجمل (${activeSamples.length - done} لسه) عشان تقدر تبعت تاني.` : `خلّص باقي الجمل (${activeSamples.length - done} لسه) عشان تقدر تسلّم.`)
         : (reworkMode ? "كل الجمل المطلوبة اتسجّلت! جاهز تبعتها تاني." : "كل الجمل اتسجّلت! جاهز تسلّم."));
     const banner = $("pending-banner");
     if (queued) {
