@@ -284,6 +284,13 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
 const DEFAULT_REASON = "فيدباك من الشركة — التسجيل ده محتاج إعادة.";
 
 async function applyFeedback({ db, taskId, labelType, rows, startRow, headLeaderId }) {
+  try {
+    const t = await db.query(`SELECT finalized_at FROM recording_tasks WHERE id = $1`, [taskId]);
+    if (t.rows[0] && t.rows[0].finalized_at) throw httpError(409, "المهمة دي اتقفلت نهائيًا واتفضّت ملفاتها — مينفعش يتضاف عليها فيدباك.");
+  } catch (e) {
+    if (e && e.statusCode === 409) throw e;
+    if (!e || e.code !== "42703") throw e;      // 42703 = column missing: migration_studio_finalize.sql not run yet -> no guard
+  }
   const resolved = await resolveRows({ db, taskId, labelType, rows, startRow });
   const okRows = resolved.results.filter((r) => r.ok);
   if (!okRows.length) throw httpError(400, "مفيش أي صف صالح للتطبيق.");

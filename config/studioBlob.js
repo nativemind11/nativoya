@@ -18,6 +18,7 @@
  */
 const {
   S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand,
+  ListObjectsV2Command, DeleteObjectsCommand,
 } = require("@aws-sdk/client-s3");
 const { Upload } = require("@aws-sdk/lib-storage");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
@@ -119,6 +120,30 @@ async function remove(ref) {
   return true;
 }
 
+/**
+ * Deletes every object whose key starts with `prefix` (e.g. "studio/<task id>/").
+ * Re-lists from the start after each batch (the deleted keys are gone), stops at
+ * budgetMs and reports complete:false so the caller can come back for the rest.
+ * The prefix must look like "<something>/<something>/" — never the whole bucket.
+ */
+async function removePrefix(prefix, { budgetMs = 30000, now = Date.now } = {}) {
+  if (typeof prefix !== "string" || !/^[\w.\-]+\/[\w.\-]+\/$/.test(prefix) || prefix.split("/").some((p) => p === "." || p === "..")) throw new Error("unsafe prefix");
+  const started = now();
+  let deleted = 0, bytes = 0;
+  for (;;) {
+    const page = await s3().send(new ListObjectsV2Command({ Bucket: config().bucket, Prefix: prefix, MaxKeys: 1000 }));
+    const objs = page.Contents || [];
+    if (!objs.length) return { deleted, bytes, complete: true };
+    const out = await s3().send(new DeleteObjectsCommand({
+      Bucket: config().bucket, Delete: { Objects: objs.map((o) => ({ Key: o.Key })), Quiet: true },
+    }));
+    if (out.Errors && out.Errors.length) throw new Error("could not delete " + out.Errors[0].Key + ": " + out.Errors[0].Message);
+    deleted += objs.length;
+    bytes += objs.reduce((n, o) => n + (Number(o.Size) || 0), 0);
+    if (now() - started > budgetMs) return { deleted, bytes, complete: false };
+  }
+}
+
 /** Time-limited download link for a private object (the browser downloads straight from the bucket). */
 async function presignGet(ref, downloadName, expiresSec = 3600) {
   const params = { Bucket: config().bucket, Key: keyFromRef(ref) };
@@ -126,4 +151,4 @@ async function presignGet(ref, downloadName, expiresSec = 3600) {
   return getSignedUrl(s3(), new GetObjectCommand(params), { expiresIn: expiresSec });
 }
 
-module.exports = { enabled, refFor, isBlobRef, keyFromRef, seg, putBuffer, putStream, getStream, remove, presignGet };
+module.exports = { enabled, refFor, isBlobRef, keyFromRef, seg, putBuffer, putStream, getStream, remove, removePrefix, presignGet };

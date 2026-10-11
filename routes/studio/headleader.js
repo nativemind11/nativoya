@@ -412,4 +412,38 @@ router.get("/tasks/:id", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// "Finish the task for good": deletes every file of a finished task from storage.
+//   GET  /tasks/:id/finalize  -> what would be deleted + what is in the way (nothing is touched)
+//   POST /tasks/:id/finalize  -> does it. Stops after ~40 s with { done:false } — call again to continue.
+// ---------------------------------------------------------------------
+const F = require("../../config/studioFinalize");
+const finalizeBlob = require("../../config/studioBlob");
+const finalizeStorage = require("../../config/studioStorage");
+
+router.get("/tasks/:id/finalize", async (req, res) => {
+  try {
+    const info = await F.getFinalizeInfo({ repo: F.makeRepo(pool), taskId: req.params.id, headLeaderId: req.studioUser.id });
+    if (info.notFound) return res.status(404).json({ error: "المهمة مش موجودة" });
+    res.json(info);
+  } catch (err) {
+    console.error("[finalize:info]", err);
+    res.status(500).json({ error: "تعذر فحص المهمة" });
+  }
+});
+
+router.post("/tasks/:id/finalize", async (req, res) => {
+  try {
+    const out = await F.runFinalize({
+      repo: F.makeRepo(pool), taskId: req.params.id, headLeaderId: req.studioUser.id,
+      deps: { blob: finalizeBlob, getDrive: finalizeStorage.driveClient, getQuota: finalizeStorage.getQuota },
+    });
+    const { status, ...body } = out;
+    res.status(status).json(body);
+  } catch (err) {
+    console.error("[finalize:run]", err);
+    res.status(500).json({ error: "تعذر تفضية مساحة المهمة — جرّب تاني، اللي اتمسح فعلاً مش هيتأثر." });
+  }
+});
+
 module.exports = router;
