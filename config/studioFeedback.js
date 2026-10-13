@@ -32,6 +32,13 @@ const FA_DIGITS = { "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵":
 const toAscii = (s) => String(s).replace(/[٠-٩۰-۹]/g, (d) => AR_DIGITS[d] || FA_DIGITS[d]);
 const normKey = (s) => String(s || "").normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
 
+/** lower-case, no diacritics, أإآ->ا ى->ي ة->ه — so "مرفوضة" and "مرفوضه" are the same word */
+const normText = (s) => String(s == null ? "" : s).normalize("NFKC").replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+  .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/\s+/g, " ").trim().toLowerCase();
+// values in a "status" column that usually mean "send it back" (the head leader confirms the list)
+const REJECT_RE = /^(rejected?|reject|fail(ed)?|bad|no|not ok|not approved|disapproved|redo|re-?take|re-?record|wrong|invalid|issue|problem|مرفوض|مرفوضه|رفض|غلط|خطا|مشكله|اعاده|يعاد|فشل|لا|✗|✘|❌|x)$/;
+const ALL_RE = /^(all|everything|\*|الكل|كله|كل التسجيلات)$/;
+
 // fake_name-gender-age_bracket-age.zip  (fake names may themselves contain "-")
 const ZIP_RE = /^(.+)-(male|female)-(child|adult|elderly)-(\d+|na)$/i;
 
@@ -143,42 +150,121 @@ function guessColumns(headers) {
   let labelType = labelCol >= 0 ? "zip" : "fake";
   if (labelCol < 0) labelCol = find(/fake|alias|stage|speaker|talent|مستعار|name|اسم/i);
   const skip = labelCol >= 0 ? [labelCol] : [];
-  const numbersCol = find(/recording|sample|clip|utterance|sentence|audio|number|index|num\b|رقم|ارقام|أرقام|تسجيل|جملة|#/i, skip);
+  // a header that says "name"/"zip"/"file" is a label, not a recording number ("Recording name" is NOT the number)
+  const NAMEISH = /name|اسم|zip|file|ملف/i;
+  const numbersCol = find(/recording|sample|clip|utterance|sentence|audio|number|index|num\b|رقم|ارقام|أرقام|تسجيل|جملة|#/i, [...skip, ...headers.map((h, i) => (NAMEISH.test(String(h)) ? i : -1)).filter((i) => i >= 0)]);
   const descCol = find(/issue|problem|comment|note|feedback|reason|description|error|wrong|defect|fault|remark|detail|observation|ملاحظ|ملحوظ|مشكلة|عيب|وصف|سبب|تعليق|فيدباك/i, [...skip, numbersCol]);
   return { labelCol, labelType, numbersCol, descCol };
+}
+
+// header that says outright "recording number" (NOT the running "#", which is a row counter)
+const EXPLICIT_NUM = /(recording|sample|clip|sentence|utterance|rec)\s*(#|no\b\.?|num\b|number|index|id\b)|رقم\s*(ال)?(تسجيل|جمله|جملة)|^\s*(ارقام|أرقام)\s*(ال)?تسجيل/i;
+const STATUS_HEADER = /status|state|result|decision|verdict|outcome|حاله|حالة|نتيجه|نتيجة|قرار/i;
+
+/** distinct values of a column when there are only a few (a status column: "Approved" / "Rejected") */
+function columnValues(grid, headerRow, col) {
+  const counts = new Map();
+  for (const r of grid.slice(headerRow)) {
+    const v = String(r[col] == null ? "" : r[col]).trim();
+    if (!v) continue;
+    counts.set(v, (counts.get(v) || 0) + 1);
+    if (counts.size > 12) return null;
+  }
+  return counts.size ? [...counts.entries()].map(([v, n]) => ({ v: v.slice(0, 60), n })) : null;
+}
+
+/**
+ * Suggestions beyond the 4 basic guesses:
+ *  - numbersMode "row_order": no column carries the real recording number, but each ZIP/name
+ *    repeats on several rows (one row per recording) -> recording n = the n-th row of that ZIP.
+ *  - statusCol + rejectValues: a status column, and which of its values mean "send back".
+ */
+function suggestMapping(grid, headerRow, headers, guess) {
+  const H = headers.map((h) => String(h == null ? "" : h));
+  const explicit = H.findIndex((h, i) => i !== guess.labelCol && EXPLICIT_NUM.test(h));
+  let numbersMode = "column";
+  let numbersCol = guess.numbersCol;
+  if (explicit >= 0) numbersCol = explicit;
+  else if (guess.labelCol >= 0) {
+    const seen = new Map();
+    for (const r of grid.slice(headerRow)) { const k = normKey(r[guess.labelCol]); if (k) seen.set(k, (seen.get(k) || 0) + 1); }
+    if ([...seen.values()].some((n) => n >= 2)) numbersMode = "row_order";
+  }
+  const taken = [guess.labelCol, numbersMode === "column" ? numbersCol : -1, guess.descCol];
+  const statusCol = H.findIndex((h, i) => !taken.includes(i) && STATUS_HEADER.test(h));
+  let rejectValues = [];
+  if (statusCol >= 0) {
+    const vals = columnValues(grid, headerRow, statusCol);
+    rejectValues = vals ? vals.map((x) => x.v).filter((v) => REJECT_RE.test(normText(v))) : [];
+  }
+  return { numbersMode, numbersCol, statusCol, rejectValues };
 }
 
 function sheetSummary(sheet) {
   const headerRow = guessHeaderRow(sheet.grid);
   const headers = sheet.grid[headerRow - 1] || [];
+  const guess = guessColumns(headers);
   return {
     name: sheet.name,
     rowCount: sheet.grid.length,
     colCount: headers.length,
     headerRow,
-    columns: headers.map((h, i) => ({ index: i, letter: colLetter(i), header: h })),
+    columns: headers.map((h, i) => ({ index: i, letter: colLetter(i), header: h, values: columnValues(sheet.grid, headerRow, i) })),
     preview: sheet.grid.slice(0, PREVIEW_ROWS),
-    guess: guessColumns(headers),
+    guess,
+    suggest: suggestMapping(sheet.grid, headerRow, headers, guess),
   };
 }
 
 /**
- * Pulls the three mapped columns out of a sheet.
- * @returns {{rows: string[][], startRow: number}} rows = [label, numbers, description]
+ * Pulls the mapped columns out of a sheet.
+ *   numbersMode "column"    : the recording numbers are written in numbersCol ("3", "3, 5", "2-4", "all").
+ *   numbersMode "row_order" : one row per recording, in order — recording n is the n-th row of that
+ *                             ZIP / name. (A "Recording name" like hi_fast_01 is NOT used: such names
+ *                             restart from 1 inside every group.)
+ *   statusCol + rejectValues: only rows whose status is one of rejectValues go back. The others are
+ *                             ignored — but still counted for the row order.
+ * @returns {{rows: string[][], startRow: number, rowNos: number[], ignored: number, ignoredBy: object,
+ *            rowCounts: object, numbersMode: string}}  rows = [label, numbers, description]
  */
-function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol }) {
+function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersMode = "column", statusCol = -1, rejectValues = [] }) {
   const width = Math.max(0, ...sheet.grid.map((r) => r.length));
   const okCol = (c) => Number.isInteger(c) && c >= 0 && c < width;
+  const byOrder = numbersMode === "row_order";
   if (!Number.isInteger(headerRow) || headerRow < 1 || headerRow > sheet.grid.length) throw httpError(400, "رقم صف العناوين غير صحيح");
   if (!okCol(labelCol)) throw httpError(400, "اختار عمود الاسم / ملف الـ ZIP");
-  if (!okCol(numbersCol)) throw httpError(400, "اختار عمود أرقام التسجيلات");
+  if (!byOrder && !okCol(numbersCol)) throw httpError(400, "اختار عمود أرقام التسجيلات");
   if (descCol != null && descCol >= 0 && !okCol(descCol)) throw httpError(400, "عمود وصف المشكلة غير صحيح");
+  const useStatus = Number.isInteger(statusCol) && statusCol >= 0;
+  if (useStatus && !okCol(statusCol)) throw httpError(400, "عمود الحالة غير صحيح");
+  const wanted = new Set((rejectValues || []).map(normText).filter(Boolean));
+  if (useStatus && !wanted.size) throw httpError(400, "حدّد إيه القيم اللي معناها \"مرفوض\" في عمود الحالة.");
   const data = sheet.grid.slice(headerRow);
   if (data.length > MAX_ROWS) throw httpError(413, `الملف فيه أكتر من ${MAX_ROWS} صف. قسّمه لأكتر من ملف.`);
-  return {
-    startRow: headerRow + 1,
-    rows: data.map((r) => [r[labelCol] || "", r[numbersCol] || "", descCol != null && descCol >= 0 ? (r[descCol] || "") : ""]),
-  };
+
+  const counter = new Map(), rowCounts = {};
+  const rows = [], rowNos = [], ignoredBy = {};
+  let ignored = 0;
+  data.forEach((r, i) => {
+    const label = r[labelCol] || "";
+    let numbers = byOrder ? "" : (r[numbersCol] || "");
+    if (byOrder && label) {
+      const k = normKey(label);
+      const n = (counter.get(k) || 0) + 1;
+      counter.set(k, n); numbers = String(n);
+      (rowCounts[k] = rowCounts[k] || { label: String(label), count: 0 }).count = n;
+    }
+    if (useStatus) {
+      const raw = String(r[statusCol] == null ? "" : r[statusCol]).trim();
+      if (!wanted.has(normText(raw))) {
+        if (label || raw) { ignored++; const key = raw || "(فاضي)"; ignoredBy[key] = (ignoredBy[key] || 0) + 1; }
+        return;
+      }
+    }
+    rows.push([label, numbers, descCol != null && descCol >= 0 ? (r[descCol] || "") : ""]);
+    rowNos.push(headerRow + 1 + i);
+  });
+  return { startRow: headerRow + 1, rows, rowNos, ignored, ignoredBy, rowCounts, numbersMode: byOrder ? "row_order" : "column" };
 }
 
 // ------------------------------------------------------------------ resolve
@@ -202,7 +288,7 @@ const OK_STATUS = new Set(["approved", "rejected"]);
  * Resolves every row against the task's real sessions.
  * @param rows [[label, numbers, description], ...]
  */
-async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
+async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos = null, meta = null }) {
   const task = (await db.query(`SELECT id, title FROM recording_tasks WHERE id = $1`, [taskId])).rows[0];
   if (!task) throw httpError(404, "المهمة مش موجودة");
   const sampleCount = (await db.query(`SELECT COUNT(*)::int AS c FROM recording_samples WHERE task_id = $1`, [taskId])).rows[0].c;
@@ -236,7 +322,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
 
   const results = rows.map((cells, i) => {
     const [labelRaw, numbersRaw, descRaw] = cells;
-    const base = { row: startRow + i, label: labelRaw, description: String(descRaw || "").trim(), numbers: [], ok: false };
+    const base = { row: rowNos ? rowNos[i] : startRow + i, label: labelRaw, description: String(descRaw || "").trim(), numbers: [], ok: false };
     if (!labelRaw && !numbersRaw && !base.description) return { ...base, skipped: true };
 
     if (!labelRaw) return { ...base, code: "no_label", message: MESSAGES.no_label };
@@ -255,6 +341,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
     if (num.error === "out_of_range") return { ...base, code: "out_of_range", message: MESSAGES.out_of_range(num) };
     if (num.error) return { ...base, code: "bad_numbers", message: MESSAGES.bad_numbers };
     base.numbers = num.numbers;
+    base.viaAll = ALL_RE.test(normText(numbersRaw));
 
     base.session = {
       id: session.id, fakeName: session.fake_name, realName: session.real_name, email: session.email,
@@ -269,6 +356,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
   });
 
   const visible = results.filter((r) => !r.skipped);
+  const warnings = buildWarnings(visible, sampleCount, meta);
   return {
     task, sampleCount, results: visible,
     summary: {
@@ -276,14 +364,71 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2 }) {
       ok: visible.filter((r) => r.ok).length,
       errors: visible.filter((r) => !r.ok).length,
       sessions: new Set(visible.filter((r) => r.ok).map((r) => r.session.id)).size,
+      ignored: (meta && meta.ignored) || 0,
+      ignoredBy: (meta && meta.ignoredBy) || {},
+      numbersMode: (meta && meta.numbersMode) || "column",
     },
+    warnings,
   };
+}
+
+/**
+ * Things that look like a wrong column mapping. They never block the preview, but the head
+ * leader has to confirm them before "apply" (the wrong mapping sends people back for rework
+ * and starts a 12-hour clock — which is hard to take back).
+ */
+function buildWarnings(results, sampleCount, meta) {
+  const out = [];
+  const bySession = new Map();
+  for (const r of results) {
+    if (!r.ok) continue;
+    if (!bySession.has(r.session.id)) bySession.set(r.session.id, { fake: r.session.fakeName, rows: [] });
+    bySession.get(r.session.id).rows.push(r);
+  }
+  for (const { fake, rows } of bySession.values()) {
+    // the same number named by several rows that say the very same thing (usually: the column holds
+    // a number that restarts inside each group, e.g. hi_fast_01 ... hallo_fast_01)
+    const seen = new Map();
+    for (const r of rows) for (const n of r.numbers) {
+      const key = `${n}|${normText(r.description)}`;
+      if (!seen.has(key)) seen.set(key, { n, rows: [] });
+      seen.get(key).rows.push(r.row);
+    }
+    const dups = [...seen.values()].filter((x) => x.rows.length > 1);
+    if (dups.length) {
+      const nums = [...new Set(dups.map((d) => d.n))].sort((a, b) => a - b);
+      out.push({
+        code: "duplicate_numbers", fakeName: fake, numbers: nums.slice(0, 12), rows: dups[0].rows.slice(0, 6),
+        message: `الأرقام (${nums.slice(0, 8).join(", ")}${nums.length > 8 ? "…" : ""}) اتذكرت أكتر من مرة للمتسجّل "${fake}" (مثلاً في الصفوف ${dups[0].rows.slice(0, 4).join(", ")}). غالبًا العمود ده فيه رقم بيبدأ من 1 جوه كل مجموعة، مش رقم التسجيل — جرّب "ترتيب الصف".`,
+      });
+    }
+    // every single recording of one person sent back (and not through an explicit "all")
+    const union = new Set(rows.flatMap((r) => r.numbers));
+    if (sampleCount >= 2 && union.size >= sampleCount && rows.some((r) => !r.viaAll)) {
+      out.push({
+        code: "all_flagged", fakeName: fake, count: union.size,
+        message: `كل تسجيلات "${fake}" (${union.size} من ${sampleCount}) هترجع للإعادة. اتأكد إنك مستبعد التسجيلات المقبولة (عمود الحالة).`,
+      });
+    }
+  }
+  // row-order numbering is only right if the sheet still lists every recording of each ZIP, in order
+  if (meta && meta.numbersMode === "row_order" && meta.rowCounts) {
+    for (const { label, count } of Object.values(meta.rowCounts)) {
+      if (count !== sampleCount) {
+        out.push({
+          code: "row_count_mismatch", fakeName: label, count,
+          message: `الملف فيه ${count} صف لـ "${label}" بينما المهمة فيها ${sampleCount} تسجيل — ممكن الشيت اتفلتر أو اتغيّر ترتيبه فالأرقام تبقى غلط. لو فيه عمود برقم التسجيل استخدمه بدل "ترتيب الصف".`,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 // -------------------------------------------------------------------- apply
 const DEFAULT_REASON = "فيدباك من الشركة — التسجيل ده محتاج إعادة.";
 
-async function applyFeedback({ db, taskId, labelType, rows, startRow, headLeaderId }) {
+async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = null, meta = null, confirmWarnings = false, headLeaderId }) {
   try {
     const t = await db.query(`SELECT finalized_at FROM recording_tasks WHERE id = $1`, [taskId]);
     if (t.rows[0] && t.rows[0].finalized_at) throw httpError(409, "المهمة دي اتقفلت نهائيًا واتفضّت ملفاتها — مينفعش يتضاف عليها فيدباك.");
@@ -291,7 +436,10 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, headLeader
     if (e && e.statusCode === 409) throw e;
     if (!e || e.code !== "42703") throw e;      // 42703 = column missing: migration_studio_finalize.sql not run yet -> no guard
   }
-  const resolved = await resolveRows({ db, taskId, labelType, rows, startRow });
+  const resolved = await resolveRows({ db, taskId, labelType, rows, startRow, rowNos, meta });
+  if (resolved.warnings.length && !confirmWarnings) {
+    throw httpError(409, "فيه تحذيرات في المعاينة. راجعها وأكّد إنك فاهمها قبل ما تطبّق.");
+  }
   const okRows = resolved.results.filter((r) => r.ok);
   if (!okRows.length) throw httpError(400, "مفيش أي صف صالح للتطبيق.");
 
@@ -419,6 +567,7 @@ async function listMine(db, role, userId) {
 }
 
 module.exports = {
+  buildWarnings, suggestMapping, columnValues, normText,
   parseLabel, parseZipAttrs, parseNumbers, parseSpreadsheet, sheetSummary, extractRows, guessColumns, guessHeaderRow,
   resolveRows, applyFeedback, markAcknowledged, markReworked, listForHeadLeader, listMine,
   REWORK_HOURS, MAX_ROWS,

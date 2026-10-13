@@ -33,11 +33,21 @@ function readMapping(body, sheets) {
   if (!sheet) throw Object.assign(new Error("الشيت غير موجود"), { statusCode: 400 });
   const labelType = body.labelType === "zip" ? "zip" : "fake";
   const descCol = int(body.descCol);
-  const { rows, startRow } = F.extractRows(sheet, {
+  const numbersMode = body.numbersMode === "row_order" ? "row_order" : "column";
+  const statusCol = int(body.statusCol);
+  let rejectValues = [];
+  if (body.rejectValues) {
+    try { const a = JSON.parse(body.rejectValues); if (Array.isArray(a)) rejectValues = a.slice(0, 50).map((x) => String(x).slice(0, 100)); } catch (_) { /* ignore */ }
+  }
+  const ex = F.extractRows(sheet, {
     headerRow: int(body.headerRow), labelCol: int(body.labelCol), numbersCol: int(body.numbersCol),
     descCol: Number.isInteger(descCol) ? descCol : -1,
+    numbersMode, statusCol: Number.isInteger(statusCol) ? statusCol : -1, rejectValues,
   });
-  return { rows, startRow, labelType };
+  return {
+    rows: ex.rows, startRow: ex.startRow, rowNos: ex.rowNos, labelType,
+    meta: { numbersMode: ex.numbersMode, rowCounts: ex.rowCounts, ignored: ex.ignored, ignoredBy: ex.ignoredBy },
+  };
 }
 
 function requireTask(body) {
@@ -61,8 +71,8 @@ router.post("/preview", ...headLeader, uploadFile, async (req, res) => {
     const taskId = requireTask(req.body);
     await safeExpire(pool);
     const sheets = await F.parseSpreadsheet(req.file.buffer, req.file.originalname);
-    const { rows, startRow, labelType } = readMapping(req.body, sheets);
-    res.json(await F.resolveRows({ db: pool, taskId, labelType, rows, startRow }));
+    const { rows, startRow, rowNos, labelType, meta } = readMapping(req.body, sheets);
+    res.json(await F.resolveRows({ db: pool, taskId, labelType, rows, startRow, rowNos, meta }));
   } catch (err) { fail(res, err, "تعذر معاينة الملف"); }
 });
 
@@ -73,8 +83,9 @@ router.post("/apply", ...headLeader, uploadFile, async (req, res) => {
     const taskId = requireTask(req.body);
     await safeExpire(pool);
     const sheets = await F.parseSpreadsheet(req.file.buffer, req.file.originalname);
-    const { rows, startRow, labelType } = readMapping(req.body, sheets);
-    res.json({ ok: true, ...(await F.applyFeedback({ db: pool, taskId, labelType, rows, startRow, headLeaderId: req.studioUser.id })) });
+    const { rows, startRow, rowNos, labelType, meta } = readMapping(req.body, sheets);
+    const confirmWarnings = req.body.confirmWarnings === "1" || req.body.confirmWarnings === "true";
+    res.json({ ok: true, ...(await F.applyFeedback({ db: pool, taskId, labelType, rows, startRow, rowNos, meta, confirmWarnings, headLeaderId: req.studioUser.id })) });
   } catch (err) { fail(res, err, "تعذر تطبيق الفيدباك"); }
 });
 
