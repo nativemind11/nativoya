@@ -24,6 +24,7 @@ async function requireStudioAuth(req, res, next) {
     const result = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [payload.id]);
     if (!result.rows.length) return res.status(401).json({ error: "Invalid or expired token" });
 
+    if (result.rows[0].is_active === false) return res.status(403).json({ error: "الحساب ده متوقف. كلّم الهيد ليدر." });
     delete result.rows[0].password_hash;
     req.studioUser = result.rows[0];
     req.studioRole = payload.studioRole; // 'head_leader' | 'leader' | 'qa'

@@ -289,7 +289,7 @@ const OK_STATUS = new Set(["approved", "rejected"]);
  * @param rows [[label, numbers, description], ...]
  */
 async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos = null, meta = null }) {
-  const task = (await db.query(`SELECT id, title FROM recording_tasks WHERE id = $1`, [taskId])).rows[0];
+  const task = (await db.query(`SELECT id, title, rework_hours FROM recording_tasks WHERE id = $1`, [taskId])).rows[0];
   if (!task) throw httpError(404, "المهمة مش موجودة");
   const sampleCount = (await db.query(`SELECT COUNT(*)::int AS c FROM recording_samples WHERE task_id = $1`, [taskId])).rows[0].c;
 
@@ -440,6 +440,7 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
   if (resolved.warnings.length && !confirmWarnings) {
     throw httpError(409, "فيه تحذيرات في المعاينة. راجعها وأكّد إنك فاهمها قبل ما تطبّق.");
   }
+  const hours = Number(resolved.task.rework_hours) || REWORK_HOURS;   // each task sets its own redo time (12 or 24)
   const okRows = resolved.results.filter((r) => r.ok);
   if (!okRows.length) throw httpError(400, "مفيش أي صف صالح للتطبيق.");
 
@@ -496,7 +497,7 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
              rework_deadline = now() + ($3::int * interval '1 hour'), rework_enforced = true,
              delivery_batch_id = NULL, updated_at = now()
          WHERE id = $1`,
-        [sessionId, `فيدباك من الشركة — ${summary}`.slice(0, 1500), REWORK_HOURS]
+        [sessionId, `فيدباك من الشركة — ${summary}`.slice(0, 1500), hours]
       );
 
       for (const g of group) {
@@ -505,7 +506,7 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
              (task_id, session_id, leader_id, fake_name, recording_numbers, issue_description, status,
               rework_deadline, created_by, upload_id, source_row, previous_batch_id)
            VALUES ($1, $2, $3, $4, $5, $6, 'pending', now() + ($7::int * interval '1 hour'), $8, $9, $10, $11)`,
-          [taskId, sessionId, g.leaderId, g.session.fakeName, g.numbers, g.description || null, REWORK_HOURS,
+          [taskId, sessionId, g.leaderId, g.session.fakeName, g.numbers, g.description || null, hours,
            headLeaderId, uploadId, g.row, cur.delivery_batch_id]
         );
         itemsCreated++;
@@ -520,7 +521,7 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
   } finally {
     client.release();
   }
-  return { uploadId, sessions: sessionsDone, samples: samplesMarked, items: itemsCreated, skipped, reworkHours: REWORK_HOURS };
+  return { uploadId, sessions: sessionsDone, samples: samplesMarked, items: itemsCreated, skipped, reworkHours: hours };
 }
 
 // ------------------------------------------------------------- state changes

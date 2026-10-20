@@ -169,7 +169,11 @@ async function finalizeSession(sessionId, qaReviewerId, rejectedSampleIds, unifo
     const aggregateReason = anyRejected
       ? (uniformReason || "في تسجيلات محتاجة إعادة — شوف التفاصيل لكل جملة.")
       : null;
-    const reworkDeadline = anyRejected ? new Date(Date.now() + 12 * 60 * 60 * 1000) : null;
+    let reworkDeadline = null;
+    if (anyRejected) {
+      const th = await client.query(`SELECT rework_hours FROM recording_tasks WHERE id = $1`, [session.task_id]);
+      reworkDeadline = new Date(Date.now() + (Number(th.rows[0] && th.rows[0].rework_hours) || 12) * 60 * 60 * 1000);
+    }
 
     await client.query(
       `UPDATE recording_sessions

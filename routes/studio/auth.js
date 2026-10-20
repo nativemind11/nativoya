@@ -15,23 +15,10 @@ function signStudioToken(id, studioRole) {
   });
 }
 
-// Generates the next leader code (L001, L002, L003...). Locks the table for
-// the duration of the transaction so two people signing up at the exact
-// same moment can never end up with the same code.
-async function nextLeaderCode(client) {
-  await client.query("LOCK TABLE studio_leaders IN SHARE ROW EXCLUSIVE MODE");
-  const result = await client.query(
-    `SELECT leader_code FROM studio_leaders ORDER BY created_at DESC LIMIT 1`
-  );
-  const last = result.rows[0]?.leader_code;
-  const lastNum = last ? parseInt(last.replace(/\D/g, ""), 10) || 0 : 0;
-  return `L${String(lastNum + 1).padStart(3, "0")}`;
-}
-
-// POST /api/studio/auth/leader/signup — the only self-service signup in the
-// studio; head_leader and QA accounts are created directly (see
-// db/migration_studio.sql and the head_leader's "add QA reviewer" action).
-router.post("/leader/signup", async (req, res) => {
+// POST /api/studio/auth/talent/signup — anyone recording for a task needs
+// one of these first. No leader_code here (that's chosen per-session on the
+// task they're recording for, same account can work with several leaders).
+router.post("/talent/signup", async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: "الاسم والإيميل وكلمة المرور مطلوبين" });
@@ -40,51 +27,12 @@ router.post("/leader/signup", async (req, res) => {
     return res.status(400).json({ error: "كلمة المرور لازم تكون 6 أحرف على الأقل" });
   }
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const leaderCode = await nextLeaderCode(client);
-    const passwordHash = await bcrypt.hash(password, 10);
-    const result = await client.query(
-      `INSERT INTO studio_leaders (name, email, password_hash, leader_code)
-       VALUES ($1, $2, $3, $4) RETURNING id, name, email, leader_code, created_at`,
-      [name, email, passwordHash, leaderCode]
-    );
-    await client.query("COMMIT");
-
-    const leader = result.rows[0];
-    const token = signStudioToken(leader.id, "leader");
-    res.status(201).json({ token, studioRole: "leader", user: leader });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    if (err.code === "23505") { // unique_violation on email
-      return res.status(409).json({ error: "فيه حساب بالإيميل ده في الاستوديو بالفعل" });
-    }
-    console.error(err);
-    res.status(500).json({ error: "تعذر إنشاء الحساب، حاول تاني" });
-  } finally {
-    client.release();
-  }
-});
-
-// POST /api/studio/auth/talent/signup — anyone recording for a task needs
-// one of these first. No leader_code here (that's chosen per-session on the
-// task they're recording for, same account can work with several leaders).
-router.post("/talent/signup", async (req, res) => {
-  const { name, email, password, whatsapp } = req.body;
-  if (!name || !email || !password || !whatsapp) {
-    return res.status(400).json({ error: "الاسم والإيميل وكلمة المرور ورقم الواتس مطلوبين" });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: "كلمة المرور لازم تكون 6 أحرف على الأقل" });
-  }
-
   try {
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO studio_talents (name, email, password_hash, whatsapp)
-       VALUES ($1, $2, $3, $4) RETURNING id, name, email, whatsapp, created_at`,
-      [name, email, passwordHash, whatsapp]
+      `INSERT INTO studio_talents (name, email, password_hash)
+       VALUES ($1, $2, $3) RETURNING id, name, email, created_at`,
+      [name, email, passwordHash]
     );
     const talent = result.rows[0];
     const token = signStudioToken(talent.id, "talent");
@@ -113,6 +61,7 @@ router.post("/login", async (req, res) => {
     if (!account || !(await bcrypt.compare(password, account.password_hash))) {
       return res.status(401).json({ error: "الإيميل أو كلمة المرور غلط" });
     }
+    if (account.is_active === false) return res.status(403).json({ error: "الحساب ده متوقف. كلّم الهيد ليدر." });
     delete account.password_hash;
     const token = signStudioToken(account.id, studioRole);
     res.json({ token, studioRole, user: account });
