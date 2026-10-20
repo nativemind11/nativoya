@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs");
 // same moment can never get the same code.
 async function nextLeaderCode(client) {
   await client.query("LOCK TABLE studio_leaders IN SHARE ROW EXCLUSIVE MODE");
-  const r = await client.query(`SELECT leader_code FROM studio_leaders ORDER BY created_at DESC, leader_code DESC LIMIT 1`);
+  const r = await client.query(`SELECT leader_code FROM studio_leaders WHERE NOT is_system ORDER BY created_at DESC, leader_code DESC LIMIT 1`);
   const last = r.rows[0] && r.rows[0].leader_code;
   const n = last ? parseInt(last.replace(/\D/g, ""), 10) || 0 : 0;
   return `L${String(n + 1).padStart(3, "0")}`;

@@ -12,6 +12,7 @@ const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/goog
 const { deleteQuietly } = require("../../config/studioStorage");
 const blob = require("../../config/studioBlob");
 const Quota = require("../../config/studioQuota");
+const Scripts = require("../../config/studioScripts");
 const { sendAudio, audioContentType } = require("../../config/studioHttp");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 
@@ -42,6 +43,11 @@ async function withRetry(fn, tries = 3) {
   throw lastErr;
 }
 
+// How many sentences one talent records in this task: the shared script, or (per-person tasks) the first script's.
+const FIRST_SCRIPT = `(CASE WHEN t.script_mode = 'per_person' THEN (SELECT id FROM studio_task_scripts WHERE task_id = t.id ORDER BY position LIMIT 1) END)`;
+// The public task endpoints must never show the code lists.
+const publicTask = ({ identity_codes, ...rest }) => rest;
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 // Browsing tasks/fake-names is PUBLIC (no need to log in just to look).
@@ -54,14 +60,15 @@ router.get("/tasks", async (req, res) => {
     await safeExpire(pool);
     const result = await pool.query(`
       SELECT t.id, t.title, t.difficulty, t.quantity, t.recording_settings, t.use_age_brackets, t.use_reference_audio,
-        (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id) AS sample_count,
+        t.direct, t.script_mode, t.identity_mode, t.identity_codes,
+        (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id AND script_id IS NOT DISTINCT FROM ${FIRST_SCRIPT}) AS sample_count,
         (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status <> 'expired') AS submission_count
       FROM recording_tasks t
       WHERE t.status = 'published'
       ORDER BY t.published_at DESC
     `);
     // each task also carries { limited, slots:[{gender, ageBracket, max, used, remaining, full}] } = how many places are left
-    res.json(await Quota.attachSlots(pool, result.rows));
+    res.json((await Scripts.attachSlots(pool, result.rows)).map(publicTask));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل المهام" });
@@ -82,10 +89,12 @@ router.get("/tasks/:id", async (req, res) => {
       WHERE rtl.task_id = $1 ORDER BY l.leader_code
     `, [req.params.id]);
 
-    const sampleCount = await pool.query(`SELECT COUNT(*) FROM recording_samples WHERE task_id = $1`, [req.params.id]);
+    const sampleCount = await pool.query(
+      `SELECT COUNT(*) FROM recording_samples sm JOIN recording_tasks t ON t.id = sm.task_id
+       WHERE sm.task_id = $1 AND sm.script_id IS NOT DISTINCT FROM ${FIRST_SCRIPT}`, [req.params.id]);
 
-    const [task] = await Quota.attachSlots(pool, [taskResult.rows[0]]);
-    res.json({ task, leaders: leaders.rows, sampleCount: Number(sampleCount.rows[0].count) });
+    const [task] = await Scripts.attachSlots(pool, [taskResult.rows[0]]);
+    res.json({ task: publicTask(task), leaders: leaders.rows, sampleCount: Number(sampleCount.rows[0].count) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل تفاصيل المهمة" });
@@ -124,17 +133,13 @@ router.get("/samples/:sampleId/reference-audio", async (req, res) => {
 });
 
 // GET /api/studio/talent/tasks/:id/fake-names — names from the pool that
-// NOBODY has reserved yet for this task.
+// NOBODY has reserved yet for this task. Tasks that use CODES list only the codes of ?gender=male|female.
 router.get("/tasks/:id/fake-names", async (req, res) => {
   try {
     await safeExpire(pool);
-    const taskResult = await pool.query(`SELECT fake_names FROM recording_tasks WHERE id = $1`, [req.params.id]);
+    const taskResult = await pool.query(`SELECT id, fake_names, identity_mode, identity_codes FROM recording_tasks WHERE id = $1`, [req.params.id]);
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
-
-    const taken = await pool.query(`SELECT fake_name FROM recording_sessions WHERE task_id = $1 AND status <> 'expired'`, [req.params.id]);
-    const takenSet = new Set(taken.rows.map(r => r.fake_name));
-    const available = taskResult.rows[0].fake_names.filter(n => !takenSet.has(n));
-    res.json(available);
+    res.json(await Scripts.availableNames(pool, taskResult.rows[0], req.query.gender));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل قائمة الأسامي" });
@@ -146,8 +151,9 @@ router.get("/tasks/:id/fake-names", async (req, res) => {
 // The task row is locked while the place is taken, so two people can never both get the last slot.
 // If the task uses age brackets the talent chooses one; otherwise everybody is "adult".
 router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
-  const { taskId, leaderId, gender, ageBracket, age, fakeName } = req.body;
-  if (!taskId || !leaderId || !gender || !fakeName) {
+  const { taskId, gender, ageBracket, age, fakeName } = req.body;
+  let leaderId = req.body.leaderId;
+  if (!taskId || !gender || !fakeName) {
     return res.status(400).json({ error: "البيانات ناقصة، املا كل الحقول المطلوبة" });
   }
   if (!["male", "female"].includes(gender)) return res.status(400).json({ error: "النوع غير صحيح" });
@@ -162,30 +168,45 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
 
     const bracket = task.use_age_brackets ? ageBracket : "adult";
     if (!["child", "adult", "elderly"].includes(bracket)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "الفئة العمرية غير صحيحة" }); }
-    if (!task.fake_names.includes(fakeName)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "الاسم ده مش من ضمن القائمة المتاحة" }); }
+    if (!Scripts.nameIsAllowed(task, gender, fakeName)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: Scripts.isCodes(task) ? "الكود ده مش من ضمن القائمة المتاحة" : "الاسم ده مش من ضمن القائمة المتاحة" });
+    }
 
-    const leaderResult = await client.query(
-      `SELECT 1 FROM recording_task_leaders rtl JOIN studio_leaders l ON l.id = rtl.leader_id
-       WHERE rtl.task_id = $1 AND rtl.leader_id = $2 AND l.is_active`, [taskId, leaderId]);
-    if (!leaderResult.rows.length) { await client.query("ROLLBACK"); return res.status(400).json({ error: "الكود ده مش مسموح له بالمهمة دي" }); }
+    if (task.direct) {
+      // direct task: no leader to pick — the session hangs on the hidden system leader
+      const sys = await client.query(`SELECT id FROM studio_leaders WHERE is_system LIMIT 1`);
+      if (!sys.rows.length) { await client.query("ROLLBACK"); return res.status(500).json({ error: "السيرفر مش جاهز للنشر المباشر (migration v3 ما اتشغّلش)." }); }
+      leaderId = sys.rows[0].id;
+    } else {
+      if (!leaderId) { await client.query("ROLLBACK"); return res.status(400).json({ error: "البيانات ناقصة، املا كل الحقول المطلوبة" }); }
+      const leaderResult = await client.query(
+        `SELECT 1 FROM recording_task_leaders rtl JOIN studio_leaders l ON l.id = rtl.leader_id
+         WHERE rtl.task_id = $1 AND rtl.leader_id = $2 AND l.is_active`, [taskId, leaderId]);
+      if (!leaderResult.rows.length) { await client.query("ROLLBACK"); return res.status(400).json({ error: "الكود ده مش مسموح له بالمهمة دي" }); }
+    }
 
     const quotaRows = (await Quota.loadQuotaRows(client, [taskId])).get(taskId);
     const usageRows = (await Quota.loadUsage(client, [taskId])).get(taskId);
     const check = Quota.checkJoin(!!task.use_age_brackets, quotaRows, usageRows, gender, bracket);
     if (!check.ok) { await client.query("ROLLBACK"); return res.status(409).json({ error: check.message, code: check.code }); }
 
+    // per-person scripts: this talent gets the first script nobody else holds (the task row is locked, so no two get the same)
+    const scriptId = await Scripts.allocateScript(client, task);
+
     const sessionToken = crypto.randomBytes(24).toString("hex");
     const result = await client.query(
       `INSERT INTO recording_sessions
-         (task_id, leader_id, talent_id, session_token, gender, age_bracket, age, fake_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [taskId, leaderId, req.studioUser.id, sessionToken, gender, bracket, age || null, fakeName]
+         (task_id, leader_id, talent_id, session_token, gender, age_bracket, age, fake_name, script_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [taskId, leaderId, req.studioUser.id, sessionToken, gender, bracket, age || null, fakeName, scriptId]
     );
-    const samples = await client.query(`SELECT * FROM recording_samples WHERE task_id = $1 ORDER BY order_index`, [taskId]);
+    const samples = await Scripts.samplesOfSession(client, taskId, scriptId);
     await client.query("COMMIT");
-    res.status(201).json({ session: result.rows[0], samples: samples.rows });
+    res.status(201).json({ session: result.rows[0], samples });
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch (_) {}
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, code: err.code });
     if (err.code === "23505") { // unique_violation — someone else just took this name
       return res.status(409).json({ error: "للأسف حد تاني اختار الاسم ده قبلك بثانية. اختار اسم تاني." });
     }
@@ -214,9 +235,9 @@ router.get("/sessions/:token", requireStudioAuth, requireStudioRole("talent"), a
         ss.qa_status, ss.qa_reason
       FROM recording_samples s
       LEFT JOIN recording_session_samples ss ON ss.sample_id = s.id AND ss.session_id = $1
-      WHERE s.task_id = $2
+      WHERE s.task_id = $2 AND s.script_id IS NOT DISTINCT FROM $3
       ORDER BY s.order_index
-    `, [session.id, session.task_id]);
+    `, [session.id, session.task_id, session.script_id]);
 
     // opening the rework screen counts as "seen" for any company feedback on this session
     if (session.status === "rejected") markAcknowledged(pool, session.id).catch((e) => console.error("[feedback ack]", e.message));
@@ -239,6 +260,11 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
     const session = sessionResult.rows[0];
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
     if (session.status === "expired") return res.status(410).json({ error: "انتهت مهلة الإعادة والاسم اتسحب منك. ممكن تبدأ تسجيل جديد من قايمة المهام." });
+
+    const mine = await pool.query(
+      `SELECT 1 FROM recording_samples WHERE id = $1 AND task_id = $2 AND script_id IS NOT DISTINCT FROM $3`,
+      [req.params.sampleId, session.task_id, session.script_id]);
+    if (!mine.rows.length) return res.status(404).json({ error: "الجملة دي مش من جلستك" });
 
     const existingCheck = await pool.query(
       `SELECT * FROM recording_session_samples WHERE session_id = $1 AND sample_id = $2`,
@@ -335,7 +361,7 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
     const task = (await pool.query(`SELECT * FROM recording_tasks WHERE id = $1`, [session.task_id])).rows[0];
     const leader = (await pool.query(`SELECT * FROM studio_leaders WHERE id = $1`, [session.leader_id])).rows[0];
 
-    const totalSamples = await pool.query(`SELECT COUNT(*) FROM recording_samples WHERE task_id = $1`, [session.task_id]);
+    const totalSamples = await pool.query(`SELECT COUNT(*) FROM recording_samples WHERE task_id = $1 AND script_id IS NOT DISTINCT FROM $2`, [session.task_id, session.script_id]);
     const recordedSamples = await pool.query(
       `SELECT ss.* FROM recording_session_samples ss WHERE ss.session_id = $1 AND ss.audio_file_url IS NOT NULL`,
       [session.id]
@@ -469,7 +495,7 @@ router.get("/me/sessions", requireStudioAuth, requireStudioRole("talent"), async
     await safeExpire(pool);
     const result = await pool.query(`
       SELECT rs.*, t.title AS task_title, l.leader_code,
-        (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id) AS sample_count,
+        (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id AND script_id IS NOT DISTINCT FROM rs.script_id) AS sample_count,
         (SELECT COUNT(*) FROM recording_session_samples WHERE session_id = rs.id AND audio_file_url IS NOT NULL) AS recorded_count
       FROM recording_sessions rs
       JOIN recording_tasks t ON t.id = rs.task_id

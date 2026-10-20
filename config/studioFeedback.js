@@ -291,13 +291,15 @@ const OK_STATUS = new Set(["approved", "rejected"]);
 async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos = null, meta = null }) {
   const task = (await db.query(`SELECT id, title, rework_hours FROM recording_tasks WHERE id = $1`, [taskId])).rows[0];
   if (!task) throw httpError(404, "المهمة مش موجودة");
-  const sampleCount = (await db.query(`SELECT COUNT(*)::int AS c FROM recording_samples WHERE task_id = $1`, [taskId])).rows[0].c;
+  // sentences per talent (per-person tasks: the longest script; each session is checked against its own script below)
+  const sampleCount = (await db.query(`SELECT COALESCE(MAX(c), 0)::int AS c FROM (SELECT COUNT(*) AS c FROM recording_samples WHERE task_id = $1 GROUP BY script_id) x`, [taskId])).rows[0].c;
 
   const sess = await db.query(
     `SELECT rs.id, rs.fake_name, rs.status, rs.gender, rs.age_bracket, rs.age, rs.leader_id, l.leader_code, l.name AS leader_name,
             tal.name AS real_name, tal.email, b.status AS batch_status,
             ARRAY(SELECT s.order_index FROM recording_session_samples ss
-                  JOIN recording_samples s ON s.id = ss.sample_id WHERE ss.session_id = rs.id) AS have
+                  JOIN recording_samples s ON s.id = ss.sample_id WHERE ss.session_id = rs.id) AS have,
+            (SELECT COUNT(*)::int FROM recording_samples sm WHERE sm.task_id = rs.task_id AND sm.script_id IS NOT DISTINCT FROM rs.script_id) AS total_samples
      FROM recording_sessions rs
      JOIN studio_leaders l ON l.id = rs.leader_id
      LEFT JOIN studio_talents tal ON tal.id = rs.talent_id
@@ -337,7 +339,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
     if (picked.ambiguous) return { ...base, code: "ambiguous", message: MESSAGES.ambiguous };
     const session = picked.session;
 
-    const num = parseNumbers(numbersRaw, sampleCount);
+    const num = parseNumbers(numbersRaw, session.total_samples);
     if (num.error === "out_of_range") return { ...base, code: "out_of_range", message: MESSAGES.out_of_range(num) };
     if (num.error) return { ...base, code: "bad_numbers", message: MESSAGES.bad_numbers };
     base.numbers = num.numbers;
@@ -346,6 +348,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
     base.session = {
       id: session.id, fakeName: session.fake_name, realName: session.real_name, email: session.email,
       leaderCode: session.leader_code, leaderName: session.leader_name, status: session.status,
+      total: session.total_samples,       // per-person tasks: every talent can have a different number of sentences
     };
     if (!OK_STATUS.has(session.status)) return { ...base, code: session.status, message: MESSAGES[session.status] || MESSAGES.changed };
     if (session.batch_status === "collecting") return { ...base, code: "collecting", message: MESSAGES.collecting };
@@ -404,20 +407,23 @@ function buildWarnings(results, sampleCount, meta) {
     }
     // every single recording of one person sent back (and not through an explicit "all")
     const union = new Set(rows.flatMap((r) => r.numbers));
-    if (sampleCount >= 2 && union.size >= sampleCount && rows.some((r) => !r.viaAll)) {
+    const total = rows[0].session.total != null ? rows[0].session.total : sampleCount;
+    if (total >= 2 && union.size >= total && rows.some((r) => !r.viaAll)) {
       out.push({
         code: "all_flagged", fakeName: fake, count: union.size,
-        message: `كل تسجيلات "${fake}" (${union.size} من ${sampleCount}) هترجع للإعادة. اتأكد إنك مستبعد التسجيلات المقبولة (عمود الحالة).`,
+        message: `كل تسجيلات "${fake}" (${union.size} من ${total}) هترجع للإعادة. اتأكد إنك مستبعد التسجيلات المقبولة (عمود الحالة).`,
       });
     }
   }
   // row-order numbering is only right if the sheet still lists every recording of each ZIP, in order
   if (meta && meta.numbersMode === "row_order" && meta.rowCounts) {
+    const totalByLabel = new Map(results.filter((r) => r.session && r.session.total != null).map((r) => [String(r.label), r.session.total]));
     for (const { label, count } of Object.values(meta.rowCounts)) {
-      if (count !== sampleCount) {
+      const expected = totalByLabel.has(label) ? totalByLabel.get(label) : sampleCount;
+      if (count !== expected) {
         out.push({
           code: "row_count_mismatch", fakeName: label, count,
-          message: `الملف فيه ${count} صف لـ "${label}" بينما المهمة فيها ${sampleCount} تسجيل — ممكن الشيت اتفلتر أو اتغيّر ترتيبه فالأرقام تبقى غلط. لو فيه عمود برقم التسجيل استخدمه بدل "ترتيب الصف".`,
+          message: `الملف فيه ${count} صف لـ "${label}" بينما المهمة فيها ${expected} تسجيل — ممكن الشيت اتفلتر أو اتغيّر ترتيبه فالأرقام تبقى غلط. لو فيه عمود برقم التسجيل استخدمه بدل "ترتيب الصف".`,
         });
       }
     }

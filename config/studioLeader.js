@@ -28,7 +28,7 @@ const SESSIONS_SQL = `
          tl.name AS real_name, tl.email, tl.whatsapp,
          (SELECT COUNT(*) FROM recording_session_samples ss
             WHERE ss.session_id = rs.id AND ss.audio_file_url IS NOT NULL)::int AS recorded,
-         (SELECT COUNT(*) FROM recording_samples sm WHERE sm.task_id = rs.task_id)::int AS total
+         (SELECT COUNT(*) FROM recording_samples sm WHERE sm.task_id = rs.task_id AND sm.script_id IS NOT DISTINCT FROM rs.script_id)::int AS total
   FROM recording_sessions rs
   JOIN recording_tasks t ON t.id = rs.task_id
   LEFT JOIN studio_talents tl ON tl.id = rs.talent_id

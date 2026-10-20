@@ -8,6 +8,7 @@ const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/goog
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 const { readLines } = require("../../config/textFile");
 const Quota = require("../../config/studioQuota");
+const Scripts = require("../../config/studioScripts");
 const { createLeader } = require("../../config/studioLeaders");
 
 const router = express.Router();
@@ -59,7 +60,7 @@ router.get("/leaders", async (req, res) => {
         (SELECT COUNT(DISTINCT talent_id) FROM recording_sessions WHERE leader_id = l.id AND status <> 'expired')::int AS talents,
         (SELECT COUNT(*) FROM recording_sessions WHERE leader_id = l.id AND status <> 'expired')::int AS sessions,
         (SELECT COUNT(*) FROM recording_task_leaders WHERE leader_id = l.id)::int AS tasks
-      FROM studio_leaders l ORDER BY l.leader_code`);
+      FROM studio_leaders l WHERE NOT l.is_system ORDER BY l.leader_code`);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -135,7 +136,12 @@ router.post("/tasks", async (req, res) => {
   const {
     title, quantity, difficulty, sampleRate, bitDepth, format, channels,
     leaderIds, instructions, reworkHours, useAgeBrackets, useReferenceAudio, quotas,
+    scriptMode, identityMode, direct,
   } = req.body;
+  const sMode = scriptMode == null || scriptMode === "" ? "shared" : String(scriptMode);
+  const iMode = identityMode == null || identityMode === "" ? "names" : String(identityMode);
+  if (!["shared", "per_person"].includes(sMode)) return res.status(400).json({ error: "نمط السكريبت غير صحيح" });
+  if (!["names", "codes"].includes(iMode)) return res.status(400).json({ error: "نمط الهوية غير صحيح" });
 
   if (!title || !String(title).trim()) return res.status(400).json({ error: "اسم المهمة مطلوب" });
   const hours = reworkHours == null || reworkHours === "" ? 12 : Number(reworkHours);
@@ -162,19 +168,21 @@ router.post("/tasks", async (req, res) => {
     };
     const taskResult = await client.query(
       `INSERT INTO recording_tasks (title, head_leader_id, quantity, difficulty, recording_settings,
-                                    instructions, rework_hours, use_age_brackets, use_reference_audio)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+                                    instructions, rework_hours, use_age_brackets, use_reference_audio,
+                                    script_mode, identity_mode, direct, identity_codes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
       [String(title).trim(), req.studioUser.id, total, difficulty || "medium", JSON.stringify(settings),
        instructions && String(instructions).trim() ? String(instructions).trim() : null, hours,
-       !!useAgeBrackets, useReferenceAudio === undefined ? true : !!useReferenceAudio]
+       !!useAgeBrackets, useReferenceAudio === undefined ? true : !!useReferenceAudio,
+       sMode, iMode, !!direct, iMode === "codes" ? JSON.stringify({ male: [], female: [] }) : null]
     );
     const task = taskResult.rows[0];
     await Quota.replaceQuotas(client, task.id, quotaRows);
-    for (const id of new Set(ids)) {
+    for (const id of (direct ? [] : new Set(ids))) {
       await client.query(`INSERT INTO recording_task_leaders (task_id, leader_id) VALUES ($1, $2)`, [task.id, id]);
     }
     await client.query("COMMIT");
-    const [withSlots] = await Quota.attachSlots(pool, [task]);
+    const [withSlots] = await Scripts.attachSlots(pool, [task]);
     res.status(201).json(withSlots);
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch (_) {}
@@ -205,7 +213,7 @@ router.patch("/tasks/:id", async (req, res) => {
     vals.push(req.params.id, req.studioUser.id);
     const r = await pool.query(`UPDATE recording_tasks SET ${sets.join(", ")} WHERE id = $${vals.length - 1} AND head_leader_id = $${vals.length} RETURNING *`, vals);
     if (!r.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
-    const [withSlots] = await Quota.attachSlots(pool, [r.rows[0]]);
+    const [withSlots] = await Scripts.attachSlots(pool, [r.rows[0]]);
     res.json(withSlots);
   } catch (err) {
     if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش موجودة" });
@@ -233,7 +241,7 @@ router.put("/tasks/:id/quotas", async (req, res) => {
       `UPDATE recording_tasks SET use_age_brackets = $2, quantity = $3 WHERE id = $1 RETURNING *`,
       [task.id, useB, rows.length ? rows.reduce((n, r) => n + r.max, 0) : task.quantity]);
     await client.query("COMMIT");
-    const [withSlots] = await Quota.attachSlots(pool, [updated.rows[0]]);
+    const [withSlots] = await Scripts.attachSlots(pool, [updated.rows[0]]);
     res.json(withSlots);
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch (_) {}
@@ -251,8 +259,9 @@ router.post("/tasks/:id/leaders", async (req, res) => {
   const { leaderId } = req.body;
   if (!leaderId) return res.status(400).json({ error: "اختار الليدر" });
   try {
-    const t = await pool.query(`SELECT id FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`, [req.params.id, req.studioUser.id]);
+    const t = await pool.query(`SELECT id, direct FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`, [req.params.id, req.studioUser.id]);
     if (!t.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    if (t.rows[0].direct) return res.status(400).json({ error: "المهمة دي نشر مباشر — مفيهاش ليدرز." });
     const l = await pool.query(`SELECT id, is_active FROM studio_leaders WHERE id = $1`, [leaderId]);
     if (!l.rows.length) return res.status(404).json({ error: "الليدر مش موجود" });
     if (!l.rows[0].is_active) return res.status(400).json({ error: "الليدر ده متوقف" });
@@ -283,6 +292,7 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
     );
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
     const task = taskResult.rows[0];
+    if (Scripts.isPerPerson(task)) return res.status(400).json({ error: "المهمة دي سكريبتاتها منفصلة لكل شخص — ارفعهم كملفات من خطوة السكريبتات." });
 
     const lines = readLines(req.file.buffer);
     if (!lines.length) return res.status(400).json({ error: "الملف فاضي أو مفيهوش جمل" });
@@ -360,6 +370,7 @@ router.post("/tasks/:id/fake-names", upload.single("file"), async (req, res) => 
     );
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
 
+    if (Scripts.isCodes(taskResult.rows[0])) return res.status(400).json({ error: "المهمة دي بتستخدم أكواد — ارفع قايمة الأكواد بدل الأسامي." });
     const names = readLines(req.file.buffer);
     if (!names.length) return res.status(400).json({ error: "الملف فاضي أو مفيهوش أسامي" });
 
@@ -477,6 +488,105 @@ router.post("/tasks/:id/samples/bulk-audio", upload.single("file"), async (req, 
   }
 });
 
+
+// POST /api/studio/headleader/tasks/:id/scripts — per-person tasks: upload many .txt files, EACH FILE = ONE script
+// (its lines are that script's sentences). Field name "files". mode: "append" (default, adds after the existing
+// scripts) or "replace" (only while nobody has started: it throws the old scripts away).
+router.post("/tasks/:id/scripts", upload.array("files", 100), async (req, res) => {
+  const files = req.files || [];
+  if (!files.length) return res.status(400).json({ error: "لازم ترفع ملف txt واحد على الأقل" });
+  const mode = req.body.mode === "replace" ? "replace" : "append";
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const t = await client.query(`SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2 FOR UPDATE`, [req.params.id, req.studioUser.id]);
+    if (!t.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش موجودة" }); }
+    const task = t.rows[0];
+    if (!Scripts.isPerPerson(task)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "المهمة دي مش مضبوطة على سكريبت منفصل لكل شخص." }); }
+
+    const parsed = [], empty = [];
+    for (const f of [...files].sort((a, b) => Scripts.byName(a.originalname, b.originalname))) {
+      const lines = readLines(f.buffer);
+      if (!lines.length) empty.push(f.originalname); else parsed.push({ name: f.originalname, lines });
+    }
+    if (empty.length) { await client.query("ROLLBACK"); return res.status(400).json({ error: `الملفات دي فاضية: ${empty.slice(0, 5).join(", ")}${empty.length > 5 ? "…" : ""}` }); }
+
+    if (mode === "replace") {
+      const started = await client.query(`SELECT 1 FROM recording_sessions WHERE task_id = $1 AND script_id IS NOT NULL LIMIT 1`, [task.id]);
+      if (started.rows.length) { await client.query("ROLLBACK"); return res.status(409).json({ error: "مينفعش تستبدل السكريبتات بعد ما فيه ناس بدأت. ضيف سكريبتات جديدة بس." }); }
+      await client.query(`DELETE FROM studio_task_scripts WHERE task_id = $1`, [task.id]);   // its sentences go with it (cascade)
+    }
+    let pos = (await client.query(`SELECT COALESCE(MAX(position) + 1, 0)::int AS n FROM studio_task_scripts WHERE task_id = $1`, [task.id])).rows[0].n;
+    for (const p of parsed) {
+      const sc = await client.query(`INSERT INTO studio_task_scripts (task_id, position, filename) VALUES ($1, $2, $3) RETURNING id`, [task.id, pos++, p.name]);
+      await client.query(
+        `INSERT INTO recording_samples (task_id, script_id, sentence_name, order_index)
+         SELECT $1, $2, x.name, x.ord - 1 FROM unnest($3::text[]) WITH ORDINALITY AS x(name, ord)`, [task.id, sc.rows[0].id, p.lines]);
+    }
+    await client.query("COMMIT");
+    const total = (await pool.query(`SELECT COUNT(*)::int AS n FROM studio_task_scripts WHERE task_id = $1`, [task.id])).rows[0].n;
+    res.json({ added: parsed.length, scriptCount: total });
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش موجودة" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر رفع السكريبتات" });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/studio/headleader/tasks/:id/codes — tasks that use CODES instead of fake names: the head leader uploads
+// two lists, "male" and "female" (one code per line). A talent only sees the codes of the gender they pick.
+// mode: "replace" (default) swaps a list, "append" adds new codes to it. A code a talent already holds stays theirs.
+router.post("/tasks/:id/codes", upload.fields([{ name: "male", maxCount: 1 }, { name: "female", maxCount: 1 }]), async (req, res) => {
+  const files = req.files || {};
+  if (!files.male && !files.female) return res.status(400).json({ error: "ارفع قايمة أكواد واحدة على الأقل (ولاد أو بنات)" });
+  const mode = req.body.mode === "append" ? "append" : "replace";
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const t = await client.query(`SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2 FOR UPDATE`, [req.params.id, req.studioUser.id]);
+    if (!t.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش موجودة" }); }
+    const task = t.rows[0];
+    if (!Scripts.isCodes(task)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "المهمة دي بتستخدم أسامي مستعارة مش أكواد." }); }
+
+    const next = { male: Scripts.codeList(task, "male"), female: Scripts.codeList(task, "female") };
+    const label = { male: "الأولاد", female: "البنات" };
+    let skipped = 0;
+    for (const g of ["male", "female"]) {
+      const f = files[g] && files[g][0]; if (!f) continue;
+      const lines = readLines(f.buffer);
+      if (!lines.length) { await client.query("ROLLBACK"); return res.status(400).json({ error: `قايمة أكواد ${label[g]} فاضية` }); }
+      const seen = new Set();
+      for (const c of lines) {
+        if (seen.has(c)) { await client.query("ROLLBACK"); return res.status(400).json({ error: `الكود "${c}" اتكرر في قايمة ${label[g]}` }); }
+        seen.add(c);
+      }
+      if (mode === "append") {
+        const have = new Set(next[g]);
+        const fresh = lines.filter((c) => !have.has(c));
+        skipped += lines.length - fresh.length;
+        next[g] = [...next[g], ...fresh];
+      } else next[g] = lines;
+    }
+    const maleSet = new Set(next.male);
+    const both = next.female.find((c) => maleSet.has(c));
+    if (both) { await client.query("ROLLBACK"); return res.status(400).json({ error: `الكود "${both}" موجود في قايمة الأولاد والبنات — لازم كل كود يبقى في قايمة واحدة بس` }); }
+
+    await client.query(`UPDATE recording_tasks SET identity_codes = $2 WHERE id = $1`, [task.id, JSON.stringify(next)]);
+    await client.query("COMMIT");
+    res.json({ male: next.male.length, female: next.female.length, skipped });
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش موجودة" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر رفع الأكواد" });
+  } finally {
+    client.release();
+  }
+});
+
 // POST /api/studio/headleader/tasks/:id/publish
 router.post("/tasks/:id/publish", async (req, res) => {
   try {
@@ -489,13 +599,19 @@ router.post("/tasks/:id/publish", async (req, res) => {
 
     const sampleCount = await pool.query(`SELECT COUNT(*) FROM recording_samples WHERE task_id = $1`, [task.id]);
     if (Number(sampleCount.rows[0].count) === 0) {
-      return res.status(400).json({ error: "لازم ترفع ملف السكريبت الأول قبل النشر" });
+      return res.status(400).json({ error: Scripts.isPerPerson(task) ? "لازم ترفع ملفات السكريبتات الأول قبل النشر" : "لازم ترفع ملف السكريبت الأول قبل النشر" });
     }
-    const leaderCount = await pool.query(`SELECT COUNT(*) FROM recording_task_leaders WHERE task_id = $1`, [task.id]);
-    if (Number(leaderCount.rows[0].count) === 0) {
-      return res.status(400).json({ error: "لازم تحدد كود ليدر واحد على الأقل قبل النشر" });
+    if (!task.direct) {
+      const leaderCount = await pool.query(`SELECT COUNT(*) FROM recording_task_leaders WHERE task_id = $1`, [task.id]);
+      if (Number(leaderCount.rows[0].count) === 0) {
+        return res.status(400).json({ error: "لازم تحدد كود ليدر واحد على الأقل قبل النشر" });
+      }
     }
-    if (!task.fake_names || task.fake_names.length === 0) {
+    if (Scripts.isCodes(task)) {
+      if (!Scripts.codeList(task, "male").length && !Scripts.codeList(task, "female").length) {
+        return res.status(400).json({ error: "لازم ترفع قايمة الأكواد قبل النشر" });
+      }
+    } else if (!task.fake_names || task.fake_names.length === 0) {
       return res.status(400).json({ error: "لازم ترفع ملف الأسامي المستعارة قبل النشر" });
     }
 
@@ -516,7 +632,9 @@ router.get("/tasks", async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT t.*,
-        (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id) AS sample_count,
+        (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id AND script_id IS NOT DISTINCT FROM
+           (CASE WHEN t.script_mode = 'per_person' THEN (SELECT id FROM studio_task_scripts WHERE task_id = t.id ORDER BY position LIMIT 1) END)) AS sample_count,
+        (SELECT COUNT(*) FROM studio_task_scripts WHERE task_id = t.id) AS script_count,
         (SELECT COUNT(*) FROM recording_task_leaders WHERE task_id = t.id) AS leader_count,
         (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status <> 'expired') AS submission_count,
         (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status = 'approved' AND gender = 'male') AS approved_male_count,
@@ -529,7 +647,7 @@ router.get("/tasks", async (req, res) => {
       WHERE t.head_leader_id = $1
       ORDER BY t.created_at DESC
     `, [req.studioUser.id]);
-    res.json(await Quota.attachSlots(pool, result.rows));
+    res.json(await Scripts.attachSlots(pool, result.rows));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل المهام" });
@@ -546,20 +664,25 @@ router.get("/tasks/:id", async (req, res) => {
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
 
     const samples = await pool.query(
-      `SELECT * FROM recording_samples WHERE task_id = $1 ORDER BY order_index`, [req.params.id]
+      `SELECT * FROM recording_samples WHERE task_id = $1 AND script_id IS NULL ORDER BY order_index`, [req.params.id]
     );
     const leaders = await pool.query(`
       SELECT l.id, l.name, l.leader_code, l.email
       FROM recording_task_leaders rtl JOIN studio_leaders l ON l.id = rtl.leader_id
       WHERE rtl.task_id = $1 ORDER BY l.leader_code
     `, [req.params.id]);
+    const scripts = await pool.query(`
+      SELECT s.id, s.position, s.filename, COUNT(sm.id)::int AS sentence_count,
+             EXISTS (SELECT 1 FROM recording_sessions rs WHERE rs.script_id = s.id AND rs.status <> 'expired') AS taken
+      FROM studio_task_scripts s LEFT JOIN recording_samples sm ON sm.script_id = s.id
+      WHERE s.task_id = $1 GROUP BY s.id ORDER BY s.position`, [req.params.id]);
 
-    const [task] = await Quota.attachSlots(pool, [taskResult.rows[0]]);
+    const [task] = await Scripts.attachSlots(pool, [taskResult.rows[0]]);
     const qa = await pool.query(`
       SELECT q.id, q.name, COUNT(*)::int AS n FROM recording_sessions rs
       JOIN studio_qa_reviewers q ON q.id = rs.qa_reviewer_id
       WHERE rs.task_id = $1 AND rs.status <> 'expired' GROUP BY q.id, q.name ORDER BY n DESC, q.name`, [req.params.id]);
-    res.json({ task, samples: samples.rows, leaders: leaders.rows, qa: qa.rows });
+    res.json({ task, samples: samples.rows, leaders: leaders.rows, qa: qa.rows, scripts: scripts.rows });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل تفاصيل المهمة" });
