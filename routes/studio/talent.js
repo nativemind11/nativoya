@@ -11,6 +11,7 @@ const { requireStudioAuth, requireStudioRole } = require("../../config/studioAut
 const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
 const { deleteQuietly } = require("../../config/studioStorage");
 const blob = require("../../config/studioBlob");
+const refCache = require("../../config/refAudioCache");
 const Quota = require("../../config/studioQuota");
 const Scripts = require("../../config/studioScripts");
 const { sendAudio, audioContentType } = require("../../config/studioHttp");
@@ -116,13 +117,17 @@ router.get("/samples/:sampleId/reference-audio", async (req, res) => {
     if (!match) return res.status(404).json({ error: "رابط السامبل غير صالح" });
     const fileId = match[1];
 
-    const authClient = await getAuthorizedClient();
-    const drive = google.drive({ version: "v3", auth: authClient });
-    const meta = await drive.files.get({ fileId, fields: "mimeType, name" });
-    const file = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
+    // Cached per server instance + concurrent requests share one Drive call (see config/refAudioCache.js).
+    const clip = await refCache.getOrLoad(fileId, async () => {
+      const authClient = await getAuthorizedClient();
+      const drive = google.drive({ version: "v3", auth: authClient });
+      const meta = await drive.files.get({ fileId, fields: "mimeType, name" });
+      const file = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
+      return { buf: Buffer.from(file.data), type: audioContentType(meta.data.mimeType, meta.data.name) };
+    });
     // Phones only play an <audio> source that answers byte-range requests, so the (small) clip is read whole
     // and served with Content-Length / Accept-Ranges / 206 — not piped as a chunked stream.
-    sendAudio(req, res, Buffer.from(file.data), audioContentType(meta.data.mimeType, meta.data.name));
+    sendAudio(req, res, clip.buf, clip.type);
   } catch (err) {
     console.error(err);
     if (err.code === "DRIVE_NOT_CONNECTED") {
@@ -158,9 +163,11 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
   }
   if (!["male", "female"].includes(gender)) return res.status(400).json({ error: "النوع غير صحيح" });
 
+  // Must run BEFORE we hold a connection: it needs one of its own, and holding one while asking the pool for another
+  // can leave every connection waiting for a second one (the pool is small) when many talents join at once.
+  await safeExpire(pool);
   const client = await pool.connect();
   try {
-    await safeExpire(pool);
     await client.query("BEGIN");
     const taskResult = await client.query(`SELECT * FROM recording_tasks WHERE id = $1 AND status = 'published' FOR UPDATE`, [taskId]);
     if (!taskResult.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش متاحة" }); }
