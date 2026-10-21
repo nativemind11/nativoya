@@ -4,7 +4,7 @@ const multer = require("multer");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
-const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
+const { getAuthorizedClient, uploadSubmissionFile, isConnected } = require("../../config/googleDrive");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 const { readLines } = require("../../config/textFile");
 const Quota = require("../../config/studioQuota");
@@ -196,29 +196,81 @@ router.post("/tasks", async (req, res) => {
 // PATCH /api/studio/headleader/tasks/:id — change a task at any time (even after publishing):
 // title, instructions, rework hours, whether the sentences have example audio.
 router.patch("/tasks/:id", async (req, res) => {
-  const { title, instructions, reworkHours, useReferenceAudio } = req.body;
-  const sets = [], vals = [];
-  if (title !== undefined) {
-    if (!String(title).trim()) return res.status(400).json({ error: "اسم المهمة مينفعش يبقى فاضي" });
-    vals.push(String(title).trim()); sets.push(`title = $${vals.length}`);
-  }
-  if (instructions !== undefined) { vals.push(instructions && String(instructions).trim() ? String(instructions).trim() : null); sets.push(`instructions = $${vals.length}`); }
-  if (reworkHours !== undefined) {
-    if (![12, 24].includes(Number(reworkHours))) return res.status(400).json({ error: "مهلة الإعادة لازم تكون 12 أو 24 ساعة" });
-    vals.push(Number(reworkHours)); sets.push(`rework_hours = $${vals.length}`);
-  }
-  if (useReferenceAudio !== undefined) { vals.push(!!useReferenceAudio); sets.push(`use_reference_audio = $${vals.length}`); }
-  if (!sets.length) return res.status(400).json({ error: "مفيش حاجة تتعدّل" });
+  const { title, instructions, reworkHours, useReferenceAudio, difficulty,
+          sampleRate, bitDepth, format, channels, scriptMode, identityMode, direct } = req.body;
+  const client = await pool.connect();
   try {
-    vals.push(req.params.id, req.studioUser.id);
-    const r = await pool.query(`UPDATE recording_tasks SET ${sets.join(", ")} WHERE id = $${vals.length - 1} AND head_leader_id = $${vals.length} RETURNING *`, vals);
-    if (!r.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    await client.query("BEGIN");
+    const cur = await client.query(`SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2 FOR UPDATE`, [req.params.id, req.studioUser.id]);
+    if (!cur.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش موجودة" }); }
+    const task = cur.rows[0];
+    const sets = [], vals = [];
+    const add = (col, v) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
+    const fail = async (code, msg) => { await client.query("ROLLBACK"); return res.status(code).json({ error: msg }); };
+
+    if (title !== undefined) {
+      if (!String(title).trim()) return fail(400, "اسم المهمة مينفعش يبقى فاضي");
+      add("title", String(title).trim());
+    }
+    if (instructions !== undefined) add("instructions", instructions && String(instructions).trim() ? String(instructions).trim() : null);
+    if (reworkHours !== undefined) {
+      if (![12, 24].includes(Number(reworkHours))) return fail(400, "مهلة الإعادة لازم تكون 12 أو 24 ساعة");
+      add("rework_hours", Number(reworkHours));
+    }
+    if (useReferenceAudio !== undefined) add("use_reference_audio", !!useReferenceAudio);
+    if (difficulty !== undefined) {
+      if (!["easy", "medium", "hard"].includes(String(difficulty))) return fail(400, "مستوى الصعوبة غير صحيح");
+      add("difficulty", String(difficulty));
+    }
+
+    // recording settings (sample rate / bit depth / format / channels) — merged into the existing JSON
+    if ([sampleRate, bitDepth, format, channels].some((v) => v !== undefined)) {
+      const cs = Object.assign({ sampleRate: 16000, bitDepth: 16, format: "wav", channels: "mono" }, task.recording_settings || {});
+      if (sampleRate !== undefined) { if (![16000, 22050, 44100, 48000].includes(Number(sampleRate))) return fail(400, "معدل العينة غير صحيح"); cs.sampleRate = Number(sampleRate); }
+      if (bitDepth !== undefined) { if (![16, 24].includes(Number(bitDepth))) return fail(400, "عمق البت غير صحيح"); cs.bitDepth = Number(bitDepth); }
+      if (format !== undefined) { if (!["wav", "mp3"].includes(String(format))) return fail(400, "الصيغة غير صحيحة"); cs.format = String(format); }
+      if (channels !== undefined) { if (!["mono", "stereo"].includes(String(channels))) return fail(400, "القناة غير صحيحة"); cs.channels = String(channels); }
+      add("recording_settings", JSON.stringify(cs));
+    }
+
+    // system modes (script per person / codes / direct). Changing them rewires who gets what, so it is only allowed
+    // while NOBODY has started recording; the sentences / scripts uploaded for the old mode are dropped.
+    const wantS = scriptMode === undefined ? task.script_mode : String(scriptMode);
+    const wantI = identityMode === undefined ? task.identity_mode : String(identityMode);
+    const wantD = direct === undefined ? !!task.direct : !!direct;
+    if (!["shared", "per_person"].includes(wantS)) return fail(400, "نمط السكريبت غير صحيح");
+    if (!["names", "codes"].includes(wantI)) return fail(400, "نمط الهوية غير صحيح");
+    const modesChanged = wantS !== task.script_mode || wantI !== task.identity_mode || wantD !== !!task.direct;
+    if (modesChanged) {
+      const started = await client.query(`SELECT 1 FROM recording_sessions WHERE task_id = $1 LIMIT 1`, [task.id]);
+      if (started.rows.length) return fail(409, "فيه ناس بدأت تسجّل على المهمة — مينفعش تغيّر نظامها دلوقتي.");
+      if (wantS !== task.script_mode) {
+        await client.query(`DELETE FROM recording_samples WHERE task_id = $1`, [task.id]);
+        await client.query(`DELETE FROM studio_task_scripts WHERE task_id = $1`, [task.id]);
+        add("script_file_url", null); add("script_file_name", null);
+        add("script_mode", wantS);
+      }
+      if (wantI !== task.identity_mode) {
+        add("identity_mode", wantI);
+        if (wantI === "codes" && !task.identity_codes) add("identity_codes", JSON.stringify({ male: [], female: [] }));
+      }
+      if (wantD !== !!task.direct) add("direct", wantD);
+      if (task.status === "published") add("status", "draft");   // it lost its sentences / identities: upload them, then publish again
+    }
+
+    if (!sets.length) return fail(400, "مفيش حاجة تتعدّل");
+    vals.push(task.id);
+    const r = await client.query(`UPDATE recording_tasks SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`, vals);
+    await client.query("COMMIT");
     const [withSlots] = await Scripts.attachSlots(pool, [r.rows[0]]);
     res.json(withSlots);
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش موجودة" });
     console.error(err);
     res.status(500).json({ error: "تعذر تعديل المهمة" });
+  } finally {
+    client.release();
   }
 });
 
@@ -297,11 +349,10 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
     const lines = readLines(req.file.buffer);
     if (!lines.length) return res.status(400).json({ error: "الملف فاضي أو مفيهوش جمل" });
 
-    const authClient = await getAuthorizedClient();
-    const drive = google.drive({ version: "v3", auth: authClient });
-    const studioRoot = await getOrCreateStudioRootFolder();
-    const taskFolderId = await ensureTaskRootFolder(client, drive, task, studioRoot);
-    const scriptFile = await uploadSubmissionFile(taskFolderId, req.file.originalname, req.file.mimetype, req.file.buffer);
+    const started = await client.query(`SELECT 1 FROM recording_sessions WHERE task_id = $1 AND status <> 'expired' LIMIT 1`, [task.id]);
+    if (started.rows.length) return res.status(409).json({ error: "فيه ناس بدأت تسجّل على المهمة — مينفعش تستبدل ملف الجمل دلوقتي (التسجيلات هتضيع)." });
+
+    const scriptFile = await uploadWithFolderRetry(client, task, req.file);
 
     await client.query("BEGIN");
     await client.query(`DELETE FROM recording_samples WHERE task_id = $1`, [task.id]);
@@ -328,6 +379,9 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
     if (err.code === "DRIVE_NOT_CONNECTED") {
       return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
     }
+    if (err.code === "DRIVE_SCOPE") {
+      return res.status(503).json({ error: "حساب جوجل درايف المتصل مش واخد صلاحية الرفع. افصله واربطه من جديد، وفي شاشة جوجل علّم على كل الصلاحيات (خصوصًا صلاحية الملفات) قبل ما تكمّل." });
+    }
     const reason = String((err.errors && err.errors[0] && err.errors[0].reason) || err.message || "");
     if (/invalid_grant/i.test(reason)) {
       return res.status(503).json({ error: "اتصال جوجل درايف انتهى. اربطه من جديد من لوحة الموقع الرئيسي." });
@@ -345,6 +399,41 @@ router.post("/tasks/:id/script", upload.single("file"), async (req, res) => {
 // small guard: uploadSubmissionFile's return shape may not always include
 // webViewLink depending on the Drive API response — fall back to the id.
 function scriptFileSafe(file) { return file.id ? `https://drive.google.com/file/d/${file.id}/view` : null; }
+
+
+// ---------------------------------------------------------------------
+// Drive upload that survives a stale folder id.
+// A cached folder id (the Studio root, or a task's folder) can stop being usable: it was made by another Google
+// account / OAuth app, or it was deleted. Google then answers "insufficientPermissions" / "notFound" even though
+// the connected account is fine. We tell the two cases apart:
+//   - the token itself lacks the Drive permission  -> DRIVE_SCOPE (the head leader must reconnect Drive)
+//   - the token is fine                            -> forget the cached folders, make fresh ones, retry ONCE
+// ---------------------------------------------------------------------
+const STALE_FOLDER = /insufficientPermissions|insufficientFilePermissions|notFound|forbidden|File not found|insufficient/i;
+const errReason = (e) => String((e && e.errors && e.errors[0] && e.errors[0].reason) || (e && e.message) || "");
+
+async function uploadOnce(client, task, file) {
+  const authClient = await getAuthorizedClient();
+  const drive = google.drive({ version: "v3", auth: authClient });
+  const studioRoot = await getOrCreateStudioRootFolder();
+  const folderId = await ensureTaskRootFolder(client, drive, task, studioRoot);
+  return uploadSubmissionFile(folderId, file.originalname, file.mimetype, file.buffer);
+}
+
+async function uploadWithFolderRetry(client, task, file) {
+  try { return await uploadOnce(client, task, file); }
+  catch (err) {
+    if (err && err.code === "DRIVE_NOT_CONNECTED") throw err;
+    if (!STALE_FOLDER.test(errReason(err))) throw err;
+    const ok = await isConnected().catch(() => null);          // checks the live token AND its scopes
+    if (!ok) throw Object.assign(new Error("drive scope missing"), { code: "DRIVE_SCOPE" });
+    console.warn("[studio:script] cached Drive folder unusable, recreating:", errReason(err));
+    await pool.query(`UPDATE google_auth SET studio_root_folder_id = NULL`);
+    await client.query(`UPDATE recording_tasks SET drive_root_folder_id = NULL WHERE id = $1`, [task.id]);
+    task.drive_root_folder_id = null;
+    return uploadOnce(client, task, file);
+  }
+}
 
 // Lazily creates (and caches on the task row) the Drive folder for this
 // task, named after its title.
@@ -720,6 +809,137 @@ router.post("/tasks/:id/finalize", async (req, res) => {
   } catch (err) {
     console.error("[finalize:run]", err);
     res.status(500).json({ error: "تعذر تفضية مساحة المهمة — جرّب تاني، اللي اتمسح فعلاً مش هيتأثر." });
+  }
+});
+
+// ---------------------------------------------------------------------
+// More task editing
+// ---------------------------------------------------------------------
+
+// DELETE /tasks/:id/leaders/:leaderId — take a leader off a task (people already recorded under them stay).
+router.delete("/tasks/:id/leaders/:leaderId", async (req, res) => {
+  try {
+    const t = await pool.query(`SELECT id, status, direct FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`, [req.params.id, req.studioUser.id]);
+    if (!t.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    if (t.rows[0].status === "published" && !t.rows[0].direct) {
+      const n = await pool.query(`SELECT COUNT(*)::int AS n FROM recording_task_leaders WHERE task_id = $1`, [t.rows[0].id]);
+      if (n.rows[0].n <= 1) return res.status(400).json({ error: "المهمة منشورة ومحتاجة ليدر واحد على الأقل — ضيف ليدر تاني الأول." });
+    }
+    await pool.query(`DELETE FROM recording_task_leaders WHERE task_id = $1 AND leader_id = $2`, [req.params.id, req.params.leaderId]);
+    const leaders = await pool.query(`
+      SELECT l.id, l.name, l.leader_code, l.email FROM recording_task_leaders rtl
+      JOIN studio_leaders l ON l.id = rtl.leader_id WHERE rtl.task_id = $1 ORDER BY l.leader_code`, [req.params.id]);
+    res.json({ leaders: leaders.rows });
+  } catch (err) {
+    if (err.code === "22P02") return res.status(404).json({ error: "المهمة أو الليدر مش موجود" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر شيل الليدر" });
+  }
+});
+
+// PATCH /tasks/:id/samples/:sampleId — fix the text of ONE sentence (only while nobody recorded it yet).
+router.patch("/tasks/:id/samples/:sampleId", async (req, res) => {
+  const text = req.body && req.body.sentenceName != null ? String(req.body.sentenceName).trim() : "";
+  if (!text) return res.status(400).json({ error: "اكتب نص الجملة" });
+  try {
+    const own = await pool.query(`SELECT 1 FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`, [req.params.id, req.studioUser.id]);
+    if (!own.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    const rec = await pool.query(`SELECT 1 FROM recording_session_samples WHERE sample_id = $1 AND audio_file_url IS NOT NULL LIMIT 1`, [req.params.sampleId]);
+    if (rec.rows.length) return res.status(409).json({ error: "فيه ناس سجّلت الجملة دي بالنص القديم — مينفعش تتغيّر." });
+    const r = await pool.query(`UPDATE recording_samples SET sentence_name = $1 WHERE id = $2 AND task_id = $3 RETURNING *`, [text, req.params.sampleId, req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "الجملة مش موجودة" });
+    res.json(r.rows[0]);
+  } catch (err) {
+    if (err.code === "22P02") return res.status(404).json({ error: "الجملة مش موجودة" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر تعديل الجملة" });
+  }
+});
+
+// DELETE /tasks/:id/scripts/:scriptId — remove one per-person script that nobody took.
+router.delete("/tasks/:id/scripts/:scriptId", async (req, res) => {
+  try {
+    const own = await pool.query(`SELECT 1 FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`, [req.params.id, req.studioUser.id]);
+    if (!own.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    const used = await pool.query(`SELECT 1 FROM recording_sessions WHERE script_id = $1 LIMIT 1`, [req.params.scriptId]);
+    if (used.rows.length) return res.status(409).json({ error: "السكريبت ده اتحجز قبل كده — مينفعش يتمسح." });
+    const r = await pool.query(`DELETE FROM studio_task_scripts WHERE id = $1 AND task_id = $2`, [req.params.scriptId, req.params.id]);   // its sentences go with it
+    if (!r.rowCount) return res.status(404).json({ error: "السكريبت مش موجود" });
+    res.json({ deleted: true });
+  } catch (err) {
+    if (err.code === "22P02") return res.status(404).json({ error: "السكريبت مش موجود" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر مسح السكريبت" });
+  }
+});
+
+// ---------------------------------------------------------------------
+// DELETE /tasks/:id — delete a task FOR GOOD: its files (Drive + bucket) and every database row about it
+// (sentences, scripts, talents' sessions and recordings, QA reviews, feedback, delivery history).
+// Body: { confirm: "<the task title>" } — the head leader has to type the title. Cannot be undone.
+// A storage problem (Drive not connected, ...) does not stop the delete: it is reported as storageWarning.
+// ---------------------------------------------------------------------
+router.delete("/tasks/:id", async (req, res) => {
+  if (!F.UUID.test(String(req.params.id || ""))) return res.status(404).json({ error: "المهمة مش موجودة" });
+  try {
+    const t = await pool.query(`SELECT id, title, drive_root_folder_id FROM recording_tasks WHERE id = $1 AND head_leader_id = $2`, [req.params.id, req.studioUser.id]);
+    if (!t.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    const task = t.rows[0];
+    if (String((req.body && req.body.confirm) || "").trim() !== String(task.title).trim()) {
+      return res.status(400).json({ error: "اكتب اسم المهمة بالظبط عشان تأكّد المسح." });
+    }
+
+    // 1) files first (best effort)
+    const warnings = [];
+    try {
+      if (finalizeBlob.enabled()) {
+        const r = await finalizeBlob.removePrefix(`studio/${task.id}/`, { budgetMs: 25000 });
+        if (!r.complete) warnings.push("ملفات R2 مخلصتش كلها");
+      }
+    } catch (e) { console.error("[task:delete:r2]", e); warnings.push("تعذر مسح ملفات R2"); }
+    try {
+      const has = task.drive_root_folder_id || (await pool.query(`SELECT 1 FROM google_auth LIMIT 1`)).rows.length;
+      if (has) {
+        const drive = await finalizeStorage.driveClient();
+        const ids = new Set();
+        if (task.drive_root_folder_id) ids.add(task.drive_root_folder_id);
+        const root = (await pool.query(`SELECT studio_root_folder_id FROM google_auth LIMIT 1`)).rows[0];
+        if (root && root.studio_root_folder_id) {
+          const name = `${task.title} — ${task.id.slice(0, 8)}`.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+          const found = await drive.files.list({ q: `'${root.studio_root_folder_id}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`, fields: "files(id)" });
+          for (const f of (found.data && found.data.files) || []) ids.add(f.id);
+        }
+        for (const id of ids) {
+          try { await drive.files.delete({ fileId: id }); }
+          catch (e) { if (!(e && (e.code === 404 || e.status === 404))) throw e; }
+        }
+      }
+    } catch (e) { console.error("[task:delete:drive]", e); warnings.push("تعذر مسح ملفات جوجل درايف (ممكن تتمسح يدويًا)"); }
+
+    // 2) database, one transaction, children before parents
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const id = task.id;
+      await client.query(`DELETE FROM studio_feedback_items WHERE task_id = $1`, [id]);
+      await client.query(`DELETE FROM studio_delivery_batch_sessions WHERE session_id IN (SELECT id FROM recording_sessions WHERE task_id = $1)
+                          OR batch_id IN (SELECT id FROM studio_delivery_batches WHERE task_id = $1)`, [id]);
+      await client.query(`DELETE FROM recording_sessions WHERE task_id = $1`, [id]);          // + their recordings and QA reviews (cascade)
+      await client.query(`DELETE FROM studio_delivery_batches WHERE task_id = $1`, [id]);
+      await client.query(`DELETE FROM recording_samples WHERE task_id = $1`, [id]);
+      await client.query(`DELETE FROM studio_task_scripts WHERE task_id = $1`, [id]);
+      await client.query(`DELETE FROM recording_tasks WHERE id = $1`, [id]);                  // quotas, leaders, drive folders (cascade)
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+    res.json({ deleted: true, storageWarning: warnings.length ? warnings.join(" — ") : null });
+  } catch (err) {
+    console.error("[task:delete]", err);
+    res.status(500).json({ error: "تعذر مسح المهمة — لسه موجودة زي ما هي. جرّب تاني." });
   }
 });
 
