@@ -109,14 +109,52 @@ function cellText(cell) {
 
 const colLetter = (i) => { let n = i + 1, s = ""; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
 
+/** Looks at what is REALLY inside the upload (not its name) so the message says why it was refused. */
+function explainBadFile(buffer, filename) {
+  const generic = "الملف مش Excel (.xlsx) أو CSV صالح. لو الملف .xls قديم، افتحه واحفظه كـ .xlsx.";
+  const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+  if (!b.length) return "الملف فاضي (0 بايت).";
+  if (b.length >= 4 && b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0) {
+    return "الملف ده مش xlsx حقيقي رغم إن اسمه " + (filename ? "(" + filename + ") " : "") +
+      "— هو إما Excel قديم (.xls) أو ملف xlsx محمي بباسورد. افتحه في Excel، وشيل الباسورد لو موجود، " +
+      "وبعدين File ← Save As ← Excel Workbook (.xlsx) وارفع النسخة الجديدة.";
+  }
+  const head = b.slice(0, 600).toString("utf8").trimStart().toLowerCase();
+  if (head.startsWith("<!doctype html") || head.startsWith("<html") || head.startsWith("<table") || head.startsWith("<?xml") || head.startsWith("<meta")) {
+    return "الملف ده فعليًا صفحة ويب/XML متسمّي Excel (بعض المواقع بتصدّر كده). افتحه في Excel واحفظه Save As ← Excel Workbook (.xlsx) وارفعه تاني.";
+  }
+  if (head.startsWith("{") || head.startsWith("[") || head.startsWith("%pdf")) {
+    return "الملف ده مش جدول — شكله " + (head.startsWith("%pdf") ? "PDF" : "JSON") + ". محتاج ملف Excel (.xlsx) أو CSV.";
+  }
+  if (b[0] === 0x50 && b[1] === 0x4b) {
+    return "الملف ده zip شغّال بس مش هيكل Excel مفهوم (ناقص أو بايظ). افتحه في Excel واحفظه تاني كـ .xlsx.";
+  }
+  return generic;
+}
+
 /** Reads .xlsx or .csv into plain arrays (never trusts types or formulas). */
 async function parseSpreadsheet(buffer, filename) {
   const wb = new ExcelJS.Workbook();
+  const isCsv = /\.csv$/i.test(filename || "");
   try {
-    if (/\.csv$/i.test(filename || "")) await wb.csv.read(Readable.from(buffer));
+    if (isCsv) await wb.csv.read(Readable.from(buffer));
     else await wb.xlsx.load(buffer);
-  } catch (_) {
-    throw httpError(400, "الملف مش Excel (.xlsx) أو CSV صالح. لو الملف .xls قديم، افتحه واحفظه كـ .xlsx.");
+  } catch (err) {
+    console.error("[feedback:parse] ExcelJS could not read", JSON.stringify(filename), "-", err && err.message);
+    // Some real-world .xlsx files (company exports, Google Sheets, WPS...) trip ExcelJS even though
+    // the cells are fine — read the cell values straight from the file's XML instead.
+    if (!isCsv) {
+      try {
+        const { parseXlsxFallback } = require("./studioXlsxFallback");
+        const fb = await parseXlsxFallback(buffer, { maxRows: MAX_ROWS + 20, maxCols: MAX_COLS });
+        if (fb.length) return fb;
+        throw httpError(400, "الملف فاضي.");
+      } catch (fbErr) {
+        if (fbErr && fbErr.statusCode) throw fbErr;
+        console.error("[feedback:parse] fallback reader failed too -", fbErr && fbErr.message);
+      }
+    }
+    throw httpError(400, explainBadFile(buffer, filename));
   }
   const sheets = wb.worksheets.map((ws) => {
     const maxCol = Math.min(ws.columnCount || 0, MAX_COLS);
@@ -575,7 +613,7 @@ async function listMine(db, role, userId) {
 
 module.exports = {
   buildWarnings, suggestMapping, columnValues, normText,
-  parseLabel, parseZipAttrs, parseNumbers, parseSpreadsheet, sheetSummary, extractRows, guessColumns, guessHeaderRow,
+  parseLabel, parseZipAttrs, parseNumbers, parseSpreadsheet, explainBadFile, sheetSummary, extractRows, guessColumns, guessHeaderRow,
   resolveRows, applyFeedback, markAcknowledged, markReworked, listForHeadLeader, listMine,
   REWORK_HOURS, MAX_ROWS,
 };
