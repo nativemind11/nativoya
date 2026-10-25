@@ -40,6 +40,30 @@ test("names: an unknown name comes with its closest real names", () => {
   assert.strictEqual(idx.suggest(f.nameGuess)[0].id, "1");
 });
 
+test("names: unique first name wins, then the second name, then gender/age — '.zip' never matters on either side", () => {
+  const S = [
+    { id: "m", fake_name: "mary-11-f-child.zip", gender: "male", age_bracket: "child", age: 12 },
+    { id: "al", fake_name: "Ann Lee", gender: "female", age_bracket: "adult", age: 30 },
+    { id: "ak", fake_name: "Ann Kim", gender: "female", age_bracket: "adult", age: 40 },
+    { id: "a2", fake_name: "Ann Lee_2", gender: "female", age_bracket: "adult", age: 50 },
+  ];
+  const idx = M.buildNameIndex(S);
+  const hit = (raw) => { const f = idx.find(raw); const p = M.pickByExtras(f.list, f.extras); return [p && p.id, p ? (f.list.length > 1 ? "extras" : f.how) : null]; };
+  assert.deepStrictEqual(hit("mary-11-f-child.zip"), ["m", "exact"], "the sheet name equals the fake name (which itself ends in .zip)");
+  assert.deepStrictEqual(hit("Mary_9_F_children"), ["m", "first"], "only one Mary in the task -> the first name is enough");
+  assert.deepStrictEqual(hit("Ann Kim_40_f"), ["ak", "prefix"]);
+  assert.deepStrictEqual(hit("Ann_40_f_adult"), ["ak", "extras"], "three Anns: no second name in the sheet -> the age decides");
+  assert.deepStrictEqual(hit("Ann_30_f"), ["al", "extras"]);
+  assert.deepStrictEqual(hit("Ann Joy_99_f"), [null, null], "a second name that matches nobody, and no age match -> never guessed");
+  assert.deepStrictEqual(hit("Zed_9"), [null, null]);
+  // sheet says girl/9, the talent registered boy/12 -> a soft conflict (does not stop the match)
+  const f = idx.find("Mary_9_F_children");
+  assert.deepStrictEqual(M.nameConflicts(f.extras, S[0]), ["gender", "age"]);
+  assert.deepStrictEqual(M.nameConflicts(idx.find("Ann Kim_40_f").extras, S[2]), []);
+  // closest names: same first name first
+  assert.strictEqual(idx.suggest("Ann_5")[0].id === "al" || idx.suggest("Ann_5")[0].id === "a2" || idx.suggest("Ann_5")[0].id === "ak", true);
+});
+
 // -------------------------------------------------------------- sentences
 const SCRIPT = [
   "0001\thi kima (hi: Tone 1)\tFast", "0002\thi kima (hi: Tone 1)\tFast", "0003\thi kima (hi: Tone 1)\tNormal",
@@ -178,6 +202,30 @@ t("per-person scripts: each talent is matched against their OWN script", async (
   await pool.query(`INSERT INTO recording_session_samples (session_id,sample_id,audio_file_url,qa_status) SELECT $1,id,'drive:x','approved' FROM recording_samples WHERE script_id=$2`, [s.id, sc.id]);
   const r = await F.resolveRows(R([row("Own_30_f", "X_fast_002.wav", "beta only here"), row("Own_30_f", "", "hello kima")]));
   assert.deepStrictEqual(r.results.map((x) => [x.ok, x.numbers.join(), x.code || ""]), [[true, "2", ""], [false, "", "sentence_not_found"]]);
+});
+
+t("name panel: every sheet name with its match, problems first; the list offers THIS task's active talents only", async () => {
+  await pool.query(`INSERT INTO recording_tasks (title,head_leader_id,quantity) VALUES ('Other Task',$1,5)`, [b.hl.id]);
+  const other = (await pool.query(`SELECT id FROM recording_tasks WHERE title='Other Task'`)).rows[0].id;
+  const tal = await one(`INSERT INTO studio_talents (name,email,password_hash) VALUES ('Real X','x@m.com','x') RETURNING id`);
+  await pool.query(`INSERT INTO recording_sessions (task_id,leader_id,talent_id,session_token,gender,age_bracket,age,fake_name,status) VALUES ($1,$2,$3,'tkother','female','adult',30,'Other Task Person','approved')`, [other, b.leader.id, tal.id]);
+  const mary = await addSession("mary-11-f-child.zip", { gender: "male", bracket: "child", age: 12 });
+  await addSession("Gone", { status: "expired" });
+  const r = await F.resolveRows(R([
+    row("mary-11-f-child.zip", "X_fast_001.wav", "hi kima (hi: Tone 1)"),
+    row("Mary_9_F_children", "X_fast_002.wav", "hi kima (hi: Tone 1)"),
+    row("Nobody_9_f", "X_fast_001.wav", "hi kima (hi: Tone 1)"),
+  ]));
+  const nm = Object.fromEntries(r.names.map((x) => [x.label, x]));
+  assert.strictEqual(r.names[0].label, "Nobody_9_f", "the unmatched name is listed first");
+  assert.deepStrictEqual([nm["mary-11-f-child.zip"].sessionId, nm["mary-11-f-child.zip"].how, nm["mary-11-f-child.zip"].conflict], [mary, "exact", null]);
+  assert.deepStrictEqual([nm["Mary_9_F_children"].sessionId, nm["Mary_9_F_children"].how], [mary, "first"]);
+  assert.deepStrictEqual(nm["Mary_9_F_children"].conflict.fields, ["gender", "age"], "the sheet says girl/9, the talent is boy/12: shown, not blocked");
+  assert.strictEqual(r.results[1].ok, true, "a soft conflict does not stop the row");
+  assert.strictEqual(nm["Nobody_9_f"].sessionId, null);
+  const names = r.people.map((p) => p.fakeName);
+  assert.ok(names.includes("mary-11-f-child.zip") && !names.includes("Gone") && !names.includes("Other Task Person"),
+    "the list holds this task's active talents only (not withdrawn ones, not other tasks')");
 });
 
 t("column detection on a real-shaped sheet uses the task's own names and sentences", async () => {

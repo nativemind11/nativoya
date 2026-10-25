@@ -40,54 +40,90 @@ function parseNameExtras(tokens) {
 }
 const isExtraToken = (t) => !!(GENDER_WORDS[t] || BRACKET_WORDS[t] || /^\d{1,3}$/.test(t) || t === "zip");
 
+const stripZip = (raw) => String(raw == null ? "" : raw).trim().split(/[\\/]/).pop().replace(/\.zip$/i, "");
+const nameTokens = (raw) => normName(stripZip(raw)).split(" ").filter(Boolean);
+/** "mary 11 f child" -> name part ["mary"] + extras {age:"11", gender:"female", bracket:"child"} (name part = everything before the first gender/age/group word) */
+function splitName(tokens) {
+  let cut = tokens.findIndex(isExtraToken);
+  if (cut <= 0) cut = tokens.length;
+  return { name: tokens.slice(0, cut), extras: parseNameExtras(tokens.slice(cut)) };
+}
+
 /**
  * Index over a task's sessions so a sheet name can be resolved to a person.
- * `find(raw)` -> { list: [sessions that hold that name], extras, nameGuess }   (list is empty when nothing matches)
- * The match is on the NAME ONLY: the label must equal a fake name, or start with one followed by a separator.
- * The longest fake name wins ("Marie Louise_8_f" -> "Marie Louise", not "Marie").
+ * `find(raw)` -> { list, extras, nameGuess, how }   (list is empty when nothing matches)
+ *
+ * Order of trust (the first step that finds someone wins):
+ *   1. the whole fake name is the label, or its beginning ("Marie Louise_8_f_children" -> "Marie Louise";
+ *      the longest fake name wins, so it is not mixed up with "Marie")        how = exact | prefix
+ *   2. the FIRST name alone, when only one person in the task has it ("mary" -> "mary-11-f-child.zip")   how = first
+ *   3. several people share the first name -> the SECOND name decides                                    how = second
+ *   4. still several -> the caller narrows them by gender / age / group (pickByExtras)                   how = extras
+ * ".zip" and separators never matter, on the sheet side or on the fake-name side.
  */
 function buildNameIndex(sessionRows) {
-  const byName = new Map();
+  const byName = new Map(), byFirst = new Map();
   for (const r of sessionRows) {
-    const k = normName(r.fake_name);
-    if (!k) continue;
+    const tokens = nameTokens(r.fake_name);
+    if (!tokens.length) continue;
+    const part = splitName(tokens).name;
+    const e = { r, part };
+    const k = tokens.join(" ");
     if (!byName.has(k)) byName.set(k, []);
     byName.get(k).push(r);
+    if (!byFirst.has(part[0])) byFirst.set(part[0], []);
+    byFirst.get(part[0]).push(e);
   }
-  const names = [...byName.keys()];
-  const clean = (raw) => normName(String(raw == null ? "" : raw).trim().split(/[\\/]/).pop().replace(/\.zip$/i, ""));
+  const all = [...byFirst.values()].flat();
 
-  function find(raw) {
-    const label = clean(raw);
-    if (!label) return { list: [], extras: {}, nameGuess: "" };
-    const tokens = label.split(" ");
-    for (let n = tokens.length; n >= 1; n--) {
+  function find(raw, opts) {
+    const tokens = nameTokens(raw);
+    if (!tokens.length) return { list: [], extras: {}, nameGuess: "", how: null };
+    const label = splitName(tokens);
+    const nameGuess = label.name.join(" ");
+    for (let n = tokens.length; n >= 1; n--) {                                   // 1) whole fake name
       const hit = byName.get(tokens.slice(0, n).join(" "));
-      if (hit) return { list: hit, extras: parseNameExtras(tokens.slice(n)), nameGuess: tokens.slice(0, n).join(" ") };
+      if (hit) return { list: hit, extras: parseNameExtras(tokens.slice(n)), nameGuess, how: n === tokens.length ? "exact" : "prefix" };
     }
-    // nothing matched: guess which part is "the name" (everything before the first gender/age/bracket word)
-    let cut = tokens.findIndex(isExtraToken);
-    if (cut <= 0) cut = tokens.length;
-    return { list: [], extras: parseNameExtras(tokens.slice(cut)), nameGuess: tokens.slice(0, cut).join(" ") };
+    if (opts && opts.strict) return { list: [], extras: label.extras, nameGuess, how: null };
+    let c = byFirst.get(label.name[0]) || [];                                    // 2) first name
+    if (!c.length) return { list: [], extras: label.extras, nameGuess, how: null };
+    let how = "first";
+    if (c.length > 1 && label.name[1]) {                                         // 3) second name
+      const c2 = c.filter((e) => e.part[1] === label.name[1]);
+      if (c2.length) { c = c2; how = "second"; }
+    }
+    return { list: c.map((e) => e.r), extras: label.extras, nameGuess, how: c.length > 1 ? "extras" : how };
   }
 
-  /** the closest real names (typos, missing letter...) for a label that matched nobody — for the "pick manually" list */
-  function suggest(nameGuess, limit = 5) {
-    const g = normName(nameGuess);
+  /** the closest participants for a label (same first name first, then typos / missing letters) — for the dropdown's "closest" group */
+  function suggest(raw, limit = 5, keep = () => true) {
+    const label = splitName(nameTokens(raw));
+    const g = label.name.join(" ");
     if (!g) return [];
     const scored = [];
-    for (const k of names) {
+    for (const e of all) {
+      if (!keep(e.r)) continue;
+      const k = e.part.join(" ");
       const d = distance(g, k);
+      const sameFirst = e.part[0] === label.name[0];
       const sub = k.includes(g) || g.includes(k);
       const lim = Math.max(2, Math.round(Math.max(g.length, k.length) * 0.4));
-      if (d <= lim || sub) scored.push({ k, score: sub ? Math.min(d, 1) : d });
+      if (sameFirst || sub || d <= lim) scored.push({ r: e.r, score: (sameFirst ? 0 : 10) + (sub ? 0 : d) });
     }
-    scored.sort((a, b) => a.score - b.score || a.k.localeCompare(b.k));
-    const out = [];
-    for (const { k } of scored) for (const s of byName.get(k)) { if (out.length < limit) out.push(s); }
-    return out;
+    scored.sort((x, y) => x.score - y.score || String(x.r.fake_name).localeCompare(String(y.r.fake_name)));
+    return scored.slice(0, limit).map((x) => x.r);
   }
-  return { find, suggest, size: names.length };
+  return { find, suggest, size: all.length };
+}
+
+/** what the sheet label says about the person versus what the person registered: [] when nothing disagrees */
+function nameConflicts(extras, s) {
+  const out = [];
+  if (extras.gender && s.gender && extras.gender !== s.gender) out.push("gender");
+  if (extras.bracket && s.age_bracket && extras.bracket !== s.age_bracket) out.push("bracket");
+  if (extras.age !== undefined && s.age != null && String(extras.age) !== String(s.age)) out.push("age");
+  return out;
 }
 
 function distance(a, b) {          // Levenshtein, small strings only
@@ -225,7 +261,7 @@ function detectColumns({ grid, headerRow, headers, nameIndex, sentenceSet }) {
     for (const v of cells) {
       if (hasFileShape(v)) file++;
       if (sentenceSet && sentenceSet.has(normSentence(v))) text++;
-      if (nameIndex && nameIndex.find(v).list.length) name++;
+      if (nameIndex && nameIndex.find(v, { strict: true }).list.length) name++;
       if (v.includes("|")) bar++;
     }
     const n = cells.length;
@@ -254,6 +290,6 @@ function detectColumns({ grid, headerRow, headers, nameIndex, sentenceSet }) {
 }
 
 module.exports = {
-  normText, normName, normSentence, parseNameExtras, buildNameIndex, pickByExtras,
+  normText, normName, normSentence, parseNameExtras, buildNameIndex, pickByExtras, nameConflicts,
   parseScriptLine, buildScriptIndex, parseFileName, matchSentence, cleanReason, detectColumns, hasFileShape,
 };

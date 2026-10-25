@@ -362,6 +362,14 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   const nameIndex = smart ? M.buildNameIndex(sess.rows) : null;
   const sessById = new Map(sess.rows.map((r) => [r.id, r]));
   const nameMap = (meta && meta.nameMap) || {};                // the head leader's manual choices: normalized sheet label -> session id
+  const nameInfo = new Map();                                  // v5.1: one entry per distinct sheet name, for the "name matching" panel
+  const alive = (r) => r.status !== "expired";                 // a withdrawn talent can't be reworked: never offered in the lists
+  const noteName = (label, session, how, conflict) => {
+    const k = String(label).trim();
+    let e = nameInfo.get(k);
+    if (!e) { e = { label: k, rows: 0, sessionId: session ? session.id : null, how: session ? how : null, conflict: conflict || null }; nameInfo.set(k, e); }
+    e.rows++;
+  };
   let scripts = null;
   if (matchMode) {
     const sm = await db.query(`SELECT script_id, order_index, sentence_name FROM recording_samples WHERE task_id = $1 ORDER BY order_index`, [taskId]);
@@ -387,21 +395,28 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
     if (!labelRaw) return { ...base, code: "no_label", message: MESSAGES.no_label };
     let session;
     const forcedId = nameMap[normKey(labelRaw)];
+    const sug = (list) => list.map((x) => ({ id: x.id, fakeName: x.fake_name, gender: x.gender, ageBracket: x.age_bracket, age: x.age }));
     if (forcedId) {
       session = sessById.get(forcedId);
       if (!session) return { ...base, code: "manual_name_invalid", message: MESSAGES.manual_name_invalid };
       base.fakeName = session.fake_name; base.viaManual = true;
+      if (smart) noteName(labelRaw, session, "manual", null);
     } else if (smart) {
       const found = nameIndex.find(labelRaw);
       base.fakeName = found.nameGuess;
       if (!found.list.length) {
-        return { ...base, code: "no_session", message: MESSAGES.no_session, unmatchedName: true,
-          suggestions: nameIndex.suggest(found.nameGuess).map((x) => ({ id: x.id, fakeName: x.fake_name, gender: x.gender, ageBracket: x.age_bracket, age: x.age })) };
+        noteName(labelRaw, null);
+        return { ...base, code: "no_session", message: MESSAGES.no_session, unmatchedName: true, suggestions: sug(nameIndex.suggest(labelRaw, 5, alive)) };
       }
       session = M.pickByExtras(found.list, found.extras);
-      if (!session) return { ...base, code: "ambiguous", message: MESSAGES.ambiguous, unmatchedName: true,
-        suggestions: found.list.map((x) => ({ id: x.id, fakeName: x.fake_name, gender: x.gender, ageBracket: x.age_bracket, age: x.age })) };
+      if (!session) {
+        noteName(labelRaw, null);
+        return { ...base, code: "ambiguous", message: MESSAGES.ambiguous, unmatchedName: true, suggestions: sug(found.list.filter(alive)) };
+      }
       base.fakeName = session.fake_name;
+      const how = found.list.length > 1 ? "extras" : found.how;
+      const bad = M.nameConflicts(found.extras, session);
+      noteName(labelRaw, session, how, bad.length ? { fields: bad, file: found.extras } : null);
     } else {
       const lab = parseLabel(labelRaw, labelType);
       if (lab.error === "not_zip") return { ...base, code: "not_zip", message: MESSAGES.not_zip };
@@ -449,13 +464,21 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   const visible = results.filter((r) => !r.skipped);
   const warnings = buildWarnings(visible, sampleCount, meta);
   // v5: when some sheet names matched nobody, give the screen everyone it can offer for a manual pick (never trusted on apply)
-  const people = visible.some((r) => r.unmatchedName || r.viaManual)
-    ? sess.rows.filter((r) => r.status !== "expired").slice(0, 3000)
+  // v5.1: for the name-matching panel — the task's own (not withdrawn) talents only, and what we matched each sheet name to
+  const people = smart
+    ? sess.rows.filter(alive).slice(0, 3000)
         .map((r) => ({ id: r.id, fakeName: r.fake_name, gender: r.gender, ageBracket: r.age_bracket, age: r.age }))
         .sort((x, y) => String(x.fakeName).localeCompare(String(y.fakeName)))
     : undefined;
+  const rank = (e) => (!e.sessionId ? 0 : e.how === "extras" || e.conflict ? 1 : 2);        // problems first
+  const names = smart
+    ? [...nameInfo.values()].map((e) => ({
+        ...e, suggestions: nameIndex.suggest(e.label, 5, alive).map((x) => x.id),
+        person: e.sessionId ? (() => { const x = sessById.get(e.sessionId); return { gender: x.gender, ageBracket: x.age_bracket, age: x.age }; })() : null,
+      })).sort((x, y) => rank(x) - rank(y))
+    : undefined;
   return {
-    task, sampleCount, people, results: visible,
+    task, sampleCount, people, names, results: visible,
     summary: {
       total: visible.length,
       ok: visible.filter((r) => r.ok).length,
