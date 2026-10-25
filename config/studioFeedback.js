@@ -237,7 +237,7 @@ function sheetSummary(sheet) {
  * @returns {{rows: string[][], startRow: number, rowNos: number[], ignored: number, ignoredBy: object,
  *            rowCounts: object, numbersMode: string}}  rows = [label, numbers, description]
  */
-function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersMode = "column", statusCol = -1, rejectValues = [], fileCol = -1, textCol = -1 }) {
+function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersMode = "column", statusCol = -1, rejectValues = [], fileCol = -1, textCol = -1, finalValues = [], allFinal = false }) {
   const width = Math.max(0, ...sheet.grid.map((r) => r.length));
   const okCol = (c) => Number.isInteger(c) && c >= 0 && c < width;
   const byOrder = numbersMode === "row_order";
@@ -254,7 +254,9 @@ function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersM
   const useStatus = Number.isInteger(statusCol) && statusCol >= 0;
   if (useStatus && !okCol(statusCol)) throw httpError(400, "عمود الحالة غير صحيح");
   const wanted = new Set((rejectValues || []).map(normText).filter(Boolean));
-  if (useStatus && !wanted.size) throw httpError(400, "حدّد إيه القيم اللي معناها \"مرفوض\" في عمود الحالة.");
+  const finalSet = new Set((finalValues || []).map(normText).filter(Boolean));   // v5: status values that mean "rejected for good" (no rework)
+  const finalActive = !!allFinal || finalSet.size > 0;
+  if (useStatus && !wanted.size && !finalSet.size) throw httpError(400, "حدّد إيه القيم اللي معناها \"مرفوض\" في عمود الحالة.");
   const data = sheet.grid.slice(headerRow);
   if (data.length > MAX_ROWS) throw httpError(413, `الملف فيه أكتر من ${MAX_ROWS} صف. قسّمه لأكتر من ملف.`);
 
@@ -270,15 +272,18 @@ function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersM
       counter.set(k, n); numbers = String(n);
       (rowCounts[k] = rowCounts[k] || { label: String(label), count: 0 }).count = n;
     }
+    let isFinal = !!allFinal;
     if (useStatus) {
       const raw = String(r[statusCol] == null ? "" : r[statusCol]).trim();
-      if (!wanted.has(normText(raw))) {
+      if (finalSet.has(normText(raw))) isFinal = true;
+      if (!wanted.has(normText(raw)) && !finalSet.has(normText(raw))) {
         if (label || raw) { ignored++; const key = raw || "(فاضي)"; ignoredBy[key] = (ignoredBy[key] || 0) + 1; }
         return;
       }
     }
     const row = [label, numbers, descCol != null && descCol >= 0 ? (r[descCol] || "") : ""];
     if (byMatch) row.push(useFile ? (r[fileCol] || "") : "", useText ? (r[textCol] || "") : "");   // cells 3,4 = file name, sentence text
+    if (finalActive) { while (row.length < 5) row.push(""); row.push(isFinal ? "1" : ""); }          // cell 5 = "final rejection" (only present when the feature is used)
     rows.push(row);
     rowNos.push(headerRow + 1 + i);
   });
@@ -374,8 +379,9 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   };
 
   const results = rows.map((cells, i) => {
-    const [labelRaw, numbersRaw, descRaw, fileRaw, textRaw] = cells;
+    const [labelRaw, numbersRaw, descRaw, fileRaw, textRaw, finalRaw] = cells;
     const base = { row: rowNos ? rowNos[i] : startRow + i, label: labelRaw, description: String(descRaw || "").trim(), numbers: [], ok: false };
+    if (finalRaw === "1") base.final = true;
     if (!labelRaw && !numbersRaw && !base.description && !fileRaw && !textRaw) return { ...base, skipped: true };
 
     if (!labelRaw) return { ...base, code: "no_label", message: MESSAGES.no_label };
@@ -455,6 +461,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
       ok: visible.filter((r) => r.ok).length,
       errors: visible.filter((r) => !r.ok).length,
       sessions: new Set(visible.filter((r) => r.ok).map((r) => r.session.id)).size,
+      ...(visible.some((r) => r.ok && r.final) ? { final: visible.filter((r) => r.ok && r.final).length } : {}),
       ignored: (meta && meta.ignored) || 0,
       ignoredBy: (meta && meta.ignoredBy) || {},
       numbersMode: (meta && meta.numbersMode) || "column",
@@ -472,7 +479,7 @@ function buildWarnings(results, sampleCount, meta) {
   const out = [];
   const bySession = new Map();
   for (const r of results) {
-    if (!r.ok) continue;
+    if (!r.ok || r.final) continue;       // a final rejection sends nothing back, so "everything goes back" does not apply
     if (!bySession.has(r.session.id)) bySession.set(r.session.id, { fake: r.session.fakeName, rows: [] });
     bySession.get(r.session.id).rows.push(r);
   }
@@ -564,7 +571,7 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
   const uploadId = crypto.randomUUID();
   const client = await db.connect();
   const skipped = resolved.results.filter((r) => !r.ok).map((r) => ({ row: r.row, label: r.label, message: r.message }));
-  let samplesMarked = 0, itemsCreated = 0, sessionsDone = 0;
+  let samplesMarked = 0, itemsCreated = 0, sessionsDone = 0, finalItems = 0;
   try {
     await client.query("BEGIN");
     // lock the sessions so QA / the talent / a Collect can't change them under us
@@ -574,12 +581,28 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
        WHERE rs.id = ANY($1::uuid[]) FOR UPDATE OF rs`, [[...bySession.keys()]]);
     const lockedById = new Map(locked.rows.map((r) => [r.id, r]));
 
-    for (const [sessionId, group] of bySession) {
+    for (const [sessionId, allRows] of bySession) {
       const cur = lockedById.get(sessionId);
       if (!cur || !OK_STATUS.has(cur.status) || cur.batch_status === "collecting") {
-        group.forEach((g) => skipped.push({ row: g.row, label: g.label, message: MESSAGES.changed }));
+        allRows.forEach((g) => skipped.push({ row: g.row, label: g.label, message: MESSAGES.changed }));
         continue;
       }
+      // v5: rows marked "final rejection" are only RECORDED (closed item, no deadline): nothing is sent back and
+      // the session / its recordings are left exactly as they are. The leader's dashboard counts it as "رفض نهائي".
+      const finals = allRows.filter((g) => g.final);
+      for (const g of finals) {
+        await client.query(
+          `INSERT INTO studio_feedback_items
+             (task_id, session_id, leader_id, fake_name, recording_numbers, issue_description, status,
+              rework_deadline, created_by, upload_id, source_row, previous_batch_id, is_final)
+           VALUES ($1, $2, $3, $4, $5, $6, 'expired', NULL, $7, $8, $9, $10, true)`,
+          [taskId, sessionId, g.leaderId, g.session.fakeName, g.numbers, g.description || null,
+           headLeaderId, uploadId, g.row, cur.delivery_batch_id]
+        );
+        itemsCreated++; finalItems++;
+      }
+      const group = allRows.filter((g) => !g.final);
+      if (!group.length) { sessionsDone++; continue; }
       // number -> description(s) from every row that mentions it
       const reasons = new Map();
       for (const g of group) {
@@ -632,7 +655,7 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
   } finally {
     client.release();
   }
-  return { uploadId, sessions: sessionsDone, samples: samplesMarked, items: itemsCreated, skipped, reworkHours: hours };
+  return { uploadId, sessions: sessionsDone, samples: samplesMarked, items: itemsCreated, finalItems, skipped, reworkHours: hours };
 }
 
 // ------------------------------------------------------------- state changes
@@ -650,7 +673,7 @@ async function markReworked(db, sessionId) {
 // ------------------------------------------------------------------ listings
 const ITEM_SELECT = `
   SELECT f.id, f.task_id, t.title AS task_title, f.fake_name, f.recording_numbers, f.issue_description,
-         f.status, f.rework_deadline, f.created_at, f.reworked_at, f.upload_id, f.source_row,
+         f.status, f.is_final, f.rework_deadline, f.created_at, f.reworked_at, f.upload_id, f.source_row,
          (f.status NOT IN ('reworked', 'expired') AND f.rework_deadline IS NOT NULL AND f.rework_deadline < now()) AS overdue,
          l.leader_code, l.name AS leader_name, tal.name AS real_name, tal.email,
          rs.session_token, rs.status AS session_status

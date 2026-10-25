@@ -50,11 +50,17 @@ function readMapping(body, sheets) {
   if (body.rejectValues) {
     try { const a = JSON.parse(body.rejectValues); if (Array.isArray(a)) rejectValues = a.slice(0, 50).map((x) => String(x).slice(0, 100)); } catch (_) { /* ignore */ }
   }
+  let finalValues = [];
+  if (body.finalValues) {
+    try { const a = JSON.parse(body.finalValues); if (Array.isArray(a)) finalValues = a.slice(0, 50).map((x) => String(x).slice(0, 100)); } catch (_) { /* ignore */ }
+  }
+  const allFinal = body.allFinal === "1" || body.allFinal === "true";
   const ex = F.extractRows(sheet, {
     headerRow: int(body.headerRow), labelCol: int(body.labelCol), numbersCol: int(body.numbersCol),
     descCol: Number.isInteger(descCol) ? descCol : -1,
     numbersMode, statusCol: Number.isInteger(statusCol) ? statusCol : -1, rejectValues,
     fileCol: Number.isInteger(fileCol) ? fileCol : -1, textCol: Number.isInteger(textCol) ? textCol : -1,
+    finalValues, allFinal,
   });
   return {
     rows: ex.rows, startRow: ex.startRow, rowNos: ex.rowNos, labelType,

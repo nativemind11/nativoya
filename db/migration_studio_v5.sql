@@ -1,0 +1,12 @@
+-- ==========================================================================
+-- Studio v5 — company feedback can be a FINAL rejection (no rework).
+--
+-- Run ONCE in the Supabase SQL Editor BEFORE deploying the new backend. Safe to re-run.
+-- Additive only: one new column. Every existing row keeps behaving exactly as before
+-- (is_final = false = an ordinary "send it back for rework" feedback item).
+--
+-- A final item is stored closed (status 'expired', no deadline): nothing is sent back,
+-- the talent is not asked to redo anything, and the leader's dashboard counts the
+-- session under "رفض نهائي".
+-- ==========================================================================
+ALTER TABLE studio_feedback_items ADD COLUMN IF NOT EXISTS is_final BOOLEAN NOT NULL DEFAULT false;
