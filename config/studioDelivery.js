@@ -15,6 +15,7 @@
  */
 const archiver = require("archiver");
 const ExcelJS = require("exceljs");
+const { reworkColumnsReady, formatNumbers } = require("./studioRework");
 
 const TZ = "Africa/Cairo";
 const STALE_MINUTES = 15;
@@ -33,7 +34,11 @@ const DAY_EXPR = `to_char(COALESCE(rs.qa_reviewed_at, rs.updated_at) AT TIME ZON
 
 // zipExpr/extraJoin let the archive read the ZIP name that was delivered at the
 // time (studio_delivery_batch_sessions) instead of the session's current one.
-function sessionsSelect(zipExpr = "rs.zip_file_name", extraJoin = "") {
+// reworkExpr / numbersExpr (v4): is this ZIP a rework-only one, and which recordings does it hold. They read the row
+// through to_jsonb(), so the query still runs (and answers "not a rework") on a database that has not got the
+// v4 columns yet — deploying before the migration can never break the delivery page.
+function sessionsSelect(zipExpr = "rs.zip_file_name", extraJoin = "",
+  reworkExpr = "(to_jsonb(rs)->>'zip_is_rework')::boolean", numbersExpr = "to_jsonb(rs)->'zip_rework_numbers'") {
   return `
   SELECT rs.id, rs.task_id, t.title AS task_title, rs.gender, rs.age_bracket, rs.age, rs.fake_name,
          ${zipExpr} AS zip_file_name, rs.zip_file_url, rs.qa_reviewer_id, qa.name AS qa_name,
@@ -42,7 +47,9 @@ function sessionsSelect(zipExpr = "rs.zip_file_name", extraJoin = "") {
          tal.name AS real_name, tal.email, tal.whatsapp, l.leader_code,
          COALESCE(rs.zip_partial_count, (SELECT COUNT(*)::int FROM recording_session_samples ss WHERE ss.session_id = rs.id)) AS sample_count,
          rs.zip_partial_count IS NOT NULL AS is_partial,
-         EXISTS (SELECT 1 FROM studio_feedback_items f WHERE f.session_id = rs.id AND f.status = 'reworked') AS is_redelivery
+         EXISTS (SELECT 1 FROM studio_feedback_items f WHERE f.session_id = rs.id AND f.status = 'reworked') AS is_redelivery,
+         COALESCE(${reworkExpr}, false) AS is_rework,
+         ${numbersExpr} AS rework_numbers
   FROM recording_sessions rs
   JOIN recording_tasks t ON t.id = rs.task_id
   JOIN studio_leaders l ON l.id = rs.leader_id
@@ -76,7 +83,9 @@ async function fetchGroupRows(db, params) {
 }
 
 async function fetchBatchRows(db, batchId) {
-  const sql = sessionsSelect("COALESCE(bs.zip_file_name, rs.zip_file_name)", "JOIN studio_delivery_batch_sessions bs ON bs.session_id = rs.id");
+  // an old batch reports what it was the day it was delivered (snapshot in bs), not what the session is today
+  const sql = sessionsSelect("COALESCE(bs.zip_file_name, rs.zip_file_name)", "JOIN studio_delivery_batch_sessions bs ON bs.session_id = rs.id",
+    "(to_jsonb(bs)->>'is_rework')::boolean", "to_jsonb(bs)->'rework_numbers'");
   const r = await db.query(`${sql} WHERE bs.batch_id = $1 ORDER BY reviewed_at ASC`, [batchId]);
   return r.rows;
 }
@@ -135,6 +144,7 @@ function buildPendingTree(rows) {
       id: r.id, fakeName: r.fake_name, realName: r.real_name, email: r.email, whatsapp: r.whatsapp,
       ageBracket: r.age_bracket, age: r.age, zipFileName: r.zip_file_name, leaderCode: r.leader_code,
       sampleCount: r.sample_count, reviewedAt: r.reviewed_at, isRedelivery: !!r.is_redelivery, isPartial: !!r.is_partial,
+      isRework: !!r.is_rework, reworkNumbers: r.rework_numbers || null,
     });
   }
   const sortGroups = (m) => [...m.values()].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : (a.qaName || "").localeCompare(b.qaName || "")));
@@ -247,6 +257,12 @@ async function collectGroup({ db, storage, params, headLeaderId }) {
          SELECT $1, x.id, x.zip FROM unnest($2::uuid[], $3::text[]) AS x(id, zip) ON CONFLICT DO NOTHING`,
         [batch.id, sessions.map((x) => x.id), sessions.map((x, i) => names[i])]
       );
+      // v4: freeze "is this a rework-only ZIP" (and its recording numbers) into the permanent record
+      if (await reworkColumnsReady(fin)) {
+        await fin.query(
+          `UPDATE studio_delivery_batch_sessions b SET is_rework = rs.zip_is_rework, rework_numbers = rs.zip_rework_numbers
+           FROM recording_sessions rs WHERE b.batch_id = $1 AND b.session_id = rs.id`, [batch.id]);
+      }
       const done = await fin.query(
         `UPDATE studio_delivery_batches
          SET status = 'delivered', zip_file_name = $2, zip_file_url = $3, zip_size_bytes = $4, delivered_at = now(), error = NULL
@@ -338,6 +354,9 @@ async function buildSheet(rows, meta) {
     { header: "Age", key: "age", width: 8 },
     { header: "Recordings", key: "count", width: 12 },
     { header: "ZIP file", key: "zip", width: 44 },
+    // v4 — appended at the END so nothing the buyer already reads moves: new recordings vs. a re-recording
+    { header: "Type", key: "type", width: 10 },
+    { header: "Reworked recordings", key: "reworked", width: 22 },
   ];
   styleHeader(del);
 
@@ -350,6 +369,8 @@ async function buildSheet(rows, meta) {
     { header: "WhatsApp", key: "wa", width: 18 },
     { header: "Leader code", key: "leader", width: 12 },
     { header: "ZIP file", key: "zip", width: 44 },
+    { header: "Type", key: "type", width: 10 },
+    { header: "Reworked recordings", key: "reworked", width: 22 },
   ];
   styleHeader(internal);
   internal.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7F1D1D" } };
@@ -359,10 +380,12 @@ async function buildSheet(rows, meta) {
     del.addRow({
       n: i + 1, fake: r.fake_name, gender: GENDER_LABEL[r.gender] || r.gender, bracket: r.age_bracket,
       age: r.age ?? "", count: r.sample_count, zip: names[i],
+      type: r.is_rework ? "Rework" : "New", reworked: r.is_rework ? formatNumbers(r.rework_numbers) : "",
     });
     internal.addRow({
       n: i + 1, fake: r.fake_name, name: r.real_name || "", email: r.email || "", wa: r.whatsapp || "",
       leader: r.leader_code, zip: names[i],
+      type: r.is_rework ? "Rework" : "New", reworked: r.is_rework ? formatNumbers(r.rework_numbers) : "",
     });
   });
 
@@ -373,6 +396,7 @@ async function buildSheet(rows, meta) {
     ["QA reviewer", meta.qaName || "—"],
     ["Review day", meta.day],
     ["Total ZIP files", rows.length],
+    ["Rework ZIP files", rows.filter((r) => r.is_rework).length],
   ]);
   info.getColumn(1).font = { bold: true };
   info.getColumn(1).width = 18;

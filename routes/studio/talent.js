@@ -14,6 +14,7 @@ const blob = require("../../config/studioBlob");
 const refCache = require("../../config/refAudioCache");
 const Quota = require("../../config/studioQuota");
 const Scripts = require("../../config/studioScripts");
+const Rework = require("../../config/studioRework");
 const { sendAudio, audioContentType } = require("../../config/studioHttp");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 
@@ -95,7 +96,15 @@ router.get("/tasks/:id", async (req, res) => {
        WHERE sm.task_id = $1 AND sm.script_id IS NOT DISTINCT FROM ${FIRST_SCRIPT}`, [req.params.id]);
 
     const [task] = await Scripts.attachSlots(pool, [taskResult.rows[0]]);
-    res.json({ task: publicTask(task), leaders: leaders.rows, sampleCount: Number(sampleCount.rows[0].count) });
+
+    // v4: the places left under EACH leader code ({} when the task has no per-leader quota)
+    let leaderSlots = {};
+    try {
+      const lq = await Quota.loadLeaderQuotaRows(pool, req.params.id);
+      if (lq.length) leaderSlots = Quota.computeLeaderSlots(!!task.use_age_brackets, lq, await Quota.loadLeaderUsage(pool, req.params.id));
+    } catch (e) { console.error("[leader slots]", e.message); }
+
+    res.json({ task: publicTask(task), leaders: leaders.rows, sampleCount: Number(sampleCount.rows[0].count), leaderSlots });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل تفاصيل المهمة" });
@@ -197,6 +206,16 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
     const usageRows = (await Quota.loadUsage(client, [taskId])).get(taskId);
     const check = Quota.checkJoin(!!task.use_age_brackets, quotaRows, usageRows, gender, bracket);
     if (!check.ok) { await client.query("ROLLBACK"); return res.status(409).json({ error: check.message, code: check.code }); }
+
+    // v4: a task can also limit how many boys / girls EACH LEADER brings (no rows = no per-leader limit, as before)
+    if (!task.direct) {
+      const leaderQuotaRows = await Quota.loadLeaderQuotaRows(client, taskId);
+      if (leaderQuotaRows.length) {
+        const leaderUsage = await Quota.loadLeaderUsage(client, taskId);
+        const lcheck = Quota.checkJoinLeader(!!task.use_age_brackets, leaderQuotaRows, leaderUsage, leaderId, gender, bracket);
+        if (!lcheck.ok) { await client.query("ROLLBACK"); return res.status(409).json({ error: lcheck.message, code: lcheck.code }); }
+      }
+    }
 
     // per-person scripts: this talent gets the first script nobody else holds (the task row is locked, so no two get the same)
     const scriptId = await Scripts.allocateScript(client, task);
@@ -419,15 +438,22 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
     // After the delivered audio was cleaned off Drive (config/studioStorage.js) only the
     // clips recorded since then still exist, so a re-submission is a PARTIAL ZIP holding
     // exactly those recordings (same numbering: 03.wav = recording 3).
+    //
+    // v4: the same applies to a re-submission after COMPANY feedback on recordings that were already delivered:
+    // the ZIP holds ONLY the sentences that were re-recorded since the feedback was applied,
+    // under the same file name, and the delivery sheet marks it "Rework".
+    const reworkSince = isResubmit ? await Rework.companyReworkSince(pool, session.id).catch((e) => { console.error("[rework]", e.message); return null; }) : null;
+    const reworkOnly = !!reworkSince;
     const samplesWithNames = await pool.query(`
       SELECT ss.audio_file_url, s.order_index, s.sentence_name
       FROM recording_session_samples ss
       JOIN recording_samples s ON s.id = ss.sample_id
       JOIN recording_sessions rs ON rs.id = ss.session_id
       WHERE ss.session_id = $1 AND (rs.audio_purged_at IS NULL OR ss.completed_at > rs.audio_purged_at)
+        AND ($2::timestamptz IS NULL OR ss.completed_at > $2::timestamptz)
       ORDER BY s.order_index
-    `, [session.id]);
-    const isPartial = !!session.audio_purged_at;
+    `, [session.id, reworkSince]);
+    const isPartial = !!session.audio_purged_at || reworkOnly;
     if (isPartial && !samplesWithNames.rows.length) {
       return res.status(400).json({ error: "مفيش تسجيلات معادة تتسلّم." });
     }
@@ -478,6 +504,13 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
        WHERE id = $3`,
       [zipFileUrl, zipFileName, session.id, isPartial ? samplesWithNames.rows.length : null]
     );
+    // v4: remember that THIS zip is a rework-only one (and which recordings it holds) — reset on every normal submit
+    if (await Rework.reworkColumnsReady(pool).catch(() => false)) {
+      await pool.query(
+        `UPDATE recording_sessions SET zip_is_rework = $2, zip_rework_numbers = $3::int[] WHERE id = $1`,
+        [session.id, reworkOnly, reworkOnly ? rows.map((r) => r.order_index + 1) : null]
+      ).catch((e) => console.error("[rework mark]", e.message));
+    }
     // the ZIP from the previous submission is superseded — free its space (never blocks the submit)
     if (oldZipUrl && oldZipUrl !== zipFileUrl) {
       const d = blob.isBlobRef(oldZipUrl) ? null : await ensureDrive().catch(() => null);

@@ -16,6 +16,11 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 
 router.use(requireStudioAuth, requireStudioRole("head_leader"));
 
+// Rework time: any whole number of hours from 1 up to 30 days (it used to be only 12 or 24).
+const MAX_REWORK_HOURS = 720;
+const validReworkHours = (h) => Number.isInteger(h) && h >= 1 && h <= MAX_REWORK_HOURS;
+const REWORK_HOURS_MSG = `مهلة الإعادة لازم تكون عدد ساعات صحيح من 1 لـ ${MAX_REWORK_HOURS}`;
+
 // POST /api/studio/headleader/qa-reviewers — create a QA reviewer account.
 // No public signup for these — only a head_leader can create one.
 router.post("/qa-reviewers", async (req, res) => {
@@ -136,7 +141,7 @@ router.post("/tasks", async (req, res) => {
   const {
     title, quantity, difficulty, sampleRate, bitDepth, format, channels,
     leaderIds, instructions, reworkHours, useAgeBrackets, useReferenceAudio, quotas,
-    scriptMode, identityMode, direct,
+    scriptMode, identityMode, direct, leaderQuotas,
   } = req.body;
   const sMode = scriptMode == null || scriptMode === "" ? "shared" : String(scriptMode);
   const iMode = identityMode == null || identityMode === "" ? "names" : String(identityMode);
@@ -145,11 +150,18 @@ router.post("/tasks", async (req, res) => {
 
   if (!title || !String(title).trim()) return res.status(400).json({ error: "اسم المهمة مطلوب" });
   const hours = reworkHours == null || reworkHours === "" ? 12 : Number(reworkHours);
-  if (![12, 24].includes(hours)) return res.status(400).json({ error: "مهلة الإعادة لازم تكون 12 أو 24 ساعة" });
-  let quotaRows;
-  try { quotaRows = Quota.normalizeQuotas(quotas, !!useAgeBrackets); }
-  catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
+  if (!validReworkHours(hours)) return res.status(400).json({ error: REWORK_HOURS_MSG });
   const ids = Array.isArray(leaderIds) ? leaderIds : [];
+  let quotaRows, leaderRows = [];
+  try {
+    quotaRows = Quota.normalizeQuotas(quotas, !!useAgeBrackets);
+    // A quota PER LEADER (optional): when sent, the task-level quota becomes the sum of the leaders' numbers.
+    if (Array.isArray(leaderQuotas) && leaderQuotas.length) {
+      if (direct) return res.status(400).json({ error: "النشر المباشر مفيهوش ليدرز — استخدم العدد المطلوب العادي." });
+      leaderRows = Quota.normalizeLeaderQuotas(leaderQuotas, !!useAgeBrackets, ids);
+      if (leaderRows.length) quotaRows = Quota.sumLeaderQuotas(leaderRows);
+    }
+  } catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
   const total = quotaRows.length ? quotaRows.reduce((n, r) => n + r.max, 0) : (Number(quantity) > 0 ? Number(quantity) : null);
 
   const client = await pool.connect();
@@ -178,6 +190,7 @@ router.post("/tasks", async (req, res) => {
     );
     const task = taskResult.rows[0];
     await Quota.replaceQuotas(client, task.id, quotaRows);
+    if (leaderRows.length) await Quota.replaceLeaderQuotas(client, task.id, leaderRows);
     for (const id of (direct ? [] : new Set(ids))) {
       await client.query(`INSERT INTO recording_task_leaders (task_id, leader_id) VALUES ($1, $2)`, [task.id, id]);
     }
@@ -214,7 +227,7 @@ router.patch("/tasks/:id", async (req, res) => {
     }
     if (instructions !== undefined) add("instructions", instructions && String(instructions).trim() ? String(instructions).trim() : null);
     if (reworkHours !== undefined) {
-      if (![12, 24].includes(Number(reworkHours))) return fail(400, "مهلة الإعادة لازم تكون 12 أو 24 ساعة");
+      if (!validReworkHours(Number(reworkHours))) return fail(400, REWORK_HOURS_MSG);
       add("rework_hours", Number(reworkHours));
     }
     if (useReferenceAudio !== undefined) add("use_reference_audio", !!useReferenceAudio);
@@ -284,6 +297,12 @@ router.put("/tasks/:id/quotas", async (req, res) => {
     const t = await client.query(`SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2 FOR UPDATE`, [req.params.id, req.studioUser.id]);
     if (!t.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش موجودة" }); }
     const task = t.rows[0];
+    // A task with a quota per leader keeps its task-level numbers equal to the sum of the leaders' numbers —
+    // editing only the total would break that, so it has to be changed through /leader-quotas instead.
+    if ((await Quota.loadLeaderQuotaRows(client, task.id)).length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "المهمة دي ليها حصة لكل ليدر — عدّل الأعداد من حصص الليدرز." });
+    }
     const useB = req.body.useAgeBrackets === undefined ? !!task.use_age_brackets : !!req.body.useAgeBrackets;
     const rows = Quota.normalizeQuotas(req.body.quotas, useB);
     const usage = (await Quota.loadUsage(client, [task.id])).get(task.id);
@@ -301,6 +320,50 @@ router.put("/tasks/:id/quotas", async (req, res) => {
     if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش موجودة" });
     console.error(err);
     res.status(500).json({ error: "تعذر تعديل الحصص" });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/studio/headleader/tasks/:id/leader-quotas — how many boys / girls (and age brackets) EACH LEADER may bring,
+// even while the task is running. Body: { leaderQuotas: [{ leaderId, quotas: [{gender, ageBracket?, max}] }], useAgeBrackets? }.
+// A leader's slot can never be set below the people already under him. Sending an empty list (or all zeros) removes
+// the per-leader quota (the task-level quota is left as it is). Otherwise the task-level quota is set to the sum.
+router.put("/tasks/:id/leader-quotas", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const t = await client.query(`SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2 FOR UPDATE`, [req.params.id, req.studioUser.id]);
+    if (!t.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش موجودة" }); }
+    const task = t.rows[0];
+    if (task.direct) { await client.query("ROLLBACK"); return res.status(400).json({ error: "المهمة دي نشر مباشر — مفيهاش ليدرز." }); }
+    const useB = req.body.useAgeBrackets === undefined ? !!task.use_age_brackets : !!req.body.useAgeBrackets;
+    const leaders = await client.query(
+      `SELECT l.id, l.leader_code FROM recording_task_leaders rtl JOIN studio_leaders l ON l.id = rtl.leader_id WHERE rtl.task_id = $1`, [task.id]);
+    const rows = Quota.normalizeLeaderQuotas(req.body.leaderQuotas, useB, leaders.rows.map((l) => l.id));
+    const usage = await Quota.loadLeaderUsage(client, task.id);
+    if (rows.length) Quota.validateLeaderEdit(useB, rows, usage, new Map(leaders.rows.map((l) => [l.id, l.leader_code])));
+    await Quota.replaceLeaderQuotas(client, task.id, rows);
+    let updated;
+    if (rows.length) {
+      const sums = Quota.sumLeaderQuotas(rows);
+      Quota.validateEdit(useB, sums, (await Quota.loadUsage(client, [task.id])).get(task.id));
+      await Quota.replaceQuotas(client, task.id, sums);
+      updated = await client.query(
+        `UPDATE recording_tasks SET use_age_brackets = $2, quantity = $3 WHERE id = $1 RETURNING *`,
+        [task.id, useB, sums.reduce((n, r) => n + r.max, 0)]);
+    } else {
+      updated = await client.query(`SELECT * FROM recording_tasks WHERE id = $1`, [task.id]);
+    }
+    await client.query("COMMIT");
+    const [withSlots] = await Scripts.attachSlots(pool, [updated.rows[0]]);
+    res.json({ ...withSlots, leaderQuotaRows: rows });
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش موجودة" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر تعديل حصص الليدرز" });
   } finally {
     client.release();
   }
@@ -771,7 +834,13 @@ router.get("/tasks/:id", async (req, res) => {
       SELECT q.id, q.name, COUNT(*)::int AS n FROM recording_sessions rs
       JOIN studio_qa_reviewers q ON q.id = rs.qa_reviewer_id
       WHERE rs.task_id = $1 AND rs.status <> 'expired' GROUP BY q.id, q.name ORDER BY n DESC, q.name`, [req.params.id]);
-    res.json({ task, samples: samples.rows, leaders: leaders.rows, qa: qa.rows, scripts: scripts.rows });
+    // v4: per-leader quota (empty when the task has none) — { leaderId, gender, ageBracket, max } + the places left per leader
+    let leaderQuotas = [], leaderSlots = {};
+    try {
+      leaderQuotas = await Quota.loadLeaderQuotaRows(pool, req.params.id);
+      if (leaderQuotas.length) leaderSlots = Quota.computeLeaderSlots(!!task.use_age_brackets, leaderQuotas, await Quota.loadLeaderUsage(pool, req.params.id));
+    } catch (e) { if (e.code !== "42P01") throw e; }          // 42P01 = migration_studio_v4.sql not run yet -> behave as before
+    res.json({ task, samples: samples.rows, leaders: leaders.rows, qa: qa.rows, scripts: scripts.rows, leaderQuotas, leaderSlots });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل تفاصيل المهمة" });

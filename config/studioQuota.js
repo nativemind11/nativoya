@@ -113,4 +113,130 @@ async function replaceQuotas(client, taskId, rows) {
   }
 }
 
-module.exports = { GENDERS, BRACKETS, normalizeQuotas, computeSlots, checkJoin, validateEdit, loadQuotaRows, loadUsage, attachSlots, replaceQuotas, label };
+// ======================================================================================
+// v4 — a quota PER LEADER (additive: a task without rows in studio_task_leader_quotas behaves exactly as before).
+//
+// Per-leader rows say "leader X wants N boys and M girls (per age bracket when the task uses them)". The task-level
+// quota (studio_task_quotas) is kept equal to the SUM of those rows, so everything that already reads the task-level
+// quota — the places left on the task list, the head leader's totals — stays correct. A join is checked against BOTH.
+// ======================================================================================
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validates what the dashboard sends: [{ leaderId, quotas: [{ gender, ageBracket?, max }] }].
+ * Returns flat rows [{ leaderId, gender, ageBracket, max }]. Every leader must be one of allowedLeaderIds.
+ * Returns [] when nothing is limited (every box 0 / nothing sent) = "no per-leader limit".
+ */
+function normalizeLeaderQuotas(input, useBrackets, allowedLeaderIds) {
+  if (input == null) return [];
+  if (!Array.isArray(input)) throw httpError(400, "صيغة حصص الليدرز غير صحيحة");
+  const allowed = new Set((allowedLeaderIds || []).map(String));
+  const seen = new Set(), out = [];
+  for (const entry of input) {
+    const leaderId = String((entry && entry.leaderId) || "");
+    if (!UUID_RE.test(leaderId)) throw httpError(400, "ليدر غير صحيح في حصص الليدرز");
+    if (!allowed.has(leaderId)) throw httpError(400, "فيه ليدر في الحصص مش من ليدرز المهمة");
+    if (seen.has(leaderId)) throw httpError(400, "ليدر اتكرر في الحصص");
+    seen.add(leaderId);
+    for (const q of normalizeQuotas(entry.quotas, useBrackets)) out.push({ leaderId, gender: q.gender, ageBracket: q.ageBracket, max: q.max });
+  }
+  return out.some((r) => r.max > 0) ? out : [];
+}
+
+/** The task-level quota that matches a set of per-leader rows: the sum per (gender, age bracket). */
+function sumLeaderQuotas(leaderRows) {
+  const sums = new Map();
+  for (const r of leaderRows) {
+    const key = `${r.gender}|${r.ageBracket}`;
+    sums.set(key, (sums.get(key) || 0) + r.max);
+  }
+  return [...sums.entries()].map(([key, max]) => { const [gender, ageBracket] = key.split("|"); return { gender, ageBracket, max }; });
+}
+
+// True once migration_studio_v4.sql has been run. Until then every per-leader loader answers "no per-leader quota",
+// so deploying the code before the migration can never break a join or a listing.
+let leaderQuotasTableReady = false;
+async function leaderQuotasReady(db) {
+  if (leaderQuotasTableReady) return true;
+  const r = await db.query(`SELECT to_regclass('studio_task_leader_quotas') IS NOT NULL AS ok`);
+  if (r.rows[0].ok) leaderQuotasTableReady = true;
+  return !!r.rows[0].ok;
+}
+
+/** Per-leader rows of one task: [{ leaderId, gender, ageBracket, max }] */
+async function loadLeaderQuotaRows(db, taskId) {
+  if (!(await leaderQuotasReady(db))) return [];
+  const r = await db.query(
+    `SELECT leader_id, gender, age_bracket, max_count FROM studio_task_leader_quotas WHERE task_id = $1 ORDER BY leader_id, gender, age_bracket`, [taskId]);
+  return r.rows.map((x) => ({ leaderId: x.leader_id, gender: x.gender, ageBracket: x.age_bracket, max: x.max_count }));
+}
+
+/** Live usage per leader: [{ leader_id, gender, age_bracket, used }] (withdrawn / expired sessions do not count). */
+async function loadLeaderUsage(db, taskId) {
+  const r = await db.query(
+    `SELECT leader_id, gender, age_bracket, COUNT(*)::int AS used FROM recording_sessions
+     WHERE task_id = $1 AND status <> 'expired' GROUP BY leader_id, gender, age_bracket`, [taskId]);
+  return r.rows;
+}
+
+/** { [leaderId]: { limited:true, slots:[{gender, ageBracket, max, used, remaining, full}] } } — empty when the task has no per-leader quota. */
+function computeLeaderSlots(useBrackets, leaderRows, usageRows) {
+  const out = {};
+  if (!leaderRows.length) return out;
+  const byLeader = new Map();
+  for (const r of leaderRows) { if (!byLeader.has(r.leaderId)) byLeader.set(r.leaderId, []); byLeader.get(r.leaderId).push(r); }
+  for (const [leaderId, rows] of byLeader) {
+    out[leaderId] = computeSlots(useBrackets, rows, usageRows.filter((u) => u.leader_id === leaderId));
+  }
+  return out;
+}
+
+/**
+ * Can this person still join under THIS leader? Only meaningful when the task has per-leader rows.
+ * A leader with no row for the chosen gender / bracket is closed.
+ */
+function checkJoinLeader(useBrackets, leaderRows, usageRows, leaderId, gender, bracket) {
+  if (!leaderRows.length) return { ok: true };                              // task without per-leader quota: nothing to check
+  const mine = leaderRows.filter((r) => r.leaderId === leaderId);
+  const b = useBrackets ? bracket : "";
+  const slot = mine.find((r) => r.gender === gender && r.ageBracket === b);
+  if (!slot || slot.max === 0) return { ok: false, code: "NOT_WANTED", message: `${label(gender, b)} مش مطلوبين مع الليدر ده في المهمة دي.` };
+  const used = usageRows.filter((u) => u.leader_id === leaderId && u.gender === gender && (useBrackets ? u.age_bracket === b : true))
+    .reduce((n, u) => n + Number(u.used), 0);
+  if (used >= slot.max) return { ok: false, code: "QUOTA_FULL", message: `تم الاكتفاء من ${label(gender, b)} مع الليدر ده في المهمة دي.` };
+  return { ok: true };
+}
+
+/** An edit may not drop a leader's slot below the people already under him (and may not remove a used slot). */
+function validateLeaderEdit(useBrackets, newRows, usageRows, leaderNames = new Map()) {
+  const next = new Map(newRows.map((r) => [`${r.leaderId}|${r.gender}|${r.ageBracket}`, r.max]));
+  const used = new Map();
+  for (const u of usageRows) {
+    const key = `${u.leader_id}|${u.gender}|${useBrackets ? u.age_bracket : ""}`;
+    used.set(key, (used.get(key) || 0) + Number(u.used));
+  }
+  for (const [key, n] of used) {
+    if (n <= 0) continue;
+    const [leaderId, gender, bracket] = key.split("|");
+    const max = next.has(key) ? next.get(key) : 0;
+    if (max < n) {
+      const who = leaderNames.get(leaderId) || "الليدر";
+      throw httpError(409, `مينفعش تخلّي ${label(gender, bracket)} مع ${who} أقل من ${n} (العدد المسجّل حالياً).`);
+    }
+  }
+}
+
+/** Replaces every per-leader row of a task (call inside a transaction). An empty list removes the per-leader quota. */
+async function replaceLeaderQuotas(client, taskId, rows) {
+  await client.query(`DELETE FROM studio_task_leader_quotas WHERE task_id = $1`, [taskId]);
+  for (const r of rows) {
+    await client.query(
+      `INSERT INTO studio_task_leader_quotas (task_id, leader_id, gender, age_bracket, max_count) VALUES ($1, $2, $3, $4, $5)`,
+      [taskId, r.leaderId, r.gender, r.ageBracket, r.max]);
+  }
+}
+
+module.exports = {
+  GENDERS, BRACKETS, normalizeQuotas, computeSlots, checkJoin, validateEdit, loadQuotaRows, loadUsage, attachSlots, replaceQuotas, label,
+  normalizeLeaderQuotas, sumLeaderQuotas, loadLeaderQuotaRows, loadLeaderUsage, computeLeaderSlots, checkJoinLeader, validateLeaderEdit, replaceLeaderQuotas,
+};

@@ -76,7 +76,7 @@ router.post("/preview", ...headLeader, uploadFile, async (req, res) => {
   } catch (err) { fail(res, err, "تعذر معاينة الملف"); }
 });
 
-// POST /api/studio/feedback/apply — sends the named recordings back for rework (12h).
+// POST /api/studio/feedback/apply — sends the named recordings back for rework (the task's hours, or `reworkHours` from the form).
 router.post("/apply", ...headLeader, uploadFile, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "ارفع الملف" });
   try {
@@ -85,7 +85,7 @@ router.post("/apply", ...headLeader, uploadFile, async (req, res) => {
     const sheets = await F.parseSpreadsheet(req.file.buffer, req.file.originalname);
     const { rows, startRow, rowNos, labelType, meta } = readMapping(req.body, sheets);
     const confirmWarnings = req.body.confirmWarnings === "1" || req.body.confirmWarnings === "true";
-    res.json({ ok: true, ...(await F.applyFeedback({ db: pool, taskId, labelType, rows, startRow, rowNos, meta, confirmWarnings, headLeaderId: req.studioUser.id })) });
+    res.json({ ok: true, ...(await F.applyFeedback({ db: pool, taskId, labelType, rows, startRow, rowNos, meta, confirmWarnings, headLeaderId: req.studioUser.id, reworkHours: req.body.reworkHours })) });
   } catch (err) { fail(res, err, "تعذر تطبيق الفيدباك"); }
 });
 
