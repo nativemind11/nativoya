@@ -95,20 +95,21 @@ t("each talent lands in exactly one box; the company / final / approved boxes fo
   const o = await getOverview(pool, L1);
   assert.deepStrictEqual(o.stats, {
     openTasks: 1, inProgress: 1, reviewing: 1,
-    reviewedByUs: 2, reviewedByUsDelivered: 1,        // OursA, OursB (OursB already delivered)
+    reviewedByUs: 4, reviewedByUsDelivered: 1,        // OursA, OursB (already delivered) + Done, Redone (finished task: no separate "approved" box any more)
     reviewedByCompany: 1,                             // Comp
     finalRejected: 2,                                 // Fin (explicit) + Late (redo deadline missed)
-    approved: 2,                                      // Done + Redone, task finished, nothing outstanding
     rejected: 1,                                      // QaRej (QA) — company rework is NOT counted here
     delivered: 2,                                     // OursB, Fin (Comp was sent back: its delivery pointer is cleared by design; Late expired)
   });
-  const total = o.stats.inProgress + o.stats.reviewing + o.stats.reviewedByUs + o.stats.reviewedByCompany + o.stats.finalRejected + o.stats.approved + o.stats.rejected;
+  const total = o.stats.inProgress + o.stats.reviewing + o.stats.reviewedByUs + o.stats.reviewedByCompany + o.stats.finalRejected + o.stats.rejected;
   assert.strictEqual(total, 10, "10 talents of this leader, each in exactly one box");
   const t1 = o.tasks.find((x) => x.id === T1), t2 = o.tasks.find((x) => x.id === T2);
-  assert.deepStrictEqual([t1.reviewed_by_us, t1.reviewed_by_company, t1.final_rejected, t1.approved, t1.rejected], [2, 1, 2, 0, 1]);
-  assert.deepStrictEqual([t2.approved, t2.reviewed_by_us], [2, 0]);
+  // the boxes are PER TASK: each task row carries its own numbers
+  assert.deepStrictEqual([t1.in_progress, t1.reviewed_by_us, t1.reviewed_by_us_delivered, t1.reviewed_by_company, t1.final_rejected, t1.rejected], [1, 2, 1, 1, 2, 1]);
+  assert.deepStrictEqual([t2.in_progress, t2.reviewed_by_us, t2.reviewed_by_company, t2.final_rejected, t2.rejected], [0, 2, 0, 0, 0]);
+  assert.ok(!("approved" in t1) && !("approved" in o.stats));
   const cats = Object.fromEntries(o.sessions.map((s) => [s.fake_name, s.cat]));
-  assert.deepStrictEqual(cats, { Prog: "progress", Waiting: "reviewing", OursA: "ours", OursB: "ours", QaRej: "rejected", Comp: "company", Fin: "final", Late: "final", Done: "approved", Redone: "approved" });
+  assert.deepStrictEqual(cats, { Prog: "progress", Waiting: "reviewing", OursA: "ours", OursB: "ours", QaRej: "rejected", Comp: "company", Fin: "final", Late: "final", Done: "ours", Redone: "ours" });
   assert.ok(!("Other" in cats), "another leader's talent never shows");
 
   // what the talent / leader read

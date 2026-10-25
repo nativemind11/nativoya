@@ -10,7 +10,6 @@
 // Every session of the leader's team gets ONE category, so the boxes never count a person twice:
 //   company   company feedback is open: the talent has sentences to redo (pending / acknowledged)
 //   final     the company rejected for good (no redo), or the redo deadline passed -> the feedback item is closed as 'expired'
-//   approved  QA approved AND the task is finished (finalized) and no company feedback is outstanding
 //   ours      QA approved it (it goes to the head leader, who delivers it to the company)  [delivered = already handed to the company]
 //   rejected  QA sent it back for rework
 //   progress  still recording   |   reviewing  waiting for QA
@@ -19,7 +18,6 @@ const CAT_SQL = `
     CASE
       WHEN EXISTS (SELECT 1 FROM studio_feedback_items f WHERE f.session_id = rs.id AND f.status IN ('pending','acknowledged')) THEN 'company'
       WHEN EXISTS (SELECT 1 FROM studio_feedback_items f WHERE f.session_id = rs.id AND f.status = 'expired') THEN 'final'
-      WHEN rs.status = 'approved' AND t.finalized_at IS NOT NULL THEN 'approved'
       WHEN rs.status = 'approved' THEN 'ours'
       WHEN rs.status = 'rejected' THEN 'rejected'
       WHEN rs.status = 'in_progress' THEN 'progress'
@@ -36,9 +34,9 @@ const TASKS_SQL = `
          COUNT(sc.id) FILTER (WHERE sc.cat = 'progress')::int                     AS in_progress,
          COUNT(sc.id) FILTER (WHERE sc.cat = 'reviewing')::int                    AS reviewing,
          COUNT(sc.id) FILTER (WHERE sc.cat = 'ours')::int                         AS reviewed_by_us,
+         COUNT(sc.id) FILTER (WHERE sc.cat = 'ours' AND sc.delivered)::int        AS reviewed_by_us_delivered,
          COUNT(sc.id) FILTER (WHERE sc.cat = 'company')::int                      AS reviewed_by_company,
          COUNT(sc.id) FILTER (WHERE sc.cat = 'final')::int                        AS final_rejected,
-         COUNT(sc.id) FILTER (WHERE sc.cat = 'approved')::int                     AS approved,
          COUNT(sc.id) FILTER (WHERE sc.cat = 'rejected')::int                     AS rejected
   FROM recording_task_leaders rtl
   JOIN recording_tasks t ON t.id = rtl.task_id AND t.status IN ('published','closed')
@@ -72,7 +70,6 @@ const COUNTS_SQL = `
          COUNT(*) FILTER (WHERE cat = 'ours' AND delivered)::int            AS reviewed_by_us_delivered,
          COUNT(*) FILTER (WHERE cat = 'company')::int                       AS reviewed_by_company,
          COUNT(*) FILTER (WHERE cat = 'final')::int                         AS final_rejected,
-         COUNT(*) FILTER (WHERE cat = 'approved')::int                      AS approved,
          COUNT(*) FILTER (WHERE cat = 'rejected')::int                      AS rejected,
          COUNT(*) FILTER (WHERE delivered AND status <> 'expired')::int     AS delivered
   FROM sc`;
@@ -93,7 +90,6 @@ async function getOverview(db, leaderId) {
       reviewedByUsDelivered: c.reviewed_by_us_delivered || 0,   // ...of which the head leader already handed to the company
       reviewedByCompany: c.reviewed_by_company || 0,       // company feedback: sentences to redo
       finalRejected: c.final_rejected || 0,                // company rejected for good / redo deadline missed
-      approved: c.approved || 0,                           // task finished, no company feedback outstanding
       rejected: c.rejected || 0,                           // QA sent it back
       delivered: c.delivered || 0,
     },
