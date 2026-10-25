@@ -14,6 +14,7 @@
 const crypto = require("crypto");
 const { Readable } = require("stream");
 const ExcelJS = require("exceljs");
+const { readXlsxTolerant } = require("./xlsxTolerant");
 
 const REWORK_HOURS = 12;
 const MAX_ROWS = 5000;
@@ -111,14 +112,22 @@ const colLetter = (i) => { let n = i + 1, s = ""; while (n > 0) { const r = (n -
 
 /** Reads .xlsx or .csv into plain arrays (never trusts types or formulas). */
 async function parseSpreadsheet(buffer, filename) {
+  const isCsv = /\.csv$/i.test(filename || "");
   const wb = new ExcelJS.Workbook();
+  let fallback = null;
   try {
-    if (/\.csv$/i.test(filename || "")) await wb.csv.read(Readable.from(buffer));
+    if (isCsv) await wb.csv.read(Readable.from(buffer));
     else await wb.xlsx.load(buffer);
-  } catch (_) {
-    throw httpError(400, "الملف مش Excel (.xlsx) أو CSV صالح. لو الملف .xls قديم، افتحه واحفظه كـ .xlsx.");
+  } catch (err) {
+    // Some tools write valid workbooks that ExcelJS cannot open (every tag prefixed "<x:...>", absolute paths, no
+    // docProps). Before calling the file invalid, try the forgiving reader; files ExcelJS opens never reach this line.
+    if (!isCsv) {
+      try { fallback = await readXlsxTolerant(buffer, { maxCol: MAX_COLS, maxRow: MAX_ROWS + 20 }); }
+      catch (e2) { console.error("[feedback] file not readable:", err && err.message, "|", e2 && e2.message); }
+    }
+    if (!fallback) throw httpError(400, "الملف مش Excel (.xlsx) أو CSV صالح. لو الملف .xls قديم، افتحه واحفظه كـ .xlsx.");
   }
-  const sheets = wb.worksheets.map((ws) => {
+  const sheets = (fallback || wb.worksheets.map((ws) => {
     const maxCol = Math.min(ws.columnCount || 0, MAX_COLS);
     const maxRow = Math.min(ws.rowCount || 0, MAX_ROWS + 20);
     const grid = [];
@@ -130,7 +139,7 @@ async function parseSpreadsheet(buffer, filename) {
     }
     while (grid.length && grid[grid.length - 1].every((x) => !x)) grid.pop();
     return { name: ws.name, grid };
-  }).filter((s) => s.grid.length);
+  })).filter((s) => s.grid.length);
   if (!sheets.length) throw httpError(400, "الملف فاضي.");
   return sheets;
 }
