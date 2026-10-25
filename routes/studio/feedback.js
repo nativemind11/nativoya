@@ -31,9 +31,20 @@ function readMapping(body, sheets) {
   const sheetIndex = int(body.sheetIndex);
   const sheet = sheets[Number.isInteger(sheetIndex) ? sheetIndex : 0];
   if (!sheet) throw Object.assign(new Error("الشيت غير موجود"), { statusCode: 400 });
-  const labelType = body.labelType === "zip" ? "zip" : "fake";
+  const labelType = body.labelType === "zip" ? "zip" : body.labelType === "smart" ? "smart" : "fake";
   const descCol = int(body.descCol);
-  const numbersMode = body.numbersMode === "row_order" ? "row_order" : "column";
+  const numbersMode = body.numbersMode === "row_order" ? "row_order" : body.numbersMode === "match" ? "match" : "column";
+  const fileCol = int(body.fileCol), textCol = int(body.textCol);
+  // manual name choices: { "<label as in the sheet>": "<session id>" } — validated against the task's sessions when resolving
+  let nameMap = {};
+  if (body.nameMap) {
+    try {
+      const o = JSON.parse(body.nameMap);
+      if (o && typeof o === "object" && !Array.isArray(o)) {
+        for (const [k, v] of Object.entries(o).slice(0, 2000)) if (UUID.test(String(v))) nameMap[F.normKeyOf(k)] = String(v);
+      }
+    } catch (_) { /* ignore */ }
+  }
   const statusCol = int(body.statusCol);
   let rejectValues = [];
   if (body.rejectValues) {
@@ -43,10 +54,11 @@ function readMapping(body, sheets) {
     headerRow: int(body.headerRow), labelCol: int(body.labelCol), numbersCol: int(body.numbersCol),
     descCol: Number.isInteger(descCol) ? descCol : -1,
     numbersMode, statusCol: Number.isInteger(statusCol) ? statusCol : -1, rejectValues,
+    fileCol: Number.isInteger(fileCol) ? fileCol : -1, textCol: Number.isInteger(textCol) ? textCol : -1,
   });
   return {
     rows: ex.rows, startRow: ex.startRow, rowNos: ex.rowNos, labelType,
-    meta: { numbersMode: ex.numbersMode, rowCounts: ex.rowCounts, ignored: ex.ignored, ignoredBy: ex.ignoredBy },
+    meta: { numbersMode: ex.numbersMode, rowCounts: ex.rowCounts, ignored: ex.ignored, ignoredBy: ex.ignoredBy, nameMap },
   };
 }
 
@@ -60,7 +72,15 @@ router.post("/parse", ...headLeader, uploadFile, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "ارفع ملف Excel أو CSV" });
   try {
     const sheets = await F.parseSpreadsheet(req.file.buffer, req.file.originalname);
-    res.json({ sheets: sheets.map(F.sheetSummary) });
+    const out = sheets.map(F.sheetSummary);
+    // v5: when the task is known, look at what is INSIDE the columns (names / audio files / sentences) to suggest the mapping
+    if (UUID.test(String(req.body.taskId || ""))) {
+      for (let i = 0; i < sheets.length; i++) {
+        try { out[i].detect = await F.detectForTask({ db: pool, taskId: req.body.taskId, sheet: sheets[i], summary: out[i] }); }
+        catch (e) { console.error("[feedback] detect failed:", e && e.message); out[i].detect = null; }
+      }
+    }
+    res.json({ sheets: out });
   } catch (err) { fail(res, err, "تعذر قراءة الملف"); }
 });
 

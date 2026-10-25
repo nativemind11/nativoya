@@ -15,6 +15,7 @@ const crypto = require("crypto");
 const { Readable } = require("stream");
 const ExcelJS = require("exceljs");
 const { readXlsxTolerant } = require("./xlsxTolerant");
+const M = require("./studioFeedbackMatch");
 
 const REWORK_HOURS = 12;
 const MAX_ROWS = 5000;
@@ -236,13 +237,19 @@ function sheetSummary(sheet) {
  * @returns {{rows: string[][], startRow: number, rowNos: number[], ignored: number, ignoredBy: object,
  *            rowCounts: object, numbersMode: string}}  rows = [label, numbers, description]
  */
-function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersMode = "column", statusCol = -1, rejectValues = [] }) {
+function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersMode = "column", statusCol = -1, rejectValues = [], fileCol = -1, textCol = -1 }) {
   const width = Math.max(0, ...sheet.grid.map((r) => r.length));
   const okCol = (c) => Number.isInteger(c) && c >= 0 && c < width;
   const byOrder = numbersMode === "row_order";
+  const byMatch = numbersMode === "match";          // v5: the sentence is found by file name + text, not by a number
   if (!Number.isInteger(headerRow) || headerRow < 1 || headerRow > sheet.grid.length) throw httpError(400, "رقم صف العناوين غير صحيح");
   if (!okCol(labelCol)) throw httpError(400, "اختار عمود الاسم / ملف الـ ZIP");
-  if (!byOrder && !okCol(numbersCol)) throw httpError(400, "اختار عمود أرقام التسجيلات");
+  if (!byOrder && !byMatch && !okCol(numbersCol)) throw httpError(400, "اختار عمود أرقام التسجيلات");
+  const useFile = Number.isInteger(fileCol) && fileCol >= 0, useText = Number.isInteger(textCol) && textCol >= 0;
+  if (byMatch) {
+    if (!useFile && !useText) throw httpError(400, "اختار عمود اسم الملف أو عمود نص الجملة (واحد على الأقل).");
+    if ((useFile && !okCol(fileCol)) || (useText && !okCol(textCol))) throw httpError(400, "عمود اسم الملف أو نص الجملة غير صحيح");
+  }
   if (descCol != null && descCol >= 0 && !okCol(descCol)) throw httpError(400, "عمود وصف المشكلة غير صحيح");
   const useStatus = Number.isInteger(statusCol) && statusCol >= 0;
   if (useStatus && !okCol(statusCol)) throw httpError(400, "عمود الحالة غير صحيح");
@@ -256,7 +263,7 @@ function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersM
   let ignored = 0;
   data.forEach((r, i) => {
     const label = r[labelCol] || "";
-    let numbers = byOrder ? "" : (r[numbersCol] || "");
+    let numbers = byOrder || byMatch ? "" : (r[numbersCol] || "");
     if (byOrder && label) {
       const k = normKey(label);
       const n = (counter.get(k) || 0) + 1;
@@ -270,10 +277,27 @@ function extractRows(sheet, { headerRow, labelCol, numbersCol, descCol, numbersM
         return;
       }
     }
-    rows.push([label, numbers, descCol != null && descCol >= 0 ? (r[descCol] || "") : ""]);
+    const row = [label, numbers, descCol != null && descCol >= 0 ? (r[descCol] || "") : ""];
+    if (byMatch) row.push(useFile ? (r[fileCol] || "") : "", useText ? (r[textCol] || "") : "");   // cells 3,4 = file name, sentence text
+    rows.push(row);
     rowNos.push(headerRow + 1 + i);
   });
-  return { startRow: headerRow + 1, rows, rowNos, ignored, ignoredBy, rowCounts, numbersMode: byOrder ? "row_order" : "column" };
+  return { startRow: headerRow + 1, rows, rowNos, ignored, ignoredBy, rowCounts, numbersMode: byOrder ? "row_order" : byMatch ? "match" : "column" };
+}
+
+// ------------------------------------------------- v5: detect columns by content
+/**
+ * Looks inside the task (its fake names and script sentences) to tell which sheet column is the person, the
+ * audio file and the sentence — whatever the column titles are. Returns null when it can't tell.
+ */
+async function detectForTask({ db, taskId, sheet, summary }) {
+  const sess = await db.query(`SELECT fake_name FROM recording_sessions WHERE task_id = $1`, [taskId]);
+  const sm = await db.query(`SELECT sentence_name FROM recording_samples WHERE task_id = $1`, [taskId]);
+  const sentenceSet = new Set(sm.rows.map((r) => M.normSentence(M.parseScriptLine(r.sentence_name).text)));
+  return M.detectColumns({
+    grid: sheet.grid, headerRow: summary.headerRow, headers: sheet.grid[summary.headerRow - 1] || [],
+    nameIndex: M.buildNameIndex(sess.rows), sentenceSet,
+  });
 }
 
 // ------------------------------------------------------------------ resolve
@@ -290,6 +314,12 @@ const MESSAGES = {
   changed: "حالة التاسك اتغيّرت أثناء التطبيق، اتخطّى.",
   expired: "المتسجّل ده خلصت مهلة إعادته واتسحب منه الاسم — مينفعش يتعاد.",
   ambiguous: "الاسم ده اتسحب من متسجّل واتعطى لحد تاني، ومش عارفين تقصد أنهي واحد. استخدم اسم ملف الـ ZIP كامل.",
+  no_sentence: "مفيش اسم ملف ولا نص جملة في الصف ده.",
+  sentence_not_found: "الجملة دي مش موجودة في سكريبت المتسجّل ده.",
+  sentence_ambiguous: "الجملة دي متكررة في السكريبت ومفيش رقم ملف يحدد أنهي مرة منها. اختار عمود اسم الملف.",
+  sentence_mismatch: "رقم الملف ده مش مطابق للجملة أو للسرعة اللي في سكريبت المتسجّل.",
+  file_not_found: "رقم الملف مش موجود في سكريبت المتسجّل ده.",
+  manual_name_invalid: "الاختيار اليدوي للاسم ده مش تبع المهمة دي.",
 };
 const OK_STATUS = new Set(["approved", "rejected"]);
 
@@ -304,7 +334,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   const sampleCount = (await db.query(`SELECT COALESCE(MAX(c), 0)::int AS c FROM (SELECT COUNT(*) AS c FROM recording_samples WHERE task_id = $1 GROUP BY script_id) x`, [taskId])).rows[0].c;
 
   const sess = await db.query(
-    `SELECT rs.id, rs.fake_name, rs.status, rs.gender, rs.age_bracket, rs.age, rs.leader_id, l.leader_code, l.name AS leader_name,
+    `SELECT rs.id, rs.script_id, rs.fake_name, rs.status, rs.gender, rs.age_bracket, rs.age, rs.leader_id, l.leader_code, l.name AS leader_name,
             tal.name AS real_name, tal.email, b.status AS batch_status,
             ARRAY(SELECT s.order_index FROM recording_session_samples ss
                   JOIN recording_samples s ON s.id = ss.sample_id WHERE ss.session_id = rs.id) AS have,
@@ -322,6 +352,18 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
     if (!byName.has(k)) byName.set(k, []);
     byName.get(k).push(r);
   }
+  const smart = labelType === "smart";                         // v5: match the NAME part only ("Marie Louise_8_f_children" -> "Marie Louise")
+  const matchMode = !!(meta && meta.numbersMode === "match"); // v5: find the sentence by file name + text
+  const nameIndex = smart ? M.buildNameIndex(sess.rows) : null;
+  const sessById = new Map(sess.rows.map((r) => [r.id, r]));
+  const nameMap = (meta && meta.nameMap) || {};                // the head leader's manual choices: normalized sheet label -> session id
+  let scripts = null;
+  if (matchMode) {
+    const sm = await db.query(`SELECT script_id, order_index, sentence_name FROM recording_samples WHERE task_id = $1 ORDER BY order_index`, [taskId]);
+    const grouped = new Map();
+    for (const x of sm.rows) { const k = x.script_id || ""; if (!grouped.has(k)) grouped.set(k, []); grouped.get(k).push(x); }
+    scripts = new Map([...grouped].map(([k, rows]) => [k, M.buildScriptIndex(rows)]));
+  }
   const pickSession = (list, attrs) => {
     if (list.length === 1) return { session: list[0] };
     if (attrs) {
@@ -332,33 +374,64 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   };
 
   const results = rows.map((cells, i) => {
-    const [labelRaw, numbersRaw, descRaw] = cells;
+    const [labelRaw, numbersRaw, descRaw, fileRaw, textRaw] = cells;
     const base = { row: rowNos ? rowNos[i] : startRow + i, label: labelRaw, description: String(descRaw || "").trim(), numbers: [], ok: false };
-    if (!labelRaw && !numbersRaw && !base.description) return { ...base, skipped: true };
+    if (!labelRaw && !numbersRaw && !base.description && !fileRaw && !textRaw) return { ...base, skipped: true };
 
     if (!labelRaw) return { ...base, code: "no_label", message: MESSAGES.no_label };
-    const lab = parseLabel(labelRaw, labelType);
-    if (lab.error === "not_zip") return { ...base, code: "not_zip", message: MESSAGES.not_zip };
-    if (lab.error) return { ...base, code: "no_label", message: MESSAGES.no_label };
-    base.fakeName = lab.fakeName;
+    let session;
+    const forcedId = nameMap[normKey(labelRaw)];
+    if (forcedId) {
+      session = sessById.get(forcedId);
+      if (!session) return { ...base, code: "manual_name_invalid", message: MESSAGES.manual_name_invalid };
+      base.fakeName = session.fake_name; base.viaManual = true;
+    } else if (smart) {
+      const found = nameIndex.find(labelRaw);
+      base.fakeName = found.nameGuess;
+      if (!found.list.length) {
+        return { ...base, code: "no_session", message: MESSAGES.no_session, unmatchedName: true,
+          suggestions: nameIndex.suggest(found.nameGuess).map((x) => ({ id: x.id, fakeName: x.fake_name, gender: x.gender, ageBracket: x.age_bracket, age: x.age })) };
+      }
+      session = M.pickByExtras(found.list, found.extras);
+      if (!session) return { ...base, code: "ambiguous", message: MESSAGES.ambiguous, unmatchedName: true,
+        suggestions: found.list.map((x) => ({ id: x.id, fakeName: x.fake_name, gender: x.gender, ageBracket: x.age_bracket, age: x.age })) };
+      base.fakeName = session.fake_name;
+    } else {
+      const lab = parseLabel(labelRaw, labelType);
+      if (lab.error === "not_zip") return { ...base, code: "not_zip", message: MESSAGES.not_zip };
+      if (lab.error) return { ...base, code: "no_label", message: MESSAGES.no_label };
+      base.fakeName = lab.fakeName;
 
-    const candidates = byName.get(normKey(lab.fakeName));
-    if (!candidates) return { ...base, code: "no_session", message: MESSAGES.no_session };
-    const picked = pickSession(candidates, parseZipAttrs(labelRaw));
-    if (picked.ambiguous) return { ...base, code: "ambiguous", message: MESSAGES.ambiguous };
-    const session = picked.session;
+      const candidates = byName.get(normKey(lab.fakeName));
+      if (!candidates) return { ...base, code: "no_session", message: MESSAGES.no_session };
+      const picked = pickSession(candidates, parseZipAttrs(labelRaw));
+      if (picked.ambiguous) return { ...base, code: "ambiguous", message: MESSAGES.ambiguous };
+      session = picked.session;
+    }
 
-    const num = parseNumbers(numbersRaw, session.total_samples);
-    if (num.error === "out_of_range") return { ...base, code: "out_of_range", message: MESSAGES.out_of_range(num) };
-    if (num.error) return { ...base, code: "bad_numbers", message: MESSAGES.bad_numbers };
-    base.numbers = num.numbers;
-    base.viaAll = ALL_RE.test(normText(numbersRaw));
-
-    base.session = {
+    const sessionInfo = {
       id: session.id, fakeName: session.fake_name, realName: session.real_name, email: session.email,
       leaderCode: session.leader_code, leaderName: session.leader_name, status: session.status,
       total: session.total_samples,       // per-person tasks: every talent can have a different number of sentences
     };
+
+    let num;
+    if (matchMode) {
+      const script = scripts.get(session.script_id || "") || scripts.get("") || M.buildScriptIndex([]);
+      const hit = M.matchSentence(script, fileRaw, textRaw);
+      if (hit.error) return { ...base, session: sessionInfo, code: hit.error, message: MESSAGES[hit.error] };
+      num = { numbers: [hit.line.idx + 1] };
+      base.match = { line: hit.line.idx + 1, scriptNo: hit.line.id, text: hit.line.text, speed: hit.line.speed, how: hit.how, note: hit.note || null };
+      base.description = M.cleanReason(base.description, textRaw, hit.line);
+      base.viaAll = false;
+    } else {
+      num = parseNumbers(numbersRaw, session.total_samples);
+      if (num.error === "out_of_range") return { ...base, code: "out_of_range", message: MESSAGES.out_of_range(num) };
+      if (num.error) return { ...base, code: "bad_numbers", message: MESSAGES.bad_numbers };
+      base.viaAll = ALL_RE.test(normText(numbersRaw));
+    }
+    base.numbers = num.numbers;
+    base.session = sessionInfo;
     if (!OK_STATUS.has(session.status)) return { ...base, code: session.status, message: MESSAGES[session.status] || MESSAGES.changed };
     if (session.batch_status === "collecting") return { ...base, code: "collecting", message: MESSAGES.collecting };
     const have = new Set(session.have);
@@ -369,8 +442,14 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
 
   const visible = results.filter((r) => !r.skipped);
   const warnings = buildWarnings(visible, sampleCount, meta);
+  // v5: when some sheet names matched nobody, give the screen everyone it can offer for a manual pick (never trusted on apply)
+  const people = visible.some((r) => r.unmatchedName || r.viaManual)
+    ? sess.rows.filter((r) => r.status !== "expired").slice(0, 3000)
+        .map((r) => ({ id: r.id, fakeName: r.fake_name, gender: r.gender, ageBracket: r.age_bracket, age: r.age }))
+        .sort((x, y) => String(x.fakeName).localeCompare(String(y.fakeName)))
+    : undefined;
   return {
-    task, sampleCount, results: visible,
+    task, sampleCount, people, results: visible,
     summary: {
       total: visible.length,
       ok: visible.filter((r) => r.ok).length,
@@ -406,7 +485,7 @@ function buildWarnings(results, sampleCount, meta) {
       if (!seen.has(key)) seen.set(key, { n, rows: [] });
       seen.get(key).rows.push(r.row);
     }
-    const dups = [...seen.values()].filter((x) => x.rows.length > 1);
+    const dups = meta && meta.numbersMode === "match" ? [] : [...seen.values()].filter((x) => x.rows.length > 1);   // match mode: the sentence is exact, a repeated row is just a repeated row
     if (dups.length) {
       const nums = [...new Set(dups.map((d) => d.n))].sort((a, b) => a - b);
       out.push({
@@ -423,6 +502,14 @@ function buildWarnings(results, sampleCount, meta) {
         message: `كل تسجيلات "${fake}" (${union.size} من ${total}) هترجع للإعادة. اتأكد إنك مستبعد التسجيلات المقبولة (عمود الحالة).`,
       });
     }
+  }
+  // match mode: rows where the file number pointed at a different sentence than the text -> the text was trusted
+  const textOnly = results.filter((r) => r.ok && r.match && r.match.note === "file_mismatch");
+  if (textOnly.length) {
+    out.push({
+      code: "file_text_mismatch", count: textOnly.length, rows: textOnly.slice(0, 6).map((r) => r.row),
+      message: `${textOnly.length} صف رقم الملف فيه مش بيطابق نص الجملة (مثلاً الصفوف ${textOnly.slice(0, 4).map((r) => r.row).join(", ")}) — اتحددت الجملة بالنص. راجعهم في الجدول (علامة ⚠️).`,
+    });
   }
   // row-order numbering is only right if the sheet still lists every recording of each ZIP, in order
   if (meta && meta.numbersMode === "row_order" && meta.rowCounts) {
@@ -594,6 +681,6 @@ async function listMine(db, role, userId) {
 module.exports = {
   buildWarnings, suggestMapping, columnValues, normText,
   parseLabel, parseZipAttrs, parseNumbers, parseSpreadsheet, sheetSummary, extractRows, guessColumns, guessHeaderRow,
-  resolveRows, applyFeedback, markAcknowledged, markReworked, listForHeadLeader, listMine,
+  detectForTask, normKeyOf: normKey, resolveRows, applyFeedback, markAcknowledged, markReworked, listForHeadLeader, listMine,
   REWORK_HOURS, MAX_ROWS,
 };
