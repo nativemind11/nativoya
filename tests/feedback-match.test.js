@@ -105,6 +105,12 @@ test("columns are found by what is inside them, whatever the titles say", () => 
   }
   const t = ["a", "b", "c", "d", "e"];
   assert.strictEqual(M.detectColumns({ grid: [t, ...rows], headerRow: 1, headers: ["x", "y", "z", "reference text", "original text"], nameIndex: idx, sentenceSet }).textCol, 4, "a tie is settled by the title: 'original' first");
+  // a task whose talents match NOBODY in the sheet (a test task with a few odd names): the people column is still found by its look
+  const lonely = M.buildNameIndex([{ id: "z", fake_name: "Totally Different", gender: "male", age_bracket: "adult", age: 30 }]);
+  for (const titles of [["submission name", "file name", "annotated text", "reference text", "original text"], ["A", "B", "C", "D", "E"]]) {
+    const d = M.detectColumns({ grid: [titles, ...rows], headerRow: 1, headers: titles, nameIndex: lonely, sentenceSet });
+    assert.deepStrictEqual([d.labelCol, d.fileCol, d.numbersMode, d.labelType, d.nameBy], [0, 1, "match", "smart", "shape"], titles.join());
+  }
   assert.strictEqual(M.detectColumns({ grid: [["p", "q"], ["zz", "yy"], ["zz", "yy"]], headerRow: 1, headers: ["p", "q"], nameIndex: idx, sentenceSet }), null);
 });
 

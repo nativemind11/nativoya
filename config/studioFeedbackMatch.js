@@ -258,6 +258,7 @@ function detectColumns({ grid, headerRow, headers, nameIndex, sentenceSet }) {
     const cells = data.map((r) => String(r[c] == null ? "" : r[c]).trim()).filter(Boolean);
     if (cells.length < 2) { stats.push({ c, n: 0 }); continue; }
     let file = 0, text = 0, name = 0, bar = 0;
+    const distinct = new Set(cells.map((v) => normName(v))).size;
     for (const v of cells) {
       if (hasFileShape(v)) file++;
       if (sentenceSet && sentenceSet.has(normSentence(v))) text++;
@@ -265,7 +266,7 @@ function detectColumns({ grid, headerRow, headers, nameIndex, sentenceSet }) {
       if (v.includes("|")) bar++;
     }
     const n = cells.length;
-    stats.push({ c, n, file: file / n, text: text / n, name: name / n, bar: bar / n });
+    stats.push({ c, n, file: file / n, text: text / n, name: name / n, bar: bar / n, rep: 1 - distinct / n });
   }
   const pref = (c, re) => (re.test(H(c)) ? 1 : 0);
   const best = (key, min, bonus) => {
@@ -273,11 +274,24 @@ function detectColumns({ grid, headerRow, headers, nameIndex, sentenceSet }) {
     // a tie on score is settled by the header; otherwise the higher score wins
     return cand.length ? cand[0] : null;
   };
-  const name = best("name", 0.3, (c) => pref(c, /submission|speaker|talent|name|اسم/i) - pref(c, /file|ملف/i));
+  let name = best("name", 0.3, (c) => pref(c, /submission|speaker|talent|name|اسم/i) - pref(c, /file|ملف/i));
   const file = best("file", 0.5, (c) => pref(c, /file|ملف|audio|wav|recording/i));
   const textBonus = (c) => (/original|source|script|اصل|أصل/i.test(H(c)) ? 3 : /sentence|text|جمل|نص/i.test(H(c)) ? 2 : /reference/i.test(H(c)) ? 1 : /annotat/i.test(H(c)) ? -1 : 0);
   const text = best("text", 0.5, textBonus);
-  if (!name || (!file && !text)) return null;
+  if (!file && !text) return null;
+  // The people column does not have to match anybody in the task (a test task may hold just a few talents, or the buyer
+  // spells names its own way — that is exactly what the name-matching panel is for). Then it is recognised by its look:
+  // not a file, not a sentence, and the same value repeated on many rows (one row per recording) — or by its title.
+  let nameBy = "task";
+  if (!name) {
+    const taken = new Set([file && file.c, text && text.c]);
+    const cand = stats.filter((x) => x.n && !taken.has(x.c) && x.bar < 0.5 && x.file < 0.5 && x.text < 0.5)
+      .map((x) => ({ x, hdr: /submission|speaker|talent|participant|name|اسم|متسجل/i.test(H(x.c)) && !/file|ملف/i.test(H(x.c)) ? 1 : 0 }))
+      .filter((y) => y.hdr || y.x.rep >= 0.5)
+      .sort((a, b) => b.hdr - a.hdr || b.x.rep - a.x.rep || a.x.c - b.x.c);
+    if (!cand.length) return null;
+    name = cand[0].x; nameBy = "shape";
+  }
   const used = new Set([name.c, file && file.c, text && text.c]);
   const reason = stats.filter((s) => s.n && !used.has(s.c) && s.bar >= 0.5).sort((a, b) => b.bar - a.bar)[0]
     || stats.find((s) => s.n && !used.has(s.c) && /issue|problem|comment|note|feedback|reason|remark|ملاحظ|مشكلة|سبب|فيدباك/i.test(H(s.c))) || null;
@@ -285,7 +299,7 @@ function detectColumns({ grid, headerRow, headers, nameIndex, sentenceSet }) {
   return {
     labelCol: name.c, labelType: "smart", numbersMode: "match",
     fileCol: file ? file.c : -1, textCol: text ? text.c : -1, descCol: reason ? reason.c : -1,
-    scores: { name: name.name, file: file ? file.file : 0, text: text ? text.text : 0 },
+    nameBy, scores: { name: name.name || 0, file: file ? file.file : 0, text: text ? text.text : 0 },
   };
 }
 
