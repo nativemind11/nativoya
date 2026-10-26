@@ -472,14 +472,14 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   // v5.1: for the name-matching panel — the task's own (not withdrawn) talents only, and what we matched each sheet name to
   const people = smart
     ? sess.rows.filter(alive).slice(0, 3000)
-        .map((r) => ({ id: r.id, fakeName: r.fake_name, gender: r.gender, ageBracket: r.age_bracket, age: r.age }))
+        .map((r) => ({ id: r.id, fakeName: r.fake_name, gender: r.gender, ageBracket: r.age_bracket, age: r.age, status: r.status }))
         .sort((x, y) => String(x.fakeName).localeCompare(String(y.fakeName)))
     : undefined;
   const rank = (e) => (!e.sessionId ? 0 : e.how === "extras" || e.conflict ? 1 : 2);        // problems first
   const names = smart
     ? [...nameInfo.values()].map((e) => ({
         ...e, suggestions: nameIndex.suggest(e.label, 5, alive).map((x) => x.id),
-        person: e.sessionId ? (() => { const x = sessById.get(e.sessionId); return { gender: x.gender, ageBracket: x.age_bracket, age: x.age }; })() : null,
+        person: e.sessionId ? (() => { const x = sessById.get(e.sessionId); return { gender: x.gender, ageBracket: x.age_bracket, age: x.age, status: x.status }; })() : null,
       })).sort((x, y) => rank(x) - rank(y))
     : undefined;
   return {
