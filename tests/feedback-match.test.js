@@ -186,6 +186,19 @@ t("manual name choice: applies to every row of that name, and is checked against
   assert.ok(other.results.every((x) => x.code === "manual_name_invalid"), "an id from another task is refused");
 });
 
+t("\"not this person\": cancels an automatic match for that name only, nothing is sent for it", async () => {
+  const mia = await addSession("Mia", { bracket: "child", age: 9 });
+  const rows = [row("Mia_9_f_child.zip", "X_fast_001.wav", "hi kima (hi: Tone 1)"), row("Other Name", "X_fast_001.wav", "hi kima (hi: Tone 1)")];
+  const auto = await F.resolveRows(R(rows));
+  assert.ok(auto.results[0].ok && auto.results[0].session.id === mia, "matched by itself first");
+  const key = F.normKeyOf("Mia_9_f_child.zip");
+  const off = await F.resolveRows({ ...R(rows), meta: { ...META, nameMap: { [key]: "none" } } });
+  assert.strictEqual(off.results[0].code, "name_excluded");
+  assert.ok(!off.results[0].ok && off.results[0].unmatchedName);
+  assert.ok(off.names.find((x) => x.excluded && !x.sessionId), "the panel is told it was cancelled");
+  assert.deepStrictEqual(await rejected(mia), [], "nothing written");
+});
+
 t("apply: only the named sentences go back, with the cleaned reason", async () => {
   const kite = await addSession("Kite", { bracket: "elderly", age: 52 });
   const r = await F.applyFeedback({ ...R([

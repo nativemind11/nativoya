@@ -41,7 +41,7 @@ function readMapping(body, sheets) {
     try {
       const o = JSON.parse(body.nameMap);
       if (o && typeof o === "object" && !Array.isArray(o)) {
-        for (const [k, v] of Object.entries(o).slice(0, 2000)) if (UUID.test(String(v))) nameMap[F.normKeyOf(k)] = String(v);
+        for (const [k, v] of Object.entries(o).slice(0, 2000)) if (v === "none" || UUID.test(String(v))) nameMap[F.normKeyOf(k)] = String(v);
       }
     } catch (_) { /* ignore */ }
   }

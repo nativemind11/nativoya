@@ -325,6 +325,7 @@ const MESSAGES = {
   sentence_mismatch: "رقم الملف ده مش مطابق للجملة أو للسرعة اللي في سكريبت المتسجّل.",
   file_not_found: "رقم الملف مش موجود في سكريبت المتسجّل ده.",
   manual_name_invalid: "الاختيار اليدوي للاسم ده مش تبع المهمة دي.",
+  name_excluded: "ألغيت مطابقة الاسم ده (مش هو) — اختار المتسجّل الصح.",
 };
 const OK_STATUS = new Set(["approved", "rejected"]);
 
@@ -396,6 +397,10 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
     let session;
     const forcedId = nameMap[normKey(labelRaw)];
     const sug = (list) => list.map((x) => ({ id: x.id, fakeName: x.fake_name, gender: x.gender, ageBracket: x.age_bracket, age: x.age }));
+    if (forcedId === "none") {                                  // the head leader said "this is not that person": cancel the match, send nothing
+      if (smart) { noteName(labelRaw, null); nameInfo.get(String(labelRaw).trim()).excluded = true; }
+      return { ...base, code: "name_excluded", message: MESSAGES.name_excluded, unmatchedName: true, suggestions: smart ? sug(nameIndex.suggest(labelRaw, 5, alive)) : [] };
+    }
     if (forcedId) {
       session = sessById.get(forcedId);
       if (!session) return { ...base, code: "manual_name_invalid", message: MESSAGES.manual_name_invalid };
