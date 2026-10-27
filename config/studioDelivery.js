@@ -16,6 +16,7 @@
 const archiver = require("archiver");
 const ExcelJS = require("exceljs");
 const { reworkColumnsReady, formatNumbers } = require("./studioRework");
+const { v7Ready } = require("./studioV7");
 
 const TZ = "Africa/Cairo";
 const STALE_MINUTES = 15;
@@ -60,10 +61,15 @@ function sessionsSelect(zipExpr = "rs.zip_file_name", extraJoin = "",
 const SELECT_SESSIONS = sessionsSelect();
 
 const WAITING = `rs.status = 'approved' AND rs.delivery_batch_id IS NULL AND rs.zip_file_url IS NOT NULL`;
+// v7: a session that is waiting because it re-delivered work the company sent back is collected from the FEEDBACK page
+// (per feedback file), so it no longer shows up here. Needs migration_studio_v7.sql, hence the `v7` switch.
+const NOT_REWORK = ` AND NOT EXISTS (SELECT 1 FROM studio_feedback_items fx WHERE fx.session_id = rs.id AND fx.status = 'reworked'
+                                       AND NOT COALESCE(fx.is_final, false) AND fx.rework_batch_id IS NULL)`;
+const waiting = (v7) => (v7 ? WAITING + NOT_REWORK : WAITING);
 
 /** WHERE fragment matching exactly one group; params start at $from. */
-function groupWhere(from) {
-  return `${WAITING}
+function groupWhere(from, v7 = false) {
+  return `${waiting(v7)}
     AND rs.task_id = $${from}::uuid
     AND rs.gender = $${from + 1}
     AND rs.qa_reviewer_id IS NOT DISTINCT FROM $${from + 2}::uuid
@@ -73,12 +79,12 @@ const groupParams = (p) => [p.taskId, p.gender, p.qaReviewerId || null, p.day];
 
 // ------------------------------------------------------------------- queries
 async function fetchPending(db) {
-  const r = await db.query(`${SELECT_SESSIONS} WHERE ${WAITING} ORDER BY reviewed_at ASC`);
+  const r = await db.query(`${SELECT_SESSIONS} WHERE ${waiting(await v7Ready(db))} ORDER BY reviewed_at ASC`);
   return r.rows;
 }
 
 async function fetchGroupRows(db, params) {
-  const r = await db.query(`${SELECT_SESSIONS} WHERE ${groupWhere(1)} ORDER BY reviewed_at ASC`, groupParams(params));
+  const r = await db.query(`${SELECT_SESSIONS} WHERE ${groupWhere(1, await v7Ready(db))} ORDER BY reviewed_at ASC`, groupParams(params));
   return r.rows;
 }
 
@@ -156,6 +162,8 @@ function buildPendingTree(rows) {
 
 async function listDelivered(db) {
   await releaseStaleBatches(db);
+  // v7: rework collected from the feedback page is listed there ("delivered rework"), not here
+  const notRework = (await v7Ready(db)) ? "AND b.feedback_file_id IS NULL" : "";
   const r = await db.query(`
     SELECT b.id, b.task_id, t.title AS task_title, b.gender, b.group_day::text AS group_day, b.status,
            b.session_count, b.zip_file_name, b.zip_file_url, b.zip_size_bytes, b.created_at, b.delivered_at,
@@ -164,7 +172,7 @@ async function listDelivered(db) {
     FROM studio_delivery_batches b
     JOIN recording_tasks t ON t.id = b.task_id
     LEFT JOIN studio_qa_reviewers qa ON qa.id = b.qa_reviewer_id
-    WHERE b.status IN ('delivered', 'collecting')
+    WHERE b.status IN ('delivered', 'collecting') ${notRework}
     ORDER BY COALESCE(b.delivered_at, b.created_at) DESC`);
   return r.rows;
 }
@@ -199,6 +207,7 @@ function uniqueZipNames(sessions) {
  */
 async function collectGroup({ db, storage, params, headLeaderId }) {
   await releaseStaleBatches(db);
+  const v7 = await v7Ready(db);
 
   const client = await db.connect();
   let batch, sessions;
@@ -212,7 +221,7 @@ async function collectGroup({ db, storage, params, headLeaderId }) {
     batch = ins.rows[0];
     const claim = await client.query(
       `UPDATE recording_sessions SET delivery_batch_id = $1
-       WHERE id IN (SELECT rs.id FROM recording_sessions rs WHERE ${groupWhere(2)} FOR UPDATE SKIP LOCKED)
+       WHERE id IN (SELECT rs.id FROM recording_sessions rs WHERE ${groupWhere(2, v7)} FOR UPDATE SKIP LOCKED)
        RETURNING id, fake_name, zip_file_name, zip_file_url`,
       [batch.id, ...groupParams(params)]
     );

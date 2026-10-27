@@ -4,6 +4,9 @@ const { pool } = require("../../db/pool");
 const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const F = require("../../config/studioFeedback");
 const { safeExpire } = require("../../config/studioExpiry");
+const { v7Ready } = require("../../config/studioV7");
+const Board = require("../../config/studioReworkBoard");
+const { driveStorage } = require("../../config/studioDeliveryStorage");
 
 const router = express.Router();
 // 4MB: Vercel rejects larger request bodies anyway, and a feedback sheet is tiny.
@@ -102,6 +105,12 @@ router.post("/preview", ...headLeader, uploadFile, async (req, res) => {
   } catch (err) { fail(res, err, "تعذر معاينة الملف"); }
 });
 
+// multer reads the uploaded file's name as latin-1: put Arabic names back
+function originalName(file) {
+  const n = String((file && file.originalname) || "");
+  try { const fixed = Buffer.from(n, "latin1").toString("utf8"); return fixed.includes("\ufffd") ? n : fixed; } catch (_) { return n; }
+}
+
 // POST /api/studio/feedback/apply — sends the named recordings back for rework (the task's hours, or `reworkHours` from the form).
 router.post("/apply", ...headLeader, uploadFile, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "ارفع الملف" });
@@ -111,7 +120,7 @@ router.post("/apply", ...headLeader, uploadFile, async (req, res) => {
     const sheets = await F.parseSpreadsheet(req.file.buffer, req.file.originalname);
     const { rows, startRow, rowNos, labelType, meta } = readMapping(req.body, sheets);
     const confirmWarnings = req.body.confirmWarnings === "1" || req.body.confirmWarnings === "true";
-    res.json({ ok: true, ...(await F.applyFeedback({ db: pool, taskId, labelType, rows, startRow, rowNos, meta, confirmWarnings, headLeaderId: req.studioUser.id, reworkHours: req.body.reworkHours })) });
+    res.json({ ok: true, ...(await F.applyFeedback({ db: pool, taskId, labelType, rows, startRow, rowNos, meta, confirmWarnings, headLeaderId: req.studioUser.id, reworkHours: req.body.reworkHours, fileName: originalName(req.file) })) });
   } catch (err) { fail(res, err, "تعذر تطبيق الفيدباك"); }
 });
 
@@ -121,6 +130,79 @@ router.get("/items", ...headLeader, async (req, res) => {
   if (taskId && !UUID.test(String(taskId))) return res.status(400).json({ error: "رقم المهمة غير صحيح" });
   try { await safeExpire(pool); res.json({ items: await F.listForHeadLeader(pool, { taskId }) }); }
   catch (err) { fail(res, err, "تعذر تحميل الفيدباك"); }
+});
+
+// ------------------------------------------------------------------ v7: the feedback page
+const needV7 = async (res) => {
+  if (await v7Ready(pool)) return true;
+  res.status(503).json({ error: "الصفحة دي محتاجة تشغيل migration_studio_v7.sql في Supabase الأول." });
+  return false;
+};
+const sendXlsx = (res, buf, name) => {
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.send(buf);
+};
+
+// GET /api/studio/feedback/board?taskId= — task -> feedback file -> one row per person (the live list).
+router.get("/board", ...headLeader, async (req, res) => {
+  const taskId = req.query.taskId;
+  if (taskId && !UUID.test(String(taskId))) return res.status(400).json({ error: "رقم المهمة غير صحيح" });
+  try {
+    if (!(await needV7(res))) return;
+    await safeExpire(pool);
+    res.json(await Board.listBoard(pool, { taskId }));
+  } catch (err) { fail(res, err, "تعذر تحميل الفيدباك"); }
+});
+
+// GET /api/studio/feedback/files/:id/sheet?gender= — Excel of the people of this file who are ready (names as in the company's file).
+router.get("/files/:id/sheet", ...headLeader, async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(400).json({ error: "رقم غير صحيح" });
+  const gender = req.query.gender === "male" || req.query.gender === "female" ? req.query.gender : null;
+  try {
+    if (!(await needV7(res))) return;
+    const file = await Board.fetchFile(pool, req.params.id);
+    if (!file) return res.status(404).json({ error: "ملف الفيدباك مش موجود" });
+    const people = await Board.fetchReady(pool, req.params.id, gender);
+    if (!people.length) return res.status(404).json({ error: "مفيش حد جاهز في الملف ده دلوقتي (يمكن اتجمّعوا)." });
+    sendXlsx(res, await Board.buildReworkSheet(people, { taskTitle: file.task_title, fileName: file.file_name, fileCreatedAt: file.created_at, gender }), `Rework sheet - ${file.task_title}.xlsx`);
+  } catch (err) { fail(res, err, "تعذر إنشاء الشيت"); }
+});
+
+// POST /api/studio/feedback/files/:id/collect { gender } — ZIP of the people who delivered the rework and QA approved.
+router.post("/files/:id/collect", ...headLeader, async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(400).json({ error: "رقم غير صحيح" });
+  try {
+    if (!(await needV7(res))) return;
+    const batch = await Board.collectRework({ db: pool, storage: driveStorage, fileId: req.params.id, gender: (req.body || {}).gender, headLeaderId: req.studioUser.id });
+    res.json({ ok: true, batch });
+  } catch (err) {
+    if (err.code === "DRIVE_NOT_CONNECTED") return res.status(503).json({ error: "جوجل درايف لسه مش متصل بالسيرفر." });
+    fail(res, err, "تعذر التجميع — الناس رجعت لقايمة الانتظار، جرّب تاني.");
+  }
+});
+
+// GET /api/studio/feedback/delivered?taskId= — the delivered rework: task -> file -> batches (with people and dates).
+router.get("/delivered", ...headLeader, async (req, res) => {
+  const taskId = req.query.taskId;
+  if (taskId && !UUID.test(String(taskId))) return res.status(400).json({ error: "رقم المهمة غير صحيح" });
+  try {
+    if (!(await needV7(res))) return;
+    res.json(await Board.listReworkBatches(pool, { taskId }));
+  } catch (err) { fail(res, err, "تعذر تحميل الريورك المتسلّم"); }
+});
+
+// GET /api/studio/feedback/batches/:id/sheet — Excel of one delivered rework batch.
+router.get("/batches/:id/sheet", ...headLeader, async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(400).json({ error: "رقم غير صحيح" });
+  try {
+    if (!(await needV7(res))) return;
+    const found = await Board.fetchBatchForSheet(pool, req.params.id);
+    if (!found || !found.people.length) return res.status(404).json({ error: "التجميع ده مش موجود" });
+    const { batch, people } = found;
+    sendXlsx(res, await Board.buildReworkSheet(people, { taskTitle: batch.task_title, fileName: batch.file_name, fileCreatedAt: batch.file_created_at, gender: batch.gender, deliveredAt: batch.delivered_at }), `Rework sheet - ${batch.task_title}.xlsx`);
+  } catch (err) { fail(res, err, "تعذر إنشاء الشيت"); }
 });
 
 // GET /api/studio/feedback/mine — a talent's own feedback / a leader's team feedback.

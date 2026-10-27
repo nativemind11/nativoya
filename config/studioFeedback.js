@@ -12,6 +12,7 @@
  * about a row is trusted.
  */
 const crypto = require("crypto");
+const { v7Ready } = require("./studioV7");
 const { Readable } = require("stream");
 const ExcelJS = require("exceljs");
 const { readXlsxTolerant } = require("./xlsxTolerant");
@@ -580,7 +581,7 @@ function buildWarnings(results, sampleCount, meta) {
 const DEFAULT_REASON = "فيدباك من الشركة — التسجيل ده محتاج إعادة.";
 
 const MAX_REWORK_HOURS = 720;      // 30 days
-async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = null, meta = null, confirmWarnings = false, headLeaderId, reworkHours = null }) {
+async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = null, meta = null, confirmWarnings = false, headLeaderId, reworkHours = null, fileName = null }) {
   // v4: the head leader may choose the rework time for THIS upload (any whole hours, 1..720); empty = the task's own setting
   let hoursOverride = null;
   if (reworkHours !== null && reworkHours !== undefined && reworkHours !== "") {
@@ -690,6 +691,21 @@ async function applyFeedback({ db, taskId, labelType, rows, startRow, rowNos = n
       sessionsDone++;
     }
     if (!sessionsDone) { await client.query("ROLLBACK"); throw httpError(409, "حالة التاسكات اتغيّرت — اعمل معاينة تاني."); }
+    // v7: remember the company's file (name + upload date) and, per item, the person's name EXACTLY as the file wrote it.
+    // Written in the same transaction, and only once migration_studio_v7.sql has run.
+    if (await v7Ready(client)) {
+      await client.query(
+        `INSERT INTO studio_feedback_files (task_id, upload_id, file_name, created_by) VALUES ($1, $2, $3, $4)`,
+        [taskId, uploadId, fileName ? String(fileName).slice(0, 300) : null, headLeaderId]);
+      const labelRows = okRows.filter((r) => r.row != null);
+      if (labelRows.length) {
+        await client.query(
+          `UPDATE studio_feedback_items f SET sheet_label = x.label
+           FROM unnest($2::int[], $3::text[]) AS x(row, label)
+           WHERE f.upload_id = $1 AND f.source_row = x.row`,
+          [uploadId, labelRows.map((r) => r.row), labelRows.map((r) => String(r.label).slice(0, 300))]);
+      }
+    }
     await client.query("COMMIT");
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch (_) {}
