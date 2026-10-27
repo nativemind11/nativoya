@@ -44,9 +44,10 @@ async function reset() {
 }
 
 let n = 0;
-async function talent(label) {
+// v8: gender / age live on the account now (a session start reads them from there, not from the request)
+async function talent(label, gender = "male", age = 25) {
   n++;
-  const tal = await one(`INSERT INTO studio_talents (name,email,password_hash) VALUES ($1,$2,'x') RETURNING id`, [`Real ${label}`, `${label}${n}@mail.com`]);
+  const tal = await one(`INSERT INTO studio_talents (name,email,password_hash,gender,age,age_bracket) VALUES ($1,$2,'x',$3,$4,'adult') RETURNING id`, [`Real ${label}`, `${label}${n}@mail.com`, gender, age]);
   tok[label] = jwt.sign({ id: tal.id, studioRole: "talent" }, "test-secret");
   return tal.id;
 }
@@ -129,7 +130,7 @@ t("withdrawn session frees the fake name and the slot; anyone (either gender) ca
   assert.strictEqual((await status(eagle.id)).status, "expired");
 
   // a FEMALE talent takes the freed name, on the same task
-  const cId = await talent("C");
+  const cId = await talent("C", "female");
   const start = (who, fakeName, gender) => api("/talent/sessions", who, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ taskId: ids.task.id, leaderId: ids.leader.id, gender, ageBracket: "adult", age: 25, fakeName }),
@@ -190,7 +191,7 @@ t("feedback: a withdrawn holder can't be reworked; an alias given to someone els
   const oldEagle = await session("A", "Eagle", { status: "rejected", deadline: past, gender: "male", age: 30 });
   await session("O", "Owl", { status: "rejected", deadline: past });
   await E.expireOverdue(pool);
-  await talent("N");
+  await talent("N", "female");
   const newEagle = await api("/talent/sessions", "N", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ taskId: ids.task.id, leaderId: ids.leader.id, gender: "female", ageBracket: "adult", age: 25, fakeName: "Eagle" }) });
   assert.strictEqual(newEagle.status, 201);

@@ -17,6 +17,8 @@ function httpError(status, message, code) {
 
 const isPerPerson = (t) => t.script_mode === "per_person";
 const isCodes = (t) => t.identity_mode === "codes";
+/** v8: files carry the talent's real (English) name — nothing to pick, no list to run out of. */
+const isReal = (t) => t.identity_mode === "real";
 const codeList = (t, gender) => ((t.identity_codes && t.identity_codes[gender]) || []).map(String);
 const hasSupplyLimits = (t) => isPerPerson(t) || isCodes(t);
 
@@ -102,11 +104,24 @@ async function attachSlots(db, tasks) {
 /** Names / codes a talent of this gender may still pick. */
 async function availableNames(db, task, gender) {
   const taken = new Set((await db.query(`SELECT fake_name FROM recording_sessions WHERE task_id = $1 AND status <> 'expired'`, [task.id])).rows.map((r) => r.fake_name));
+  if (isReal(task)) return [];
   const all = isCodes(task) ? (GENDERS.includes(gender) ? codeList(task, gender) : []) : (task.fake_names || []);
   return all.filter((n) => !taken.has(n));
 }
 
 const nameIsAllowed = (task, gender, name) => (isCodes(task) ? codeList(task, gender) : (task.fake_names || [])).includes(name);
+
+/**
+ * Real-name tasks: the name the files will carry. Two talents can share a name ("Ahmed Ali"), but a live session's
+ * name is unique inside a task, so the second one becomes "Ahmed Ali 2", the third "Ahmed Ali 3"...
+ * Call it inside the session-start transaction (task row locked), so two talents never get the same one.
+ */
+async function realFileName(db, taskId, base) {
+  const taken = new Set((await db.query(
+    `SELECT fake_name FROM recording_sessions WHERE task_id = $1 AND status <> 'expired'`, [taskId])).rows.map((r) => r.fake_name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
+}
 
 /**
  * Inside the session-start transaction (the task row is already locked FOR UPDATE):
@@ -127,6 +142,6 @@ async function allocateScript(client, task) {
 const byName = (a, b) => String(a).localeCompare(String(b), "en", { numeric: true, sensitivity: "base" });
 
 module.exports = {
-  isPerPerson, isCodes, codeList, hasSupplyLimits, samplesOfSession, attachSlots, computeSupply, applySupply,
+  isPerPerson, isCodes, isReal, realFileName, codeList, hasSupplyLimits, samplesOfSession, attachSlots, computeSupply, applySupply,
   availableNames, nameIsAllowed, allocateScript, byName, httpError,
 };

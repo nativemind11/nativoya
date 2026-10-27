@@ -6,6 +6,7 @@ const { validateClip } = require("../../config/audioValidate");
 const { markAcknowledged, markReworked } = require("../../config/studioFeedback");
 const { safeExpire, activityColumnReady, withdrawnMessage, idleHoursFor } = require("../../config/studioExpiry");
 const Gate = require("../../config/studioTalentGate");
+const Profile = require("../../config/studioProfile");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, optionalStudioAuth, requireStudioRole } = require("../../config/studioAuth");
@@ -167,17 +168,25 @@ router.get("/tasks/:id/fake-names", async (req, res) => {
   }
 });
 
-// POST /api/studio/talent/sessions — reserve a fake name + start a session.
-// Requires a logged-in talent account (name / email come from that account, not the request body).
+// POST /api/studio/talent/sessions — start a session (and reserve the name / code the files will carry).
+// Requires a logged-in talent account. v8: gender, age and age bracket come from the ACCOUNT (asked once at sign-up),
+// never from the request — the body only says which task, which leader, and (fake-name / code tasks) which name or code.
+//   identity "real"  : the file carries the talent's real English name (no fakeName in the body)
+//   identity "names" : a fake name from the task's list      identity "codes": a code of the talent's gender
 // The task row is locked while the place is taken, so two people can never both get the last slot.
-// If the task uses age brackets the talent chooses one; otherwise everybody is "adult".
+// Age bracket: tasks with age groups use the account's bracket; tasks without them record everybody as "adult"
+// — except real-name tasks, whose files always say the real bracket.
 router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
-  const { taskId, gender, ageBracket, age, fakeName } = req.body;
+  const { taskId } = req.body;
+  let { fakeName } = req.body;
   let leaderId = req.body.leaderId;
-  if (!taskId || !gender || !fakeName) {
-    return res.status(400).json({ error: "البيانات ناقصة، املا كل الحقول المطلوبة" });
+  if (!taskId) return res.status(400).json({ error: "البيانات ناقصة، املا كل الحقول المطلوبة" });
+
+  const profile = Profile.profileOf(req.studioUser);
+  if (!profile) {
+    return res.status(409).json({ error: "حسابك ناقص بيانات (النوع والسن). اعمل حساب جديد ببياناتك وجرّب تاني.", code: "profile_incomplete" });
   }
-  if (!["male", "female"].includes(gender)) return res.status(400).json({ error: "النوع غير صحيح" });
+  const gender = profile.gender;
 
   // Must run BEFORE we hold a connection: it needs one of its own, and holding one while asking the pool for another
   // can leave every connection waiting for a second one (the pool is small) when many talents join at once.
@@ -196,11 +205,18 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
       return res.status(gate.status).json({ error: gate.message, code: gate.code, ...(gate.sessionToken ? { sessionToken: gate.sessionToken } : {}) });
     }
 
-    const bracket = task.use_age_brackets ? ageBracket : "adult";
-    if (!["child", "adult", "elderly"].includes(bracket)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "الفئة العمرية غير صحيحة" }); }
-    if (!Scripts.nameIsAllowed(task, gender, fakeName)) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: Scripts.isCodes(task) ? "الكود ده مش من ضمن القائمة المتاحة" : "الاسم ده مش من ضمن القائمة المتاحة" });
+    const real = Scripts.isReal(task);
+    const bracket = (task.use_age_brackets || real) ? profile.ageBracket : "adult";
+    if (real) {
+      const base = Profile.cleanEnglishName(req.studioUser.name);
+      if (!base) { await client.query("ROLLBACK"); return res.status(409).json({ error: "اسم حسابك مش بالإنجليزي. اعمل حساب جديد باسمك بالإنجليزي وجرّب تاني.", code: "profile_incomplete" }); }
+      fakeName = await Scripts.realFileName(client, task.id, base);
+    } else {
+      if (!fakeName) { await client.query("ROLLBACK"); return res.status(400).json({ error: "البيانات ناقصة، املا كل الحقول المطلوبة" }); }
+      if (!Scripts.nameIsAllowed(task, gender, fakeName)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: Scripts.isCodes(task) ? "الكود ده مش من ضمن القائمة المتاحة" : "الاسم ده مش من ضمن القائمة المتاحة" });
+      }
     }
 
     if (task.direct) {
@@ -239,7 +255,7 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
       `INSERT INTO recording_sessions
          (task_id, leader_id, talent_id, session_token, gender, age_bracket, age, fake_name, script_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [taskId, leaderId, req.studioUser.id, sessionToken, gender, bracket, age || null, fakeName, scriptId]
+      [taskId, leaderId, req.studioUser.id, sessionToken, gender, bracket, profile.age, fakeName, scriptId]
     );
     const samples = await Scripts.samplesOfSession(client, taskId, scriptId);
     await client.query("COMMIT");

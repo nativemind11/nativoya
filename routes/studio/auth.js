@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { pool } = require("../../db/pool");
 const { requireStudioAuth, TABLES } = require("../../config/studioAuth");
 const mailer = require("../../config/mailer");
+const Profile = require("../../config/studioProfile");
 const { passwordResetEmail, STUDIO_BRAND } = require("../../config/emailTemplates");
 
 const router = express.Router();
@@ -15,14 +16,21 @@ function signStudioToken(id, studioRole) {
   });
 }
 
-// POST /api/studio/auth/talent/signup — anyone recording for a task needs
-// one of these first. No leader_code here (that's chosen per-session on the
-// task they're recording for, same account can work with several leaders).
+// POST /api/studio/auth/talent/signup — anyone recording for a task needs one of these first.
+// v8: the account carries the talent's REAL data, asked once here and never again on a task:
+//   name (English letters — it can end up in file names), gender (male | female), age (a number).
+// The age bracket (child / adult / elderly) is worked out from the age on the server.
+// No leader_code here (that's chosen per-session on the task they're recording for).
 router.post("/talent/signup", async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
+  const { email, password, gender } = req.body;
+  if (!req.body.name || !email || !password) {
     return res.status(400).json({ error: "الاسم والإيميل وكلمة المرور مطلوبين" });
   }
+  const name = Profile.cleanEnglishName(req.body.name);
+  if (!name) return res.status(400).json({ error: "الاسم لازم يتكتب بالإنجليزي (حروف ومسافات بس، من غير أرقام ولا رموز)" });
+  if (!["male", "female"].includes(gender)) return res.status(400).json({ error: "اختار النوع: ذكر أو أنثى" });
+  const age = Profile.parseAge(req.body.age);
+  if (age == null) return res.status(400).json({ error: `اكتب السن بالأرقام (من ${Profile.MIN_AGE} لـ ${Profile.MAX_AGE})` });
   if (password.length < 6) {
     return res.status(400).json({ error: "كلمة المرور لازم تكون 6 أحرف على الأقل" });
   }
@@ -30,9 +38,9 @@ router.post("/talent/signup", async (req, res) => {
   try {
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO studio_talents (name, email, password_hash)
-       VALUES ($1, $2, $3) RETURNING id, name, email, created_at`,
-      [name, email, passwordHash]
+      `INSERT INTO studio_talents (name, email, password_hash, gender, age, age_bracket)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, gender, age, age_bracket, created_at`,
+      [name, String(email).trim(), passwordHash, gender, age, Profile.bracketFor(age)]
     );
     const talent = result.rows[0];
     const token = signStudioToken(talent.id, "talent");
@@ -40,6 +48,11 @@ router.post("/talent/signup", async (req, res) => {
   } catch (err) {
     if (err.code === "23505") {
       return res.status(409).json({ error: "فيه حساب بالإيميل ده في الاستوديو بالفعل" });
+    }
+    // 42703 = the v8 columns are not there yet: say so clearly instead of a vague failure
+    if (err.code === "42703") {
+      console.error("[signup] migration_studio_v8.sql was not run:", err.message);
+      return res.status(503).json({ error: "السيرفر لسه بيتحدّث. حاول بعد شوية." });
     }
     console.error(err);
     res.status(500).json({ error: "تعذر إنشاء الحساب، حاول تاني" });

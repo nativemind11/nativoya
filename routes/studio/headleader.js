@@ -151,7 +151,7 @@ router.post("/tasks", async (req, res) => {
   const sMode = scriptMode == null || scriptMode === "" ? "shared" : String(scriptMode);
   const iMode = identityMode == null || identityMode === "" ? "names" : String(identityMode);
   if (!["shared", "per_person"].includes(sMode)) return res.status(400).json({ error: "نمط السكريبت غير صحيح" });
-  if (!["names", "codes"].includes(iMode)) return res.status(400).json({ error: "نمط الهوية غير صحيح" });
+  if (!["names", "codes", "real"].includes(iMode)) return res.status(400).json({ error: "نمط الهوية غير صحيح" });
 
   if (!title || !String(title).trim()) return res.status(400).json({ error: "اسم المهمة مطلوب" });
   const hours = reworkHours == null || reworkHours === "" ? 12 : Number(reworkHours);
@@ -267,7 +267,7 @@ router.patch("/tasks/:id", async (req, res) => {
     const wantI = identityMode === undefined ? task.identity_mode : String(identityMode);
     const wantD = direct === undefined ? !!task.direct : !!direct;
     if (!["shared", "per_person"].includes(wantS)) return fail(400, "نمط السكريبت غير صحيح");
-    if (!["names", "codes"].includes(wantI)) return fail(400, "نمط الهوية غير صحيح");
+    if (!["names", "codes", "real"].includes(wantI)) return fail(400, "نمط الهوية غير صحيح");
     const modesChanged = wantS !== task.script_mode || wantI !== task.identity_mode || wantD !== !!task.direct;
     if (modesChanged) {
       const started = await client.query(`SELECT 1 FROM recording_sessions WHERE task_id = $1 LIMIT 1`, [task.id]);
@@ -538,6 +538,7 @@ router.post("/tasks/:id/fake-names", upload.single("file"), async (req, res) => 
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
 
     if (Scripts.isCodes(taskResult.rows[0])) return res.status(400).json({ error: "المهمة دي بتستخدم أكواد — ارفع قايمة الأكواد بدل الأسامي." });
+    if (Scripts.isReal(taskResult.rows[0])) return res.status(400).json({ error: "المهمة دي بتستخدم الأسامي الحقيقية للمتسجّلين — مفيش قايمة أسامي ترفعها." });
     const names = readLines(req.file.buffer);
     if (!names.length) return res.status(400).json({ error: "الملف فاضي أو مفيهوش أسامي" });
 
@@ -716,7 +717,7 @@ router.post("/tasks/:id/codes", upload.fields([{ name: "male", maxCount: 1 }, { 
     const t = await client.query(`SELECT * FROM recording_tasks WHERE id = $1 AND head_leader_id = $2 FOR UPDATE`, [req.params.id, req.studioUser.id]);
     if (!t.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش موجودة" }); }
     const task = t.rows[0];
-    if (!Scripts.isCodes(task)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "المهمة دي بتستخدم أسامي مستعارة مش أكواد." }); }
+    if (!Scripts.isCodes(task)) { await client.query("ROLLBACK"); return res.status(400).json({ error: Scripts.isReal(task) ? "المهمة دي بتستخدم الأسامي الحقيقية مش أكواد." : "المهمة دي بتستخدم أسامي مستعارة مش أكواد." }); }
 
     const next = { male: Scripts.codeList(task, "male"), female: Scripts.codeList(task, "female") };
     const label = { male: "الأولاد", female: "البنات" };
@@ -778,7 +779,8 @@ router.post("/tasks/:id/publish", async (req, res) => {
       if (!Scripts.codeList(task, "male").length && !Scripts.codeList(task, "female").length) {
         return res.status(400).json({ error: "لازم ترفع قايمة الأكواد قبل النشر" });
       }
-    } else if (!task.fake_names || task.fake_names.length === 0) {
+    } else if (!Scripts.isReal(task) && (!task.fake_names || task.fake_names.length === 0)) {
+      // real-name tasks need no list: every talent's own account name is used
       return res.status(400).json({ error: "لازم ترفع ملف الأسامي المستعارة قبل النشر" });
     }
 
