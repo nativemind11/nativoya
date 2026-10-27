@@ -326,6 +326,7 @@ const MESSAGES = {
   file_not_found: "رقم الملف مش موجود في سكريبت المتسجّل ده.",
   manual_name_invalid: "الاختيار اليدوي للاسم ده مش تبع المهمة دي.",
   name_excluded: "ألغيت مطابقة الاسم ده (مش هو) — اختار المتسجّل الصح.",
+  not_delivered: "لسه ما اتسلّمش للشركة.",
 };
 const OK_STATUS = new Set(["approved", "rejected"]);
 
@@ -342,6 +343,10 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   const sess = await db.query(
     `SELECT rs.id, rs.script_id, rs.fake_name, rs.status, rs.gender, rs.age_bracket, rs.age, rs.leader_id, l.leader_code, l.name AS leader_name,
             tal.name AS real_name, tal.email, b.status AS batch_status,
+            -- v6: feedback only exists for work the company really received: a delivered batch, or feedback it already sent before
+            (EXISTS (SELECT 1 FROM studio_delivery_batch_sessions bs JOIN studio_delivery_batches db2 ON db2.id = bs.batch_id
+                     WHERE bs.session_id = rs.id AND db2.status = 'delivered')
+             OR EXISTS (SELECT 1 FROM studio_feedback_items f0 WHERE f0.session_id = rs.id)) AS delivered,
             ARRAY(SELECT s.order_index FROM recording_session_samples ss
                   JOIN recording_samples s ON s.id = ss.sample_id WHERE ss.session_id = rs.id) AS have,
             (SELECT COUNT(*)::int FROM recording_samples sm WHERE sm.task_id = rs.task_id AND sm.script_id IS NOT DISTINCT FROM rs.script_id) AS total_samples
@@ -365,10 +370,18 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   const nameMap = (meta && meta.nameMap) || {};                // the head leader's manual choices: normalized sheet label -> session id
   const nameInfo = new Map();                                  // v5.1: one entry per distinct sheet name, for the "name matching" panel
   const alive = (r) => r.status !== "expired";                 // a withdrawn talent can't be reworked: never offered in the lists
+  // v6: only talents whose task reached the company are offered (lists, suggestions, the manual picker)
+  const eligible = (r) => alive(r) && !!r.delivered;
+  const notDelivered = (r) => !!r && alive(r) && !r.delivered;
   const noteName = (label, session, how, conflict) => {
     const k = String(label).trim();
     let e = nameInfo.get(k);
-    if (!e) { e = { label: k, rows: 0, sessionId: session ? session.id : null, how: session ? how : null, conflict: conflict || null }; nameInfo.set(k, e); }
+    if (!e) {
+      const pending = notDelivered(session);                   // the name matches someone, but his task was never delivered to the company
+      e = { label: k, rows: 0, sessionId: session && !pending ? session.id : null, how: session && !pending ? how : null, conflict: pending ? null : (conflict || null) };
+      if (pending) e.notDelivered = { fakeName: session.fake_name, status: session.status };
+      nameInfo.set(k, e);
+    }
     e.rows++;
   };
   let scripts = null;
@@ -399,7 +412,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
     const sug = (list) => list.map((x) => ({ id: x.id, fakeName: x.fake_name, gender: x.gender, ageBracket: x.age_bracket, age: x.age }));
     if (forcedId === "none") {                                  // the head leader said "this is not that person": cancel the match, send nothing
       if (smart) { noteName(labelRaw, null); nameInfo.get(String(labelRaw).trim()).excluded = true; }
-      return { ...base, code: "name_excluded", message: MESSAGES.name_excluded, unmatchedName: true, suggestions: smart ? sug(nameIndex.suggest(labelRaw, 5, alive)) : [] };
+      return { ...base, code: "name_excluded", message: MESSAGES.name_excluded, unmatchedName: true, suggestions: smart ? sug(nameIndex.suggest(labelRaw, 5, eligible)) : [] };
     }
     if (forcedId) {
       session = sessById.get(forcedId);
@@ -411,12 +424,12 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
       base.fakeName = found.nameGuess;
       if (!found.list.length) {
         noteName(labelRaw, null);
-        return { ...base, code: "no_session", message: MESSAGES.no_session, unmatchedName: true, suggestions: sug(nameIndex.suggest(labelRaw, 5, alive)) };
+        return { ...base, code: "no_session", message: MESSAGES.no_session, unmatchedName: true, suggestions: sug(nameIndex.suggest(labelRaw, 5, eligible)) };
       }
       session = M.pickByExtras(found.list, found.extras);
       if (!session) {
         noteName(labelRaw, null);
-        return { ...base, code: "ambiguous", message: MESSAGES.ambiguous, unmatchedName: true, suggestions: sug(found.list.filter(alive)) };
+        return { ...base, code: "ambiguous", message: MESSAGES.ambiguous, unmatchedName: true, suggestions: sug(found.list.filter(eligible)) };
       }
       base.fakeName = session.fake_name;
       const how = found.list.length > 1 ? "extras" : found.how;
@@ -458,6 +471,7 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
     }
     base.numbers = num.numbers;
     base.session = sessionInfo;
+    if (notDelivered(session)) return { ...base, code: "not_delivered", message: MESSAGES.not_delivered, unmatchedName: true, notDelivered: true };
     if (!OK_STATUS.has(session.status)) return { ...base, code: session.status, message: MESSAGES[session.status] || MESSAGES.changed };
     if (session.batch_status === "collecting") return { ...base, code: "collecting", message: MESSAGES.collecting };
     const have = new Set(session.have);
@@ -471,14 +485,14 @@ async function resolveRows({ db, taskId, labelType, rows, startRow = 2, rowNos =
   // v5: when some sheet names matched nobody, give the screen everyone it can offer for a manual pick (never trusted on apply)
   // v5.1: for the name-matching panel — the task's own (not withdrawn) talents only, and what we matched each sheet name to
   const people = smart
-    ? sess.rows.filter(alive).slice(0, 3000)
+    ? sess.rows.filter(eligible).slice(0, 3000)
         .map((r) => ({ id: r.id, fakeName: r.fake_name, gender: r.gender, ageBracket: r.age_bracket, age: r.age, status: r.status }))
         .sort((x, y) => String(x.fakeName).localeCompare(String(y.fakeName)))
     : undefined;
   const rank = (e) => (!e.sessionId ? 0 : e.how === "extras" || e.conflict ? 1 : 2);        // problems first
   const names = smart
     ? [...nameInfo.values()].map((e) => ({
-        ...e, suggestions: nameIndex.suggest(e.label, 5, alive).map((x) => x.id),
+        ...e, suggestions: nameIndex.suggest(e.label, 5, eligible).map((x) => x.id),
         person: e.sessionId ? (() => { const x = sessById.get(e.sessionId); return { gender: x.gender, ageBracket: x.age_bracket, age: x.age, status: x.status }; })() : null,
       })).sort((x, y) => rank(x) - rank(y))
     : undefined;

@@ -10,6 +10,7 @@ const { readLines } = require("../../config/textFile");
 const Quota = require("../../config/studioQuota");
 const Scripts = require("../../config/studioScripts");
 const { createLeader } = require("../../config/studioLeaders");
+const { activityColumnReady } = require("../../config/studioExpiry");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -19,6 +20,10 @@ router.use(requireStudioAuth, requireStudioRole("head_leader"));
 // Rework time: any whole number of hours from 1 up to 30 days (it used to be only 12 or 24).
 const MAX_REWORK_HOURS = 720;
 const validReworkHours = (h) => Number.isInteger(h) && h >= 1 && h <= MAX_REWORK_HOURS;
+// v6: how long a started session may sit with no uploaded recording before it is withdrawn (per task, default 8)
+const DEFAULT_IDLE_HOURS = 8;
+const validIdleHours = (h) => Number.isInteger(h) && h >= 1 && h <= MAX_REWORK_HOURS;
+const IDLE_HOURS_MSG = `مهلة الجلسة الساكتة لازم تكون عدد ساعات صحيح من 1 لـ ${MAX_REWORK_HOURS}`;
 const REWORK_HOURS_MSG = `مهلة الإعادة لازم تكون عدد ساعات صحيح من 1 لـ ${MAX_REWORK_HOURS}`;
 
 // POST /api/studio/headleader/qa-reviewers — create a QA reviewer account.
@@ -141,7 +146,7 @@ router.post("/tasks", async (req, res) => {
   const {
     title, quantity, difficulty, sampleRate, bitDepth, format, channels,
     leaderIds, instructions, reworkHours, useAgeBrackets, useReferenceAudio, quotas,
-    scriptMode, identityMode, direct, leaderQuotas,
+    scriptMode, identityMode, direct, leaderQuotas, idleHours,
   } = req.body;
   const sMode = scriptMode == null || scriptMode === "" ? "shared" : String(scriptMode);
   const iMode = identityMode == null || identityMode === "" ? "names" : String(identityMode);
@@ -151,6 +156,8 @@ router.post("/tasks", async (req, res) => {
   if (!title || !String(title).trim()) return res.status(400).json({ error: "اسم المهمة مطلوب" });
   const hours = reworkHours == null || reworkHours === "" ? 12 : Number(reworkHours);
   if (!validReworkHours(hours)) return res.status(400).json({ error: REWORK_HOURS_MSG });
+  const idle = idleHours == null || idleHours === "" ? DEFAULT_IDLE_HOURS : Number(idleHours);
+  if (!validIdleHours(idle)) return res.status(400).json({ error: IDLE_HOURS_MSG });
   const ids = Array.isArray(leaderIds) ? leaderIds : [];
   let quotaRows, leaderRows = [];
   try {
@@ -188,7 +195,11 @@ router.post("/tasks", async (req, res) => {
        !!useAgeBrackets, useReferenceAudio === undefined ? true : !!useReferenceAudio,
        sMode, iMode, !!direct, iMode === "codes" ? JSON.stringify({ male: [], female: [] }) : null]
     );
-    const task = taskResult.rows[0];
+    let task = taskResult.rows[0];
+    // v6: the idle limit is saved once migration_studio_v6.sql has run (until then every task simply has no limit column)
+    if (await activityColumnReady(client)) {
+      task = (await client.query(`UPDATE recording_tasks SET idle_hours = $1 WHERE id = $2 RETURNING *`, [idle, task.id])).rows[0];
+    }
     await Quota.replaceQuotas(client, task.id, quotaRows);
     if (leaderRows.length) await Quota.replaceLeaderQuotas(client, task.id, leaderRows);
     for (const id of (direct ? [] : new Set(ids))) {
@@ -210,7 +221,7 @@ router.post("/tasks", async (req, res) => {
 // title, instructions, rework hours, whether the sentences have example audio.
 router.patch("/tasks/:id", async (req, res) => {
   const { title, instructions, reworkHours, useReferenceAudio, difficulty,
-          sampleRate, bitDepth, format, channels, scriptMode, identityMode, direct } = req.body;
+          sampleRate, bitDepth, format, channels, scriptMode, identityMode, direct, idleHours } = req.body;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -229,6 +240,10 @@ router.patch("/tasks/:id", async (req, res) => {
     if (reworkHours !== undefined) {
       if (!validReworkHours(Number(reworkHours))) return fail(400, REWORK_HOURS_MSG);
       add("rework_hours", Number(reworkHours));
+    }
+    if (idleHours !== undefined && (await activityColumnReady(client))) {
+      if (!validIdleHours(Number(idleHours))) return fail(400, IDLE_HOURS_MSG);
+      add("idle_hours", Number(idleHours));
     }
     if (useReferenceAudio !== undefined) add("use_reference_audio", !!useReferenceAudio);
     if (difficulty !== undefined) {

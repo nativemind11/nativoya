@@ -34,6 +34,26 @@ async function requireStudioAuth(req, res, next) {
   }
 }
 
+// Like requireStudioAuth, but never rejects: a valid token fills req.studioUser / req.studioRole, anything else
+// (no token, bad token, disabled account) simply leaves them unset. For public routes that look a bit
+// different for a logged-in user (e.g. the talent's own "available tasks" list).
+async function optionalStudioAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return next();
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const table = TABLES[payload.studioRole];
+    if (!table) return next();
+    const result = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [payload.id]);
+    if (!result.rows.length || result.rows[0].is_active === false) return next();
+    delete result.rows[0].password_hash;
+    req.studioUser = result.rows[0];
+    req.studioRole = payload.studioRole;
+  } catch (_) { /* treated as logged out */ }
+  next();
+}
+
 function requireStudioRole(...roles) {
   return (req, res, next) => {
     if (!req.studioRole || !roles.includes(req.studioRole)) {
@@ -43,4 +63,4 @@ function requireStudioRole(...roles) {
   };
 }
 
-module.exports = { requireStudioAuth, requireStudioRole, TABLES };
+module.exports = { requireStudioAuth, optionalStudioAuth, requireStudioRole, TABLES };

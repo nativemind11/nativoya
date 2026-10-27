@@ -4,10 +4,11 @@ const multer = require("multer");
 const archiver = require("archiver");
 const { validateClip } = require("../../config/audioValidate");
 const { markAcknowledged, markReworked } = require("../../config/studioFeedback");
-const { safeExpire } = require("../../config/studioExpiry");
+const { safeExpire, activityColumnReady, withdrawnMessage, idleHoursFor } = require("../../config/studioExpiry");
+const Gate = require("../../config/studioTalentGate");
 const { google } = require("googleapis");
 const { pool } = require("../../db/pool");
-const { requireStudioAuth, requireStudioRole } = require("../../config/studioAuth");
+const { requireStudioAuth, optionalStudioAuth, requireStudioRole } = require("../../config/studioAuth");
 const { getAuthorizedClient, uploadSubmissionFile } = require("../../config/googleDrive");
 const { deleteQuietly } = require("../../config/studioStorage");
 const blob = require("../../config/studioBlob");
@@ -57,7 +58,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 // see requireStudioAuth below, applied per-route from here down.
 
 // GET /api/studio/talent/tasks — published tasks open for recording.
-router.get("/tasks", async (req, res) => {
+router.get("/tasks", optionalStudioAuth, async (req, res) => {
   try {
     await safeExpire(pool);
     const result = await pool.query(`
@@ -70,7 +71,13 @@ router.get("/tasks", async (req, res) => {
       ORDER BY t.published_at DESC
     `);
     // each task also carries { limited, slots:[{gender, ageBracket, max, used, remaining, full}] } = how many places are left
-    res.json((await Scripts.attachSlots(pool, result.rows)).map(publicTask));
+    let list = result.rows;
+    // v6: a logged-in talent only sees tasks he can still start (not the ones he already did, and not the ones closed on him)
+    if (req.studioUser && req.studioRole === "talent") {
+      const blocked = await Gate.blockedTasks(pool, req.studioUser.id);
+      list = list.filter((t) => !blocked.has(t.id));
+    }
+    res.json((await Scripts.attachSlots(pool, list)).map(publicTask));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل المهام" });
@@ -182,6 +189,13 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
     if (!taskResult.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "المهمة مش متاحة" }); }
     const task = taskResult.rows[0];
 
+    // v6: one go per talent per task (the task row is locked, so a double tap cannot slip through)
+    const gate = await Gate.checkStart(client, req.studioUser.id, taskId);
+    if (gate) {
+      await client.query("ROLLBACK");
+      return res.status(gate.status).json({ error: gate.message, code: gate.code, ...(gate.sessionToken ? { sessionToken: gate.sessionToken } : {}) });
+    }
+
     const bracket = task.use_age_brackets ? ageBracket : "adult";
     if (!["child", "adult", "elderly"].includes(bracket)) { await client.query("ROLLBACK"); return res.status(400).json({ error: "الفئة العمرية غير صحيحة" }); }
     if (!Scripts.nameIsAllowed(task, gender, fakeName)) {
@@ -267,6 +281,8 @@ router.get("/sessions/:token", requireStudioAuth, requireStudioRole("talent"), a
 
     // opening the rework screen counts as "seen" for any company feedback on this session
     if (session.status === "rejected") markAcknowledged(pool, session.id).catch((e) => console.error("[feedback ack]", e.message));
+    // v6: a session withdrawn for sitting idle tells the screen how long this task allows
+    if (session.status === "expired" && !session.rework_deadline) session.idle_hours = await idleHoursFor(pool, session);
     res.json({ session, samples: samples.rows });
   } catch (err) {
     console.error(err);
@@ -285,7 +301,7 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
-    if (session.status === "expired") return res.status(410).json({ error: "انتهت مهلة الإعادة والاسم اتسحب منك. ممكن تبدأ تسجيل جديد من قايمة المهام." });
+    if (session.status === "expired") return res.status(410).json({ error: withdrawnMessage(session, await idleHoursFor(pool, session)) });
 
     const mine = await pool.query(
       `SELECT 1 FROM recording_samples WHERE id = $1 AND task_id = $2 AND script_id IS NOT DISTINCT FROM $3`,
@@ -352,6 +368,11 @@ router.post("/sessions/:token/samples/:sampleId/audio", requireStudioAuth, requi
       );
     }
 
+    // v6: this is what keeps an idle session from being withdrawn (never blocks the upload)
+    try {
+      if (await activityColumnReady(pool)) await pool.query(`UPDATE recording_sessions SET last_activity_at = now() WHERE id = $1`, [session.id]);
+    } catch (e) { console.error("[activity]", e.message); }
+
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -377,7 +398,7 @@ router.post("/sessions/:token/submit", requireStudioAuth, requireStudioRole("tal
     if (!sessionResult.rows.length) return res.status(404).json({ error: "الجلسة دي مش موجودة" });
     const session = sessionResult.rows[0];
     if (session.talent_id !== req.studioUser.id) return res.status(403).json({ error: "الجلسة دي مش بتاعتك" });
-    if (session.status === "expired") return res.status(410).json({ error: "انتهت مهلة الإعادة والاسم اتسحب منك. ممكن تبدأ تسجيل جديد من قايمة المهام." });
+    if (session.status === "expired") return res.status(410).json({ error: withdrawnMessage(session, await idleHoursFor(pool, session)) });
 
     const isResubmit = session.status === "rejected";
     if (session.status !== "in_progress" && !isResubmit) {
