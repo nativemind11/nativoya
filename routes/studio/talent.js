@@ -155,13 +155,14 @@ router.get("/samples/:sampleId/reference-audio", async (req, res) => {
 });
 
 // GET /api/studio/talent/tasks/:id/fake-names — names from the pool that
-// NOBODY has reserved yet for this task. Tasks that use CODES list only the codes of ?gender=male|female.
+// NOBODY has reserved yet for this task. Tasks that use CODES list only the codes of ?gender=male|female
+// (and ?bracket=child|adult|elderly when the head leader uploaded the codes split by age group).
 router.get("/tasks/:id/fake-names", async (req, res) => {
   try {
     await safeExpire(pool);
     const taskResult = await pool.query(`SELECT id, fake_names, identity_mode, identity_codes FROM recording_tasks WHERE id = $1`, [req.params.id]);
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
-    res.json(await Scripts.availableNames(pool, taskResult.rows[0], req.query.gender));
+    res.json(await Scripts.availableNames(pool, taskResult.rows[0], req.query.gender, req.query.bracket));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر تحميل قائمة الأسامي" });
@@ -213,7 +214,8 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
       fakeName = await Scripts.realFileName(client, task.id, base);
     } else {
       if (!fakeName) { await client.query("ROLLBACK"); return res.status(400).json({ error: "البيانات ناقصة، املا كل الحقول المطلوبة" }); }
-      if (!Scripts.nameIsAllowed(task, gender, fakeName)) {
+      // codes split by age group are matched with the talent's REAL age group (from his account)
+      if (!Scripts.nameIsAllowed(task, gender, fakeName, profile.ageBracket)) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: Scripts.isCodes(task) ? "الكود ده مش من ضمن القائمة المتاحة" : "الاسم ده مش من ضمن القائمة المتاحة" });
       }
@@ -247,8 +249,9 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
       }
     }
 
-    // per-person scripts: this talent gets the first script nobody else holds (the task row is locked, so no two get the same)
-    const scriptId = await Scripts.allocateScript(client, task);
+    // per-person scripts: this talent gets the first script of his gender (or for anybody) that nobody else holds
+    // (the task row is locked, so no two get the same)
+    const scriptId = await Scripts.allocateScript(client, task, gender);
 
     const sessionToken = crypto.randomBytes(24).toString("hex");
     const result = await client.query(
