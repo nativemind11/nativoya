@@ -9,6 +9,7 @@
  * A talent holds a script / code until the session is withdrawn (status 'expired'), like a quota place.
  */
 const Quota = require("./studioQuota");
+const Lock = require("./studioTaskLock");
 const GENDERS = Quota.GENDERS, BRACKETS = Quota.BRACKETS;
 
 function httpError(status, message, code) {
@@ -123,7 +124,7 @@ function applySupply(task, supply) {
 async function attachSlots(db, tasks) {
   const withQuota = await Quota.attachSlots(db, tasks);
   const inputs = await loadSupplyInputs(db, withQuota);
-  return withQuota.map((t) => {
+  const built = withQuota.map((t) => {
     const sup = computeSupply(t, inputs.get(t.id));
     const x = applySupply(t, sup);
     if (!hasSupplyLimits(t)) return x;
@@ -142,6 +143,8 @@ async function attachSlots(db, tasks) {
       // v9: only for the genders whose codes were uploaded split by age group: { child:{total,left}, adult:.., elderly:.. }
       codes_by_bracket: { male: byBracket("male"), female: byBracket("female") } };
   });
+  // v10: the password hash never leaves the server — the row carries only password_protected (true / false)
+  return built.map(Lock.expose);
 }
 
 /** Names / codes a talent of this gender (and age group, for codes split by age group) may still pick. */

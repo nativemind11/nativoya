@@ -1,0 +1,17 @@
+-- ==========================================================================
+-- Studio v10 — an optional password on a task.
+--
+-- Run ONCE in the Supabase SQL Editor BEFORE deploying the new backend. Safe to re-run.
+-- Additive only: one new column. Every task that exists today has NULL = "no password", exactly as before,
+-- so nothing that is running changes.
+--
+--   recording_tasks.access_password_hash   NULL  = the task is open (as before)
+--                                          text  = bcrypt hash of the password the head leader chose.
+--                                                  The password itself is never stored and can never be read back
+--                                                  (the head leader can only replace it or remove it).
+--
+-- The task still shows in the list for everybody under the leaders it was published to; the talent is asked for the
+-- password once, before choosing a name / code and starting.
+-- Talents who ALREADY started a session are not asked again (their session keeps working if the password changes).
+-- ==========================================================================
+ALTER TABLE recording_tasks ADD COLUMN IF NOT EXISTS access_password_hash TEXT;

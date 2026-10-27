@@ -9,6 +9,7 @@ const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../con
 const { readLines } = require("../../config/textFile");
 const Quota = require("../../config/studioQuota");
 const Scripts = require("../../config/studioScripts");
+const Lock = require("../../config/studioTaskLock");
 const { createLeader } = require("../../config/studioLeaders");
 const { activityColumnReady } = require("../../config/studioExpiry");
 
@@ -146,7 +147,7 @@ router.post("/tasks", async (req, res) => {
   const {
     title, quantity, difficulty, sampleRate, bitDepth, format, channels,
     leaderIds, instructions, reworkHours, useAgeBrackets, useReferenceAudio, quotas,
-    scriptMode, identityMode, direct, leaderQuotas, idleHours,
+    scriptMode, identityMode, direct, leaderQuotas, idleHours, accessPassword,
   } = req.body;
   const sMode = scriptMode == null || scriptMode === "" ? "shared" : String(scriptMode);
   const iMode = identityMode == null || identityMode === "" ? "names" : String(identityMode);
@@ -159,6 +160,12 @@ router.post("/tasks", async (req, res) => {
   const idle = idleHours == null || idleHours === "" ? DEFAULT_IDLE_HOURS : Number(idleHours);
   if (!validIdleHours(idle)) return res.status(400).json({ error: IDLE_HOURS_MSG });
   const ids = Array.isArray(leaderIds) ? leaderIds : [];
+  // v10: optional password on the task (empty / missing = an open task)
+  let lockHash = null;
+  if (accessPassword != null && String(accessPassword).trim() !== "") {
+    try { lockHash = await Lock.hashPassword(Lock.validatePassword(accessPassword)); }
+    catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
+  }
   let quotaRows, leaderRows = [];
   try {
     quotaRows = Quota.normalizeQuotas(quotas, !!useAgeBrackets);
@@ -200,6 +207,9 @@ router.post("/tasks", async (req, res) => {
     if (await activityColumnReady(client)) {
       task = (await client.query(`UPDATE recording_tasks SET idle_hours = $1 WHERE id = $2 RETURNING *`, [idle, task.id])).rows[0];
     }
+    if (lockHash) {
+      task = (await client.query(`UPDATE recording_tasks SET access_password_hash = $1 WHERE id = $2 RETURNING *`, [lockHash, task.id])).rows[0];
+    }
     await Quota.replaceQuotas(client, task.id, quotaRows);
     if (leaderRows.length) await Quota.replaceLeaderQuotas(client, task.id, leaderRows);
     for (const id of (direct ? [] : new Set(ids))) {
@@ -210,6 +220,7 @@ router.post("/tasks", async (req, res) => {
     res.status(201).json(withSlots);
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch (_) {}
+    if (err.code === "42703") return res.status(409).json({ error: "كلمة سر المهمة محتاجة migration v10 — شغّلها في Supabase الأول." });
     console.error(err);
     res.status(500).json({ error: "تعذر إنشاء المهمة" });
   } finally {
@@ -221,7 +232,7 @@ router.post("/tasks", async (req, res) => {
 // title, instructions, rework hours, whether the sentences have example audio.
 router.patch("/tasks/:id", async (req, res) => {
   const { title, instructions, reworkHours, useReferenceAudio, difficulty,
-          sampleRate, bitDepth, format, channels, scriptMode, identityMode, direct, idleHours } = req.body;
+          sampleRate, bitDepth, format, channels, scriptMode, identityMode, direct, idleHours, accessPassword } = req.body;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -246,6 +257,16 @@ router.patch("/tasks/:id", async (req, res) => {
       add("idle_hours", Number(idleHours));
     }
     if (useReferenceAudio !== undefined) add("use_reference_audio", !!useReferenceAudio);
+    // v10: task password. undefined = leave it; null or "" = remove it (the task opens for everybody); text = set / change it.
+    // Changing it cancels the unlock of everybody who typed the old one; talents who already started keep their session.
+    if (accessPassword !== undefined) {
+      if (accessPassword === null || String(accessPassword).trim() === "") add("access_password_hash", null);
+      else {
+        let pw;
+        try { pw = Lock.validatePassword(accessPassword); } catch (e) { return fail(e.statusCode || 400, e.message); }
+        add("access_password_hash", await Lock.hashPassword(pw));
+      }
+    }
     if (difficulty !== undefined) {
       if (!["easy", "medium", "hard"].includes(String(difficulty))) return fail(400, "مستوى الصعوبة غير صحيح");
       add("difficulty", String(difficulty));
@@ -295,6 +316,7 @@ router.patch("/tasks/:id", async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش موجودة" });
+    if (err.code === "42703") return res.status(409).json({ error: "كلمة سر المهمة محتاجة migration v10 — شغّلها في Supabase الأول." });
     console.error(err);
     res.status(500).json({ error: "تعذر تعديل المهمة" });
   } finally {
@@ -892,7 +914,7 @@ router.post("/tasks/:id/publish", async (req, res) => {
       `UPDATE recording_tasks SET status = 'published', published_at = now() WHERE id = $1 RETURNING *`,
       [task.id]
     );
-    res.json(result.rows[0]);
+    res.json(Lock.expose(result.rows[0]));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "تعذر نشر المهمة" });

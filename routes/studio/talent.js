@@ -16,6 +16,7 @@ const blob = require("../../config/studioBlob");
 const refCache = require("../../config/refAudioCache");
 const Quota = require("../../config/studioQuota");
 const Scripts = require("../../config/studioScripts");
+const Lock = require("../../config/studioTaskLock");
 const Rework = require("../../config/studioRework");
 const { sendAudio, audioContentType } = require("../../config/studioHttp");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
@@ -50,7 +51,15 @@ async function withRetry(fn, tries = 3) {
 // How many sentences one talent records in this task: the shared script, or (per-person tasks) the first script's.
 const FIRST_SCRIPT = `(CASE WHEN t.script_mode = 'per_person' THEN (SELECT id FROM studio_task_scripts WHERE task_id = t.id ORDER BY position LIMIT 1) END)`;
 // The public task endpoints must never show the code lists.
-const publicTask = ({ identity_codes, ...rest }) => rest;
+// v10: ...nor the password hash; a password-protected task also keeps its instructions back until the talent has started it.
+const publicTask = ({ identity_codes, ...row }) => {
+  const { access_password_hash, password_protected, instructions, ...rest } = row;
+  const protectedTask = access_password_hash !== undefined ? !!access_password_hash : !!password_protected;
+  return { ...rest, password_protected: protectedTask, ...(protectedTask || instructions === undefined ? {} : { instructions }) };
+};
+const LOCKED_MSG = "المهمة دي محمية بكلمة سر. اكتب كلمة السر الأول.";
+// the unlock token travels in a header (never in a URL, where it would end up in logs)
+const unlockOf = (req) => req.headers["x-task-unlock"] || (req.body && req.body.unlockToken) || "";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -65,6 +74,7 @@ router.get("/tasks", optionalStudioAuth, async (req, res) => {
     const result = await pool.query(`
       SELECT t.id, t.title, t.difficulty, t.quantity, t.recording_settings, t.use_age_brackets, t.use_reference_audio,
         t.direct, t.script_mode, t.identity_mode, t.identity_codes,
+        (to_jsonb(t)->>'access_password_hash') IS NOT NULL AS password_protected,
         (SELECT COUNT(*) FROM recording_samples WHERE task_id = t.id AND script_id IS NOT DISTINCT FROM ${FIRST_SCRIPT}) AS sample_count,
         (SELECT COUNT(*) FROM recording_sessions WHERE task_id = t.id AND status <> 'expired') AS submission_count
       FROM recording_tasks t
@@ -154,14 +164,47 @@ router.get("/samples/:sampleId/reference-audio", async (req, res) => {
   }
 });
 
+// POST /api/studio/talent/tasks/:id/unlock — v10: a talent types the password of a protected task.
+// Right password -> { ok, unlockToken } (valid 12 hours, only for this task and this talent). Wrong -> 403, and after
+// 5 wrong tries in a row that talent waits 10 minutes for this task. An open task answers ok with no token.
+router.post("/tasks/:id/unlock", requireStudioAuth, requireStudioRole("talent"), async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT id, access_password_hash FROM recording_tasks WHERE id = $1 AND status = 'published'`, [req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "المهمة مش متاحة" });
+    const task = r.rows[0];
+    if (!Lock.isProtected(task)) return res.json({ ok: true, unlockToken: null });
+
+    const me = req.studioUser.id;
+    const wait = Lock.lockedFor(me, task.id);
+    if (wait) {
+      const mins = Math.max(1, Math.ceil(wait / 60000));
+      return res.status(429).json({ error: `حاولت كتير بكلمة سر غلط. استنى ${mins} دقيقة وجرّب تاني.`, code: "too_many_tries" });
+    }
+    const pw = req.body && req.body.password;
+    if (!pw || !(await Lock.verifyPassword(pw, task.access_password_hash))) {
+      Lock.noteFail(me, task.id);
+      return res.status(403).json({ error: "كلمة السر غلط", code: "wrong_password" });
+    }
+    Lock.noteOk(me, task.id);
+    res.json({ ok: true, unlockToken: Lock.signUnlock(task, me) });
+  } catch (err) {
+    if (err.code === "22P02") return res.status(404).json({ error: "المهمة مش متاحة" });
+    console.error(err);
+    res.status(500).json({ error: "تعذر التحقق من كلمة السر" });
+  }
+});
+
 // GET /api/studio/talent/tasks/:id/fake-names — names from the pool that
 // NOBODY has reserved yet for this task. Tasks that use CODES list only the codes of ?gender=male|female
 // (and ?bracket=child|adult|elderly when the head leader uploaded the codes split by age group).
-router.get("/tasks/:id/fake-names", async (req, res) => {
+router.get("/tasks/:id/fake-names", optionalStudioAuth, async (req, res) => {
   try {
     await safeExpire(pool);
-    const taskResult = await pool.query(`SELECT id, fake_names, identity_mode, identity_codes FROM recording_tasks WHERE id = $1`, [req.params.id]);
+    const taskResult = await pool.query(`SELECT id, fake_names, identity_mode, identity_codes, access_password_hash FROM recording_tasks WHERE id = $1`, [req.params.id]);
     if (!taskResult.rows.length) return res.status(404).json({ error: "المهمة مش موجودة" });
+    // v10: the names / codes of a password-protected task are shown only to a talent who typed the password
+    const who = req.studioRole === "talent" && req.studioUser ? req.studioUser.id : null;
+    if (!Lock.checkUnlock(unlockOf(req), taskResult.rows[0], who)) return res.status(403).json({ error: LOCKED_MSG, code: "task_locked" });
     res.json(await Scripts.availableNames(pool, taskResult.rows[0], req.query.gender, req.query.bracket));
   } catch (err) {
     console.error(err);
@@ -204,6 +247,12 @@ router.post("/sessions", requireStudioAuth, requireStudioRole("talent"), async (
     if (gate) {
       await client.query("ROLLBACK");
       return res.status(gate.status).json({ error: gate.message, code: gate.code, ...(gate.sessionToken ? { sessionToken: gate.sessionToken } : {}) });
+    }
+
+    // v10: a password-protected task can only be started with the unlock token the right password gave
+    if (!Lock.checkUnlock(unlockOf(req), task, req.studioUser.id)) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: LOCKED_MSG, code: "task_locked" });
     }
 
     const real = Scripts.isReal(task);
