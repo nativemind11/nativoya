@@ -2,15 +2,16 @@
  * The talent's real data (v8): gender, age and the age bracket computed from the age, all written in English
  * (male / female, digits 0-9, child / adult / elderly) because they end up inside file names.
  *
- *   child   : under 18
- *   adult   : 18 to 59
- *   elderly : 60 and over
- * Change ADULT_FROM / ELDERLY_FROM below if the company uses other limits — nothing else needs to change.
+ *   child   : 5 to 13
+ *   adult   : 14 to 59
+ *   elderly : 60 to 80
+ * Change the four numbers below if the company uses other limits. The sign-up page in the frontend repeats them
+ * (talent-login.html: function parseAge and the age-group preview).
  */
-const ADULT_FROM = 18;
+const ADULT_FROM = 14;
 const ELDERLY_FROM = 60;
 const MIN_AGE = 5;
-const MAX_AGE = 100;
+const MAX_AGE = 80;
 
 const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩", FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
 /** "٢٧" / "27" / " 27 " -> "27" (Arabic-Indic and Persian digits become 0-9). */

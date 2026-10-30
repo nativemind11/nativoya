@@ -53,9 +53,13 @@ t("signup: real data is validated, normalised and the bracket is computed", asyn
   const ok = await signup({ name: "  Ahmed   Ali ", email: "a@x.com", gender: "male", age: "٢٧" });   // Arabic-Indic digits
   assert.equal(ok.status, 201);
   assert.deepEqual([ok.data.user.name, ok.data.user.gender, ok.data.user.age, ok.data.user.age_bracket], ["Ahmed Ali", "male", 27, "adult"]);
-  assert.equal((await signup({ name: "Kid", email: "k@x.com", gender: "female", age: 17 })).data.user.age_bracket, "child");
+  assert.equal((await signup({ name: "Kid", email: "k@x.com", gender: "female", age: 13 })).data.user.age_bracket, "child");
   assert.equal((await signup({ name: "Old Man", email: "o@x.com", gender: "male", age: 60 })).data.user.age_bracket, "elderly");
   assert.equal((await signup({ name: "Edge", email: "e@x.com", gender: "female", age: 59 })).data.user.age_bracket, "adult");
+  assert.equal((await signup({ name: "Teen", email: "te@x.com", gender: "male", age: 14 })).data.user.age_bracket, "adult", "14 is the first adult age");
+  assert.equal((await signup({ name: "Five", email: "f5@x.com", gender: "male", age: 5 })).data.user.age_bracket, "child");
+  assert.equal((await signup({ name: "Eighty", email: "e80@x.com", gender: "female", age: 80 })).data.user.age_bracket, "elderly");
+  assert.equal((await signup({ name: "TooOld", email: "e81@x.com", gender: "female", age: 81 })).status, 400, "81 is over the limit");
   assert.equal((await signup({ name: "Ahmed Ali", email: "a@x.com", gender: "male", age: 30 })).status, 409, "same email");
   const row = await one(`SELECT gender, age, age_bracket FROM studio_talents WHERE email='a@x.com'`);
   assert.deepEqual(row, { gender: "male", age: 27, age_bracket: "adult" });
