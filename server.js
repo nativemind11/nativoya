@@ -14,6 +14,7 @@ const studioTalentRoutes = require("./routes/studio/talent");
 const studioQaRoutes = require("./routes/studio/qa");
 const studioDeliveryRoutes = require("./routes/studio/delivery");
 const studioFeedbackRoutes = require("./routes/studio/feedback");
+const studioAcceptanceRoutes = require("./routes/studio/acceptance");
 const studioLeaderRoutes = require("./routes/studio/leader");
 
 const app = express();
@@ -57,6 +58,7 @@ app.use("/api/studio/talent", studioTalentRoutes);
 app.use("/api/studio/qa", studioQaRoutes);
 app.use("/api/studio/delivery", studioDeliveryRoutes);
 app.use("/api/studio/feedback", studioFeedbackRoutes);
+app.use("/api/studio/acceptance", studioAcceptanceRoutes);
 app.use("/api/studio/leader", studioLeaderRoutes);
 
 app.use((err, req, res, next) => {

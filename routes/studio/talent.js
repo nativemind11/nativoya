@@ -18,6 +18,7 @@ const Quota = require("../../config/studioQuota");
 const Scripts = require("../../config/studioScripts");
 const Lock = require("../../config/studioTaskLock");
 const Rework = require("../../config/studioRework");
+const Acceptance = require("../../config/studioAcceptance");
 const { sendAudio, audioContentType } = require("../../config/studioHttp");
 const { getOrCreateStudioRootFolder, getOrCreateSubfolder } = require("../../config/studioDrive");
 
@@ -632,6 +633,9 @@ router.get("/me/sessions", requireStudioAuth, requireStudioRole("talent"), async
       WHERE rs.talent_id = $1
       ORDER BY rs.created_at DESC
     `, [req.studioUser.id]);
+    // the company accepted this task of his? (null = not yet) — a side lookup, so nothing above changes
+    const accepted = await Acceptance.acceptedMap(pool, result.rows.map((r) => r.id));
+    for (const r of result.rows) r.accepted_at = accepted.get(r.id) || null;
     res.json(result.rows);
   } catch (err) {
     console.error(err);

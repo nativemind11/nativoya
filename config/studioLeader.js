@@ -81,6 +81,17 @@ async function getOverview(db, leaderId) {
     db.query(COUNTS_SQL, [leaderId]),
   ]);
   const c = counts.rows[0] || {};
+  // v11: which of this team the company ACCEPTED — a side lookup that touches none of the boxes / counts above (empty before the migration)
+  const accepted = await Acceptance.acceptedMap(db, sessions.rows.map((s) => s.id));
+  for (const s of sessions.rows) s.accepted_at = accepted.get(s.id) || null;
+  const perTask = new Map();
+  if (await Acceptance.acceptanceReady(db)) {       // the per-task count comes from the database, not from the (limited) list above
+    const r = await db.query(
+      `SELECT a.task_id, COUNT(*)::int AS n FROM studio_acceptances a JOIN recording_sessions rs ON rs.id = a.session_id
+       WHERE rs.leader_id = $1 AND rs.status <> 'expired' GROUP BY a.task_id`, [leaderId]);
+    for (const x of r.rows) perTask.set(x.task_id, x.n);
+  }
+  for (const t of tasks.rows) t.accepted = perTask.get(t.id) || 0;
   return {
     stats: {
       openTasks: tasks.rows.filter((t) => t.status === "published").length,
@@ -97,5 +108,7 @@ async function getOverview(db, leaderId) {
     sessions: sessions.rows,
   };
 }
+
+const Acceptance = require("./studioAcceptance");
 
 module.exports = { getOverview, CAT_SQL, TASKS_SQL, SESSIONS_SQL, COUNTS_SQL };
